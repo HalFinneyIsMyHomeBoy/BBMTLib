@@ -29,7 +29,13 @@ gomobile bind -v -target=ios,macos,iossimulator -tags=ios,macos,iossimulator git
 ```bash
 # Build for Android
 gomobile bind -v -target=android github.com/BoldBitcoinWallet/BBMTLib/tss
+
+# If the following error occurs  
+"no usable NDK in /Android/Sdk: unsupported API version 16"
+# Then specify the version api with the following command
+gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
 ```
+
 
 ## License  
 This project is licensed under the **Apache-2.0 License**. See [LICENSE](LICENSE) for details.  
