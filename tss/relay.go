@@ -292,7 +292,7 @@ func RunRelay(port string) (string, error) {
 
 func StopRelay() (string, error) {
 	if server == nil {
-		return "already_closed", fmt.Errorf("relay not active")
+		return "already_closed", nil
 	}
 	server.Close()
 	server = nil

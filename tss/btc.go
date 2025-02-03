@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -419,6 +420,143 @@ func MpcSendBTC(
 	return txid, nil
 }
 
+func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, receiverAddress string) (int64, error) {
+	params := &chaincfg.TestNet3Params
+	if _btc_net == "mainnet" {
+		params = &chaincfg.MainNetParams
+		log.Println("Using MainNet parameters")
+	} else {
+		log.Println("Using TestNet3 parameters")
+	}
+
+	// Decode addresses
+	fromAddr, err := btcutil.DecodeAddress(senderAddress, params)
+	if err != nil {
+		return 0, fmt.Errorf("failed to decode sender address: %w", err)
+	}
+	log.Printf("Sender Address Decoded: %s, Type: %T", senderAddress, fromAddr)
+
+	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
+	if err != nil {
+		return 0, fmt.Errorf("failed to decode receiver address: %w", err)
+	}
+	log.Printf("Receiver Address Decoded: %s, Type: %T", receiverAddress, toAddr)
+
+	// Fetch fee rate for 1 confirmation
+	feeRate, err := FetchFeeRate(1)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch fee rate: %w", err)
+	}
+	log.Printf("Fee Rate for 1 confirmation: %.2f sat/vB", feeRate)
+
+	// Estimate transaction size
+	var estimatedSize float64 = 10 // Base size for version, locktime, etc.
+	log.Printf("Starting transaction size estimation with base size: %.2f bytes", estimatedSize)
+
+	// Estimate input size based on UTXO type
+	for i, utxo := range utxos {
+		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
+		if err != nil {
+			return 0, fmt.Errorf("failed to fetch UTXO details for %s:%d: %w", utxo.TxID, utxo.Vout, err)
+		}
+		log.Printf("UTXO %d: TXID %s, Vout %d, IsWitness: %v", i, utxo.TxID, utxo.Vout, isWitness)
+
+		if isWitness {
+			if txscript.IsPayToWitnessPubKeyHash(txOut.PkScript) {
+				log.Printf("UTXO %d is P2WPKH", i)
+				estimatedSize += 68  // SegWit input without witness data
+				estimatedSize += 107 // Witness data size (approx)
+			} else if txscript.IsWitnessProgram(txOut.PkScript) {
+				log.Printf("UTXO %d is P2TR", i)
+				estimatedSize += 68 // SegWit input without witness data
+				estimatedSize += 65 // Taproot signature
+			} else {
+				log.Printf("UTXO %d is other SegWit type", i)
+				estimatedSize += 68  // SegWit input without witness data
+				estimatedSize += 107 // Assuming P2WSH-like size for witness data
+			}
+		} else {
+			if txscript.IsPayToScriptHash(txOut.PkScript) {
+				log.Printf("UTXO %d is P2SH", i)
+				estimatedSize += 180 // Assuming a 2-of-3 multi-sig for P2SH
+			} else if txscript.IsPayToPubKeyHash(txOut.PkScript) {
+				log.Printf("UTXO %d is P2PKH", i)
+				estimatedSize += 148
+			} else {
+				log.Printf("UTXO %d assumed to be P2MS", i)
+				estimatedSize += 180 // This is an approximation; actual size can vary
+			}
+		}
+		log.Printf("Current estimated size after UTXO %d: %.2f bytes", i, estimatedSize)
+	}
+
+	// Estimate output size based on address types
+	log.Printf("Estimating output size for receiver address...")
+	if _, ok := toAddr.(*btcutil.AddressPubKeyHash); ok {
+		estimatedSize += 34
+		log.Println("Receiver is P2PKH: Added 34 bytes")
+	} else if _, ok := toAddr.(*btcutil.AddressScriptHash); ok {
+		estimatedSize += 34
+		log.Println("Receiver is P2SH: Added 34 bytes")
+	} else if _, ok := toAddr.(*btcutil.AddressWitnessPubKeyHash); ok {
+		estimatedSize += 31
+		log.Println("Receiver is P2WPKH: Added 31 bytes")
+	} else if _, ok := toAddr.(*btcutil.AddressWitnessScriptHash); ok {
+		estimatedSize += 43
+		log.Println("Receiver is P2WSH: Added 43 bytes")
+	} else if _, ok := toAddr.(*btcutil.AddressTaproot); ok {
+		estimatedSize += 34
+		log.Println("Receiver is P2TR: Added 34 bytes")
+	} else {
+		return 0, fmt.Errorf("unsupported address type for receiver")
+	}
+
+	// Check if change is needed
+	totalInputValue := int64(0)
+	for _, utxo := range utxos {
+		totalInputValue += utxo.Value
+	}
+	log.Printf("Total input value: %d satoshis", totalInputValue)
+
+	changeAmount := totalInputValue - satoshiAmount
+	log.Printf("Change amount: %d satoshis", changeAmount)
+
+	if changeAmount > 546 { // Dust threshold for Bitcoin
+		log.Printf("Adding change output because change amount exceeds dust threshold")
+		if _, ok := fromAddr.(*btcutil.AddressPubKeyHash); ok {
+			estimatedSize += 34
+			log.Println("Change output is P2PKH: Added 34 bytes")
+		} else if _, ok := fromAddr.(*btcutil.AddressScriptHash); ok {
+			estimatedSize += 34
+			log.Println("Change output is P2SH: Added 34 bytes")
+		} else if _, ok := fromAddr.(*btcutil.AddressWitnessPubKeyHash); ok {
+			estimatedSize += 31
+			log.Println("Change output is P2WPKH: Added 31 bytes")
+		} else if _, ok := fromAddr.(*btcutil.AddressWitnessScriptHash); ok {
+			estimatedSize += 43
+			log.Println("Change output is P2WSH: Added 43 bytes")
+		} else if _, ok := fromAddr.(*btcutil.AddressTaproot); ok {
+			estimatedSize += 34
+			log.Println("Change output is P2TR: Added 34 bytes")
+		} else {
+			return 0, fmt.Errorf("unsupported address type for sender")
+		}
+	}
+
+	log.Printf("Final estimated transaction size: %.2f bytes", estimatedSize)
+
+	// Calculate fee
+	estimatedFee := int64(math.Ceil(estimatedSize * feeRate / 1000))
+	log.Printf("Estimated Fee: %d satoshis", estimatedFee)
+
+	// 1 sat/vb
+	if estimatedFee < int64(estimatedSize) {
+		return int64(estimatedSize), nil
+	}
+
+	return estimatedFee, nil
+}
+
 func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, preview, amountSatoshi int64) (string, error) {
 	log.Println("BBMTLog", "invoking SendBitcoin...")
 	params := &chaincfg.TestNet3Params
@@ -435,6 +573,14 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 	selectedUTXOs, totalAmount, err := SelectUTXOs(utxos, amountSatoshi, "smallest")
 	if err != nil {
 		return "", err
+	}
+
+	if preview > 0 {
+		_fee, _err := previewTxFees(senderAddress, selectedUTXOs, amountSatoshi, receiverAddress)
+		if _err != nil {
+			return "", _err
+		}
+		return strconv.FormatInt(_fee, 10), nil
 	}
 
 	feeRate, err := FetchFeeRate(1)
