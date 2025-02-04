@@ -48,7 +48,7 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "Peer detected successfully!")
 	})
-	server := &http.Server{Addr: ":" + port, Handler: mux}
+	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
 	go func() {
 		log.Println("BBMTLog", "Waiting for peer connection on port:", port, ", timeout:", timeout)
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
@@ -161,7 +161,7 @@ func PublishData(port, timeout, enckey, data string) (string, error) {
 		fmt.Fprintln(w, encryptedData)
 		published <- "ok"
 	})
-	server := &http.Server{Addr: ":" + port, Handler: mux}
+	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
 	go func() {
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
 			log.Println("HTTP server error:", err)

@@ -265,7 +265,7 @@ func listen(port string) *http.Server {
 	r.HandleFunc("/message/{sessionID}/{participantKey}/{hash}", deleteTssMessage).Methods("DELETE")
 
 	server := &http.Server{
-		Addr:    ":" + port,
+		Addr:    "0.0.0.0:" + port,
 		Handler: r,
 	}
 
