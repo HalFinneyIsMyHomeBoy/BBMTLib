@@ -2,7 +2,6 @@ package tss
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -282,8 +281,9 @@ var server *http.Server = nil
 
 func RunRelay(port string) (string, error) {
 	if server != nil {
-		return "already_active", fmt.Errorf("relay already active")
+		StopRelay()
 	}
+	time.Sleep(time.Second)
 	go func() {
 		server = listen(port)
 	}()

@@ -46,9 +46,15 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 			peerFound <- clientIP + "@" + srcId + "@" + srcPubkey + "," + dstIP + "@" + id + "@" + pubkey
 		}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "Peer detected successfully!")
+		fmt.Fprintln(w, clientIP+"@"+srcId+"@"+srcPubkey+","+dstIP+"@"+id+"@"+pubkey)
 	})
+
+	if server != nil {
+		StopRelay()
+	}
+	time.Sleep(time.Second)
 	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
+
 	go func() {
 		log.Println("BBMTLog", "Waiting for peer connection on port:", port, ", timeout:", timeout)
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
@@ -105,7 +111,10 @@ func DiscoverPeer(id, pubkey, localIP, port, timeout string) (string, error) {
 				resp, err := client.Get(url)
 				if err == nil && resp.StatusCode == http.StatusOK {
 					fmt.Printf("Peer discovered at: %s\n", ip)
-					peerFound <- ip
+					bodyBytes, err := io.ReadAll(resp.Body)
+					if err == nil {
+						peerFound <- string(bodyBytes)
+					}
 				} else {
 					log.Println("BBMTLog", "Peer not available at:", ip)
 				}
@@ -161,6 +170,11 @@ func PublishData(port, timeout, enckey, data string) (string, error) {
 		fmt.Fprintln(w, encryptedData)
 		published <- "ok"
 	})
+
+	if server != nil {
+		StopRelay()
+	}
+	time.Sleep(time.Second)
 	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
 	go func() {
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
