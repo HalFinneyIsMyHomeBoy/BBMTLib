@@ -68,3 +68,11 @@ type KeysignResponse struct {
 	DerSignature string `json:"der_signature"`
 	RecoveryID   string `json:"recovery_id"`
 }
+
+type FeeResponse struct {
+	FastestFee  int `json:"fastestFee"`
+	HalfHourFee int `json:"halfHourFee"`
+	HourFee     int `json:"hourFee"`
+	EconomyFee  int `json:"economyFee"`
+	MinimumFee  int `json:"minimumFee"`
+}
