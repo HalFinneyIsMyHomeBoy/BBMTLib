@@ -2,7 +2,6 @@ package tss
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -265,7 +264,7 @@ func listen(port string) *http.Server {
 	r.HandleFunc("/message/{sessionID}/{participantKey}/{hash}", deleteTssMessage).Methods("DELETE")
 
 	server := &http.Server{
-		Addr:    ":" + port,
+		Addr:    "0.0.0.0:" + port,
 		Handler: r,
 	}
 
@@ -282,8 +281,9 @@ var server *http.Server = nil
 
 func RunRelay(port string) (string, error) {
 	if server != nil {
-		return "already_active", fmt.Errorf("relay already active")
+		StopRelay()
 	}
+	time.Sleep(time.Second)
 	go func() {
 		server = listen(port)
 	}()
@@ -292,7 +292,7 @@ func RunRelay(port string) (string, error) {
 
 func StopRelay() (string, error) {
 	if server == nil {
-		return "already_closed", fmt.Errorf("relay not active")
+		return "already_closed", nil
 	}
 	server.Close()
 	server = nil

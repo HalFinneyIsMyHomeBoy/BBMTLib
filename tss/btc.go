@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net/http"
 	"sort"
+	"strconv"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -30,19 +30,37 @@ type UTXO struct {
 }
 
 var _btc_net = "testnet3" // default to testnet
-var _api_url = "https://blockstream.info/testnet/api"
+var _api_url = "https://mempool.space/testnet/api"
+var _fee_set = "30m"
 
 func SetNetwork(network string) (string, error) {
 	if network == "mainnet" || network == "testnet3" {
 		_btc_net = network
 		if network == "mainnet" {
-			_api_url = "https://blockstream.info/api"
+			_api_url = "https://mempool.space/api"
 		} else if network == "testnet3" {
-			_api_url = "https://blockstream.info/testnet/api"
+			_api_url = "https://mempool.space/testnet/api"
 		}
 		return _api_url, nil
 	}
 	return "", fmt.Errorf("non supported network %s", network)
+}
+
+func UseAPI(network, base string) (string, error) {
+	if network == "mainnet" || network == "testnet3" {
+		_btc_net = network
+		_api_url = base
+		return _api_url, nil
+	}
+	return "", fmt.Errorf("non supported network %s", network)
+}
+
+func UseFeePolicy(feeType string) (string, error) {
+	if feeType == "30m" || feeType == "1hr" || feeType == "min" || feeType == "eco" || feeType == "top" {
+		_fee_set = feeType
+		return "ok", nil
+	}
+	return "", fmt.Errorf("invalid fee type: top, eco, min, 1hr, 30m")
 }
 
 func GetNetwork() (string, error) {
@@ -63,6 +81,19 @@ func FetchUTXOs(address string) ([]UTXO, error) {
 		return nil, fmt.Errorf("failed to parse UTXO response: %w", err)
 	}
 	return utxos, nil
+}
+
+func TotalUTXO(address string) (string, error) {
+	utxos, err := FetchUTXOs(address)
+	if err != nil {
+		return "", err
+	}
+	total := 0
+	for _, utxo := range utxos {
+		log.Printf("Adding UTXO: %s with value: %d", utxo.TxID, utxo.Value)
+		total = total + int(utxo.Value)
+	}
+	return fmt.Sprintf("%d", total), nil
 }
 
 func FetchUTXODetails(txID string, vout uint32) (*wire.TxOut, bool, error) {
@@ -95,25 +126,33 @@ func FetchUTXODetails(txID string, vout uint32) (*wire.TxOut, bool, error) {
 	return nil, false, fmt.Errorf("invalid vout for txID %s", txID)
 }
 
-// FetchFeeRate fetches fee rates for a given confirmation target
-func FetchFeeRate(target int) (float64, error) {
-	url := fmt.Sprintf("%s/fee-estimates", _api_url)
+func RecommendedFees(feeType string) (int, error) {
+	url := fmt.Sprintf("%s/v1/fees/recommended", _api_url)
 	resp, err := http.Get(url)
 	if err != nil {
-		return 0, fmt.Errorf("failed to fetch fee rates: %w", err)
+		return 0, err
 	}
 	defer resp.Body.Close()
 
-	var feeRates map[string]float64
-	if err := json.NewDecoder(resp.Body).Decode(&feeRates); err != nil {
-		return 0, fmt.Errorf("failed to parse fee rate response: %w", err)
+	var fees FeeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&fees); err != nil {
+		return 0, err
 	}
 
-	rate, ok := feeRates[fmt.Sprintf("%d", target)]
-	if !ok {
-		return 0, fmt.Errorf("fee rate for target %d not available", target)
+	switch feeType {
+	case "top":
+		return fees.FastestFee, nil
+	case "30m":
+		return fees.HalfHourFee, nil
+	case "1hr":
+		return fees.HourFee, nil
+	case "eco":
+		return fees.EconomyFee, nil
+	case "min":
+		return fees.MinimumFee, nil
+	default:
+		return 0, errors.New("invalid fee type: top, eco, min, 1hr, 30m")
 	}
-	return rate, nil
 }
 
 func PostTx(rawTxHex string) (string, error) {
@@ -419,6 +458,155 @@ func MpcSendBTC(
 	return txid, nil
 }
 
+func DecodeAddress(address string) (string, error) {
+	params := &chaincfg.TestNet3Params
+	if _btc_net == "mainnet" {
+		params = &chaincfg.MainNetParams
+	}
+	addr, err := btcutil.DecodeAddress(address, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode sender address: %w", err)
+	}
+	return addr.EncodeAddress(), nil
+}
+
+func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, receiverAddress string) (int64, error) {
+	params := &chaincfg.TestNet3Params
+	if _btc_net == "mainnet" {
+		params = &chaincfg.MainNetParams
+		log.Println("Using MainNet parameters")
+	} else {
+		log.Println("Using TestNet3 parameters")
+	}
+
+	// Decode addresses
+	fromAddr, err := btcutil.DecodeAddress(senderAddress, params)
+	if err != nil {
+		return 0, fmt.Errorf("failed to decode sender address: %w", err)
+	}
+	log.Printf("Sender Address Decoded: %s, Type: %T", senderAddress, fromAddr)
+
+	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
+	if err != nil {
+		return 0, fmt.Errorf("failed to decode receiver address: %w", err)
+	}
+	log.Printf("Receiver Address Decoded: %s, Type: %T", receiverAddress, toAddr)
+
+	// Fetch fee rate for 1 confirmation
+	feeRate, err := RecommendedFees(_fee_set)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch fee rate: %w", err)
+	}
+	log.Printf("Fee Rate for 1 confirmation: %d sat/vB", feeRate)
+
+	// Estimate transaction size
+	var estimatedSize = 10 // Base size for version, locktime, etc.
+	log.Printf("Starting transaction size estimation with base size: %d bytes", estimatedSize)
+
+	// Estimate input size based on UTXO type
+	for i, utxo := range utxos {
+		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
+		if err != nil {
+			return 0, fmt.Errorf("failed to fetch UTXO details for %s:%d: %w", utxo.TxID, utxo.Vout, err)
+		}
+		log.Printf("UTXO %d: TXID %s, Vout %d, IsWitness: %v", i, utxo.TxID, utxo.Vout, isWitness)
+
+		if isWitness {
+			if txscript.IsPayToWitnessPubKeyHash(txOut.PkScript) {
+				log.Printf("UTXO %d is P2WPKH", i)
+				estimatedSize += 68  // SegWit input without witness data
+				estimatedSize += 107 // Witness data size (approx)
+			} else if txscript.IsWitnessProgram(txOut.PkScript) {
+				log.Printf("UTXO %d is P2TR", i)
+				estimatedSize += 68 // SegWit input without witness data
+				estimatedSize += 65 // Taproot signature
+			} else {
+				log.Printf("UTXO %d is other SegWit type", i)
+				estimatedSize += 68  // SegWit input without witness data
+				estimatedSize += 107 // Assuming P2WSH-like size for witness data
+			}
+		} else {
+			if txscript.IsPayToScriptHash(txOut.PkScript) {
+				log.Printf("UTXO %d is P2SH", i)
+				estimatedSize += 180 // Assuming a 2-of-3 multi-sig for P2SH
+			} else if txscript.IsPayToPubKeyHash(txOut.PkScript) {
+				log.Printf("UTXO %d is P2PKH", i)
+				estimatedSize += 148
+			} else {
+				log.Printf("UTXO %d assumed to be P2MS", i)
+				estimatedSize += 180 // This is an approximation; actual size can vary
+			}
+		}
+		log.Printf("Current estimated size after UTXO %d: %d bytes", i, estimatedSize)
+	}
+
+	// Estimate output size based on address types
+	log.Printf("Estimating output size for receiver address...")
+	if _, ok := toAddr.(*btcutil.AddressPubKeyHash); ok {
+		estimatedSize += 34
+		log.Println("Receiver is P2PKH: Added 34 bytes")
+	} else if _, ok := toAddr.(*btcutil.AddressScriptHash); ok {
+		estimatedSize += 34
+		log.Println("Receiver is P2SH: Added 34 bytes")
+	} else if _, ok := toAddr.(*btcutil.AddressWitnessPubKeyHash); ok {
+		estimatedSize += 31
+		log.Println("Receiver is P2WPKH: Added 31 bytes")
+	} else if _, ok := toAddr.(*btcutil.AddressWitnessScriptHash); ok {
+		estimatedSize += 43
+		log.Println("Receiver is P2WSH: Added 43 bytes")
+	} else if _, ok := toAddr.(*btcutil.AddressTaproot); ok {
+		estimatedSize += 34
+		log.Println("Receiver is P2TR: Added 34 bytes")
+	} else {
+		return 0, fmt.Errorf("unsupported address type for receiver")
+	}
+
+	// Check if change is needed
+	totalInputValue := int64(0)
+	for _, utxo := range utxos {
+		totalInputValue += utxo.Value
+	}
+	log.Printf("Total input value: %d satoshis", totalInputValue)
+
+	changeAmount := totalInputValue - satoshiAmount
+	log.Printf("Change amount: %d satoshis", changeAmount)
+
+	if changeAmount > 546 { // Dust threshold for Bitcoin
+		log.Printf("Adding change output because change amount exceeds dust threshold")
+		if _, ok := fromAddr.(*btcutil.AddressPubKeyHash); ok {
+			estimatedSize += 34
+			log.Println("Change output is P2PKH: Added 34 bytes")
+		} else if _, ok := fromAddr.(*btcutil.AddressScriptHash); ok {
+			estimatedSize += 34
+			log.Println("Change output is P2SH: Added 34 bytes")
+		} else if _, ok := fromAddr.(*btcutil.AddressWitnessPubKeyHash); ok {
+			estimatedSize += 31
+			log.Println("Change output is P2WPKH: Added 31 bytes")
+		} else if _, ok := fromAddr.(*btcutil.AddressWitnessScriptHash); ok {
+			estimatedSize += 43
+			log.Println("Change output is P2WSH: Added 43 bytes")
+		} else if _, ok := fromAddr.(*btcutil.AddressTaproot); ok {
+			estimatedSize += 34
+			log.Println("Change output is P2TR: Added 34 bytes")
+		} else {
+			return 0, fmt.Errorf("unsupported address type for sender")
+		}
+	}
+
+	log.Printf("Final estimated transaction size: %d bytes", estimatedSize)
+
+	// Calculate fee
+	estimatedFee := int64(estimatedSize * feeRate / 1000)
+	log.Printf("Estimated Fee: %d satoshis", estimatedFee)
+
+	// 1 sat/vb
+	if estimatedFee < int64(estimatedSize) {
+		return int64(estimatedSize), nil
+	}
+
+	return estimatedFee, nil
+}
+
 func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, preview, amountSatoshi int64) (string, error) {
 	log.Println("BBMTLog", "invoking SendBitcoin...")
 	params := &chaincfg.TestNet3Params
@@ -437,13 +625,21 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 		return "", err
 	}
 
-	feeRate, err := FetchFeeRate(1)
+	if preview > 0 {
+		_fee, _err := previewTxFees(senderAddress, selectedUTXOs, amountSatoshi, receiverAddress)
+		if _err != nil {
+			return "", _err
+		}
+		return strconv.FormatInt(_fee, 10), nil
+	}
+
+	feeRate, err := RecommendedFees(_fee_set)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch fee rate: %w", err)
 	}
 
 	// Estimate transaction size more accurately
-	var estimatedSize float64 = 10 // Base size for version, locktime, etc.
+	var estimatedSize = 10 // Base size for version, locktime, etc.
 
 	// Inputs
 	for _, utxo := range selectedUTXOs {
@@ -469,7 +665,7 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 		estimatedSize += 34 // Assuming change will go back to the same address type
 	}
 
-	estimatedFee := int64(math.Ceil(estimatedSize * feeRate / 1000))
+	estimatedFee := int64(estimatedSize * feeRate / 1000)
 	log.Printf("Estimated Fee: %d", estimatedFee)
 
 	if preview > 0 {
