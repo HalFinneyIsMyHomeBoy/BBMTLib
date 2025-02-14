@@ -94,16 +94,14 @@ func DiscoverPeer(id, pubkey, localIP, port, timeout string) (string, error) {
 	}
 
 	// min of 10 seconds
-	if tout < 10 {
-		tout = 10
+	if tout < 5 {
+		tout = 5
 	}
 
 	// Use context for timeout and cancellation
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(tout)*time.Second)
 	defer cancel()
 
-	// Semaphore for concurrency control
-	sem := make(chan struct{}, 85)
 	var wg sync.WaitGroup
 
 	for i := 1; i <= 254; i++ {
@@ -114,10 +112,8 @@ func DiscoverPeer(id, pubkey, localIP, port, timeout string) (string, error) {
 		}
 
 		wg.Add(1)
-		sem <- struct{}{} // Acquire token for concurrency limit
 		go func(ip string) {
 			defer func() {
-				<-sem // Release token
 				wg.Done()
 			}()
 
