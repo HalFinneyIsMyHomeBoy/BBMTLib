@@ -1,6 +1,7 @@
 package tss
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -43,10 +45,10 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 					log.Println("BBMTLog", "Error in callback:", err)
 				}
 			}()
-			peerFound <- clientIP + "@" + srcId + "@" + srcPubkey + "," + dstIP + "@" + id + "@" + pubkey
+			peerFound <- (clientIP + "@" + srcId + "@" + srcPubkey + "," + dstIP + "@" + id + "@" + pubkey)
 		}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, clientIP+"@"+srcId+"@"+srcPubkey+","+dstIP+"@"+id+"@"+pubkey)
+		fmt.Fprintln(w, dstIP+"@"+id+"@"+pubkey+","+clientIP+"@"+srcId+"@"+srcPubkey)
 	})
 
 	if server != nil {
@@ -82,30 +84,48 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 func DiscoverPeer(id, pubkey, localIP, port, timeout string) (string, error) {
 	if localIP == "" {
 		return "", fmt.Errorf("no local IP detected, skipping peer discovery")
-	} else {
-		baseIP := localIP[:strings.LastIndex(localIP, ".")+1]
-		peerFound := make(chan string)
-		tout, err := strconv.Atoi(timeout)
-		if err != nil {
-			tout = 30
+	}
+
+	baseIP := localIP[:strings.LastIndex(localIP, ".")+1]
+	peerFound := make(chan string)
+	tout, err := strconv.Atoi(timeout)
+	if err != nil {
+		tout = 30
+	}
+
+	// min of 10 seconds
+	if tout < 10 {
+		tout = 10
+	}
+
+	// Use context for timeout and cancellation
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(tout)*time.Second)
+	defer cancel()
+
+	// Semaphore for concurrency control
+	sem := make(chan struct{}, 85)
+	var wg sync.WaitGroup
+
+	for i := 1; i <= 254; i++ {
+		targetIP := fmt.Sprintf("%s%d:%s", baseIP, i, port)
+		if localIP == fmt.Sprintf("%s%d", baseIP, i) {
+			log.Println("BBMTLog", "skip self peer")
+			continue
 		}
 
-		timeoutChan := make(chan struct{})
-		go func() {
-			time.Sleep(time.Duration(tout) * time.Second)
-			close(timeoutChan)
-		}()
+		wg.Add(1)
+		sem <- struct{}{} // Acquire token for concurrency limit
+		go func(ip string) {
+			defer func() {
+				<-sem // Release token
+				wg.Done()
+			}()
 
-		for i := 1; i <= 254; i++ {
-			targetIP := fmt.Sprintf("%s%d:%s", baseIP, i, port)
-			if localIP == fmt.Sprintf("%s%d", baseIP, i) {
-				log.Println("BBMTLog", "skip self peer")
-				continue
-			}
-			go func(ip string) {
-				client := http.Client{
-					Timeout: 1 * time.Second,
-				}
+			select {
+			case <-ctx.Done():
+				return // If context is done (timeout or peer found), return early
+			default:
+				client := &http.Client{Timeout: 2000 * time.Millisecond}
 				url := "http://" + ip + "/?src=" + localIP + "&dst=" + ip + "&id=" + id + "&pubkey=" + pubkey
 				log.Println("BBMTLog", "checking for peer connection:", url)
 				resp, err := client.Get(url)
@@ -114,18 +134,28 @@ func DiscoverPeer(id, pubkey, localIP, port, timeout string) (string, error) {
 					bodyBytes, err := io.ReadAll(resp.Body)
 					if err == nil {
 						peerFound <- string(bodyBytes)
+						cancel() // Cancel all other goroutines if a peer is found
 					}
 				} else {
 					log.Println("BBMTLog", "Peer not available at:", ip)
 				}
-			}(targetIP)
-		}
-		select {
-		case peerIP := <-peerFound:
-			return peerIP, nil
-		case <-timeoutChan:
+			}
+		}(targetIP)
+	}
+
+	defer wg.Wait()
+
+	// Wait for either peer discovery, context cancellation or timeout
+	select {
+	case peerIP := <-peerFound:
+		// Wait for all goroutines to complete before returning to avoid resource leaks
+		return peerIP, nil
+	case <-ctx.Done():
+		// Here we check if it's a timeout or manual cancellation (peer found)
+		if ctx.Err() == context.DeadlineExceeded {
 			return "", fmt.Errorf("peer discovery timed out after %d seconds", tout)
 		}
+		return "", fmt.Errorf("peer discovery stopped")
 	}
 }
 
