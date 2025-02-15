@@ -66,7 +66,7 @@ func TestAddress(t *testing.T) {
 	// Print JSON
 	fmt.Println(string(jsonData))
 
-	feeRate, err := FetchFeeRate(1) // 1-block confirmation target
+	feeRate, err := RecommendedFees("30m")
 	if err != nil {
 		fmt.Println("Error fetching fee rate:", err)
 		return

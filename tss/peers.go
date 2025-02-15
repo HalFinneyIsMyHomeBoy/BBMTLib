@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -85,38 +84,24 @@ func DiscoverPeer(id, pubkey, localIP, port, timeout string) (string, error) {
 	if localIP == "" {
 		return "", fmt.Errorf("no local IP detected, skipping peer discovery")
 	}
-
 	baseIP := localIP[:strings.LastIndex(localIP, ".")+1]
 	peerFound := make(chan string)
 	tout, err := strconv.Atoi(timeout)
 	if err != nil {
 		tout = 30
 	}
-
-	// min of 10 seconds
 	if tout < 5 {
 		tout = 5
 	}
-
-	// Use context for timeout and cancellation
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(tout)*time.Second)
 	defer cancel()
-
-	var wg sync.WaitGroup
-
 	for i := 1; i <= 254; i++ {
 		targetIP := fmt.Sprintf("%s%d:%s", baseIP, i, port)
 		if localIP == fmt.Sprintf("%s%d", baseIP, i) {
 			log.Println("BBMTLog", "skip self peer")
 			continue
 		}
-
-		wg.Add(1)
 		go func(ip string) {
-			defer func() {
-				wg.Done()
-			}()
-
 			select {
 			case <-ctx.Done():
 				return // If context is done (timeout or peer found), return early
@@ -137,17 +122,12 @@ func DiscoverPeer(id, pubkey, localIP, port, timeout string) (string, error) {
 				}
 			}
 		}(targetIP)
+		time.Sleep(10 * time.Millisecond)
 	}
-
-	defer wg.Wait()
-
-	// Wait for either peer discovery, context cancellation or timeout
 	select {
 	case peerIP := <-peerFound:
-		// Wait for all goroutines to complete before returning to avoid resource leaks
 		return peerIP, nil
 	case <-ctx.Done():
-		// Here we check if it's a timeout or manual cancellation (peer found)
 		if ctx.Err() == context.DeadlineExceeded {
 			return "", fmt.Errorf("peer discovery timed out after %d seconds", tout)
 		}
