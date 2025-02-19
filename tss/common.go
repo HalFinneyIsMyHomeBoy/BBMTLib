@@ -8,11 +8,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
-	"log"
 	"math"
 	"math/big"
-	"os"
 	"strconv"
 	"strings"
 
@@ -208,10 +205,4 @@ func Sha256(msg string) (string, error) {
 	hash.Write([]byte(msg))
 	hashBytes := hash.Sum(nil)
 	return hex.EncodeToString(hashBytes), nil
-}
-
-func DisableLogs() {
-	log.SetOutput(io.Discard)
-	os.Stdout = os.NewFile(0, os.DevNull)
-	os.Stderr = os.NewFile(0, os.DevNull)
 }

@@ -2,7 +2,6 @@ package tss
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 )
 
 func TestCreateAddress(t *testing.T) {
-	log.Println("creating wallet")
+	Logln("creating wallet")
 	privateKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		t.Fatalf("Failed to generate private key: %v", err)
@@ -36,9 +35,9 @@ func TestCreateAddress(t *testing.T) {
 	}
 
 	// Print the values
-	fmt.Printf("Private Key (WIF): %s\n", wifKey)
-	fmt.Printf("Public Key: %x\n", publicKey.SerializeCompressed())
-	fmt.Printf("Bitcoin Address (testnet3): %s\n", address.EncodeAddress())
+	Logln("Private Key (WIF): %s\n", wifKey)
+	Logln("Public Key: %x\n", publicKey.SerializeCompressed())
+	Logln("Bitcoin Address (testnet3): %s\n", address.EncodeAddress())
 
 	/*
 		Private Key (WIF): cT3tu4QnwzRZe7oGMeQ8k9K5t3z1UAGD1FxJvzJmLz9aTJYfHi1h
@@ -53,7 +52,7 @@ func TestAddress(t *testing.T) {
 
 	utxos, err := FetchUTXOs(address)
 	if err != nil {
-		fmt.Println("Error fetching UTXOs:", err)
+		Logln("Error fetching UTXOs:", err)
 		return
 	}
 
@@ -64,14 +63,14 @@ func TestAddress(t *testing.T) {
 	}
 
 	// Print JSON
-	fmt.Println(string(jsonData))
+	Logln(string(jsonData))
 
 	feeRate, err := RecommendedFees("30m")
 	if err != nil {
-		fmt.Println("Error fetching fee rate:", err)
+		Logln("Error fetching fee rate:", err)
 		return
 	}
-	fmt.Println("fee_rate", feeRate)
+	Logln("fee_rate", feeRate)
 }
 
 func TestSend(t *testing.T) {
@@ -89,11 +88,11 @@ func TestSend(t *testing.T) {
 	if err != nil {
 		log.Fatalf("Failed to estimate fee bitcoin: %v", err)
 	}
-	log.Printf("Estimated Fee %s", fee)
+	Logf("Estimated Fee %s", fee)
 
 	txid, err := SendBitcoin(wif, senderPub, senderAddress, receiverAddress, 0, amountSatoshi)
 	if err != nil {
 		log.Fatalf("Failed to send bitcoin: %v", err)
 	}
-	log.Printf("Transaction successful! TXID: %s", txid)
+	Logf("Transaction successful! TXID: %s", txid)
 }
