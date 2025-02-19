@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -90,7 +89,7 @@ func TotalUTXO(address string) (string, error) {
 	}
 	total := 0
 	for _, utxo := range utxos {
-		log.Printf("Adding UTXO: %s with value: %d", utxo.TxID, utxo.Value)
+		Logf("Adding UTXO: %s with value: %d", utxo.TxID, utxo.Value)
 		total = total + int(utxo.Value)
 	}
 	return fmt.Sprintf("%d", total), nil
@@ -180,7 +179,7 @@ func PostTx(rawTxHex string) (string, error) {
 		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("failed to broadcast transaction: %s", string(body))
 	} else {
-		log.Printf("ok")
+		Logf("ok")
 	}
 	// Read the transaction ID (txid) from the response body
 	txid, err := io.ReadAll(resp.Body)
@@ -208,7 +207,7 @@ func SelectUTXOs(utxos []UTXO, totalAmount int64, strategy string) ([]UTXO, int6
 	var totalSelected int64
 
 	for _, utxo := range utxos {
-		log.Printf("Selecting UTXO: %s with value: %d", utxo.TxID, utxo.Value)
+		Logf("Selecting UTXO: %s with value: %d", utxo.TxID, utxo.Value)
 		selected = append(selected, utxo)
 		totalSelected += utxo.Value
 		if totalSelected >= totalAmount {
@@ -219,7 +218,7 @@ func SelectUTXOs(utxos []UTXO, totalAmount int64, strategy string) ([]UTXO, int6
 	if totalSelected < totalAmount {
 		return nil, 0, fmt.Errorf("insufficient funds: needed %d, got %d", totalAmount, totalSelected)
 	}
-	log.Printf("Total selected amount / needed amount: %d/%d", totalSelected, totalAmount)
+	Logf("Total selected amount / needed amount: %d/%d", totalSelected, totalAmount)
 
 	return selected, totalSelected, nil
 }
@@ -236,99 +235,99 @@ func MpcSendBTC(
 	/* btc */
 	publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64) (string, error) {
 
-	log.Println("BBMTLog", "invoking MpcSendBTC...")
+	Logln("BBMTLog", "invoking MpcSendBTC...")
 
 	params := &chaincfg.TestNet3Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
-		log.Println("Using mainnet parameters")
+		Logln("Using mainnet parameters")
 	} else {
-		log.Println("Using testnet parameters")
+		Logln("Using testnet parameters")
 	}
 
 	pubKeyBytes, err := hex.DecodeString(publicKey)
 	if err != nil {
-		log.Printf("Error decoding public key: %v", err)
+		Logf("Error decoding public key: %v", err)
 		return "", fmt.Errorf("invalid public key format: %w", err)
 	}
-	log.Println("Public key decoded successfully")
+	Logln("Public key decoded successfully")
 
 	fromAddr, err := btcutil.DecodeAddress(senderAddress, params)
 	if err != nil {
-		log.Printf("Error decoding sender address: %v", err)
+		Logf("Error decoding sender address: %v", err)
 		return "", fmt.Errorf("failed to decode sender address: %w", err)
 	}
-	log.Println("Sender address decoded successfully")
+	Logln("Sender address decoded successfully")
 
 	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
 	if err != nil {
-		log.Printf("Error decoding receiver address: %v", err)
+		Logf("Error decoding receiver address: %v", err)
 		return "", fmt.Errorf("failed to decode receiver address: %w", err)
 	}
 
-	log.Printf("Sender Address Type: %T", fromAddr)
-	log.Printf("Receiver Address Type: %T", toAddr)
+	Logf("Sender Address Type: %T", fromAddr)
+	Logf("Receiver Address Type: %T", toAddr)
 
 	utxos, err := FetchUTXOs(senderAddress)
 	if err != nil {
-		log.Printf("Error fetching UTXOs: %v", err)
+		Logf("Error fetching UTXOs: %v", err)
 		return "", fmt.Errorf("failed to fetch UTXOs: %w", err)
 	}
-	log.Printf("Fetched UTXOs: %+v", utxos)
+	Logf("Fetched UTXOs: %+v", utxos)
 
 	selectedUTXOs, totalAmount, err := SelectUTXOs(utxos, amountSatoshi, "smallest")
 	if err != nil {
-		log.Printf("Error selecting UTXOs: %v", err)
+		Logf("Error selecting UTXOs: %v", err)
 		return "", err
 	}
-	log.Printf("Selected UTXOs: %+v, Total Amount: %d", selectedUTXOs, totalAmount)
+	Logf("Selected UTXOs: %+v, Total Amount: %d", selectedUTXOs, totalAmount)
 
 	// Create new transaction
 	tx := wire.NewMsgTx(wire.TxVersion)
-	log.Println("New transaction created")
+	Logln("New transaction created")
 
 	// Add all inputs
 	for _, utxo := range selectedUTXOs {
 		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
 		outPoint := wire.NewOutPoint(hash, utxo.Vout)
 		tx.AddTxIn(wire.NewTxIn(outPoint, nil, nil))
-		log.Printf("Added UTXO to transaction: %+v", utxo)
+		Logf("Added UTXO to transaction: %+v", utxo)
 	}
 
-	log.Printf("Estimated Fee: %d", estimatedFee)
+	Logf("Estimated Fee: %d", estimatedFee)
 
 	if totalAmount < amountSatoshi+estimatedFee {
-		log.Printf("Insufficient funds: available %d, needed %d", totalAmount, amountSatoshi+estimatedFee)
+		Logf("Insufficient funds: available %d, needed %d", totalAmount, amountSatoshi+estimatedFee)
 		return "", fmt.Errorf("insufficient funds: available %d, needed %d", totalAmount, amountSatoshi+estimatedFee)
 	}
-	log.Println("Sufficient funds available")
+	Logln("Sufficient funds available")
 
 	// Add recipient output
 	pkScript, err := txscript.PayToAddrScript(toAddr)
 	if err != nil {
-		log.Printf("Error creating output script: %v", err)
+		Logf("Error creating output script: %v", err)
 		return "", fmt.Errorf("failed to create output script: %w", err)
 	}
 	tx.AddTxOut(wire.NewTxOut(amountSatoshi, pkScript))
-	log.Printf("Added recipient output: %d satoshis to %s", amountSatoshi, receiverAddress)
+	Logf("Added recipient output: %d satoshis to %s", amountSatoshi, receiverAddress)
 
 	// Add change output if necessary
 	changeAmount := totalAmount - amountSatoshi - estimatedFee
 	if changeAmount > 546 {
 		changePkScript, err := txscript.PayToAddrScript(fromAddr)
 		if err != nil {
-			log.Printf("Error creating change script: %v", err)
+			Logf("Error creating change script: %v", err)
 			return "", fmt.Errorf("failed to create change script: %w", err)
 		}
 		tx.AddTxOut(wire.NewTxOut(changeAmount, changePkScript))
-		log.Printf("Added change output: %d satoshis to %s", changeAmount, senderAddress)
+		Logf("Added change output: %d satoshis to %s", changeAmount, senderAddress)
 	}
 
 	// Sign each input
 	for i, utxo := range selectedUTXOs {
 		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
 		if err != nil {
-			log.Printf("Error fetching UTXO details: %v", err)
+			Logf("Error fetching UTXO details: %v", err)
 			return "", fmt.Errorf("failed to fetch UTXO details: %w", err)
 		}
 
@@ -336,11 +335,11 @@ func MpcSendBTC(
 		prevOutFetcher := txscript.NewCannedPrevOutputFetcher(txOut.PkScript, txOut.Value)
 
 		if isWitness {
-			log.Printf("Processing SegWit input for index: %d", i)
+			Logf("Processing SegWit input for index: %d", i)
 			hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
 			sigHash, err = txscript.CalcWitnessSigHash(txOut.PkScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
 			if err != nil {
-				log.Printf("Error calculating witness sighash: %v", err)
+				Logf("Error calculating witness sighash: %v", err)
 				return "", fmt.Errorf("failed to calculate witness sighash: %w", err)
 			}
 
@@ -371,13 +370,13 @@ func MpcSendBTC(
 				pubKeyBytes,
 			}
 			tx.TxIn[i].SignatureScript = nil
-			log.Printf("Witness set for input %d: %v", i, tx.TxIn[i].Witness)
+			Logf("Witness set for input %d: %v", i, tx.TxIn[i].Witness)
 		} else {
-			log.Printf("Processing P2PKH input for index: %d", i)
+			Logf("Processing P2PKH input for index: %d", i)
 			// For P2PKH outputs
 			sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
 			if err != nil {
-				log.Printf("Error calculating sighash: %v", err)
+				Logf("Error calculating sighash: %v", err)
 				return "", fmt.Errorf("failed to calculate sighash: %w", err)
 			}
 
@@ -408,12 +407,12 @@ func MpcSendBTC(
 			builder.AddData(pubKeyBytes)
 			scriptSig, err := builder.Script()
 			if err != nil {
-				log.Printf("Error building scriptSig: %v", err)
+				Logf("Error building scriptSig: %v", err)
 				return "", fmt.Errorf("failed to build scriptSig: %w", err)
 			}
 			tx.TxIn[i].SignatureScript = scriptSig
 			tx.TxIn[i].Witness = nil
-			log.Printf("SignatureScript set for input %d: %x", i, tx.TxIn[i].SignatureScript)
+			Logf("SignatureScript set for input %d: %x", i, tx.TxIn[i].SignatureScript)
 		}
 
 		// Script validation
@@ -428,33 +427,33 @@ func MpcSendBTC(
 			prevOutFetcher,
 		)
 		if err != nil {
-			log.Printf("Error creating script engine for input %d: %v", i, err)
+			Logf("Error creating script engine for input %d: %v", i, err)
 			return "", fmt.Errorf("failed to create script engine for input %d: %w", i, err)
 		}
 		if err := vm.Execute(); err != nil {
-			log.Printf("Script validation failed for input %d: %v", i, err)
+			Logf("Script validation failed for input %d: %v", i, err)
 			return "", fmt.Errorf("script validation failed for input %d: %w", i, err)
 		}
-		log.Printf("Script validation succeeded for input %d", i)
+		Logf("Script validation succeeded for input %d", i)
 	}
 
 	// Serialize and broadcast
 	var signedTx bytes.Buffer
 	if err := tx.Serialize(&signedTx); err != nil {
-		log.Printf("Error serializing transaction: %v", err)
+		Logf("Error serializing transaction: %v", err)
 		return "", fmt.Errorf("failed to serialize transaction: %w", err)
 	}
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
-	log.Println("Raw Transaction:", rawTx)
+	Logln("Raw Transaction:", rawTx)
 
 	txid, err := PostTx(rawTx)
 	if err != nil {
-		log.Printf("Error broadcasting transaction: %v", err)
+		Logf("Error broadcasting transaction: %v", err)
 		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
 
-	log.Printf("Transaction broadcasted successfully, txid: %s", txid)
+	Logf("Transaction broadcasted successfully, txid: %s", txid)
 	return txid, nil
 }
 
@@ -474,9 +473,9 @@ func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 	params := &chaincfg.TestNet3Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
-		log.Println("Using MainNet parameters")
+		Logln("Using MainNet parameters")
 	} else {
-		log.Println("Using TestNet3 parameters")
+		Logln("Using TestNet3 parameters")
 	}
 
 	// Decode addresses
@@ -484,24 +483,24 @@ func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 	if err != nil {
 		return 0, fmt.Errorf("failed to decode sender address: %w", err)
 	}
-	log.Printf("Sender Address Decoded: %s, Type: %T", senderAddress, fromAddr)
+	Logf("Sender Address Decoded: %s, Type: %T", senderAddress, fromAddr)
 
 	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
 	if err != nil {
 		return 0, fmt.Errorf("failed to decode receiver address: %w", err)
 	}
-	log.Printf("Receiver Address Decoded: %s, Type: %T", receiverAddress, toAddr)
+	Logf("Receiver Address Decoded: %s, Type: %T", receiverAddress, toAddr)
 
 	// Fetch fee rate for 1 confirmation
 	feeRate, err := RecommendedFees(_fee_set)
 	if err != nil {
 		return 0, fmt.Errorf("failed to fetch fee rate: %w", err)
 	}
-	log.Printf("Fee Rate for 1 confirmation: %d sat/vB", feeRate)
+	Logf("Fee Rate for 1 confirmation: %d sat/vB", feeRate)
 
 	// Estimate transaction size
 	var estimatedSize = 10 // Base size for version, locktime, etc.
-	log.Printf("Starting transaction size estimation with base size: %d bytes", estimatedSize)
+	Logf("Starting transaction size estimation with base size: %d bytes", estimatedSize)
 
 	// Estimate input size based on UTXO type
 	for i, utxo := range utxos {
@@ -509,54 +508,54 @@ func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 		if err != nil {
 			return 0, fmt.Errorf("failed to fetch UTXO details for %s:%d: %w", utxo.TxID, utxo.Vout, err)
 		}
-		log.Printf("UTXO %d: TXID %s, Vout %d, IsWitness: %v", i, utxo.TxID, utxo.Vout, isWitness)
+		Logf("UTXO %d: TXID %s, Vout %d, IsWitness: %v", i, utxo.TxID, utxo.Vout, isWitness)
 
 		if isWitness {
 			if txscript.IsPayToWitnessPubKeyHash(txOut.PkScript) {
-				log.Printf("UTXO %d is P2WPKH", i)
+				Logf("UTXO %d is P2WPKH", i)
 				estimatedSize += 68  // SegWit input without witness data
 				estimatedSize += 107 // Witness data size (approx)
 			} else if txscript.IsWitnessProgram(txOut.PkScript) {
-				log.Printf("UTXO %d is P2TR", i)
+				Logf("UTXO %d is P2TR", i)
 				estimatedSize += 68 // SegWit input without witness data
 				estimatedSize += 65 // Taproot signature
 			} else {
-				log.Printf("UTXO %d is other SegWit type", i)
+				Logf("UTXO %d is other SegWit type", i)
 				estimatedSize += 68  // SegWit input without witness data
 				estimatedSize += 107 // Assuming P2WSH-like size for witness data
 			}
 		} else {
 			if txscript.IsPayToScriptHash(txOut.PkScript) {
-				log.Printf("UTXO %d is P2SH", i)
+				Logf("UTXO %d is P2SH", i)
 				estimatedSize += 180 // Assuming a 2-of-3 multi-sig for P2SH
 			} else if txscript.IsPayToPubKeyHash(txOut.PkScript) {
-				log.Printf("UTXO %d is P2PKH", i)
+				Logf("UTXO %d is P2PKH", i)
 				estimatedSize += 148
 			} else {
-				log.Printf("UTXO %d assumed to be P2MS", i)
+				Logf("UTXO %d assumed to be P2MS", i)
 				estimatedSize += 180 // This is an approximation; actual size can vary
 			}
 		}
-		log.Printf("Current estimated size after UTXO %d: %d bytes", i, estimatedSize)
+		Logf("Current estimated size after UTXO %d: %d bytes", i, estimatedSize)
 	}
 
 	// Estimate output size based on address types
-	log.Printf("Estimating output size for receiver address...")
+	Logf("Estimating output size for receiver address...")
 	if _, ok := toAddr.(*btcutil.AddressPubKeyHash); ok {
 		estimatedSize += 34
-		log.Println("Receiver is P2PKH: Added 34 bytes")
+		Logln("Receiver is P2PKH: Added 34 bytes")
 	} else if _, ok := toAddr.(*btcutil.AddressScriptHash); ok {
 		estimatedSize += 34
-		log.Println("Receiver is P2SH: Added 34 bytes")
+		Logln("Receiver is P2SH: Added 34 bytes")
 	} else if _, ok := toAddr.(*btcutil.AddressWitnessPubKeyHash); ok {
 		estimatedSize += 31
-		log.Println("Receiver is P2WPKH: Added 31 bytes")
+		Logln("Receiver is P2WPKH: Added 31 bytes")
 	} else if _, ok := toAddr.(*btcutil.AddressWitnessScriptHash); ok {
 		estimatedSize += 43
-		log.Println("Receiver is P2WSH: Added 43 bytes")
+		Logln("Receiver is P2WSH: Added 43 bytes")
 	} else if _, ok := toAddr.(*btcutil.AddressTaproot); ok {
 		estimatedSize += 34
-		log.Println("Receiver is P2TR: Added 34 bytes")
+		Logln("Receiver is P2TR: Added 34 bytes")
 	} else {
 		return 0, fmt.Errorf("unsupported address type for receiver")
 	}
@@ -566,38 +565,38 @@ func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 	for _, utxo := range utxos {
 		totalInputValue += utxo.Value
 	}
-	log.Printf("Total input value: %d satoshis", totalInputValue)
+	Logf("Total input value: %d satoshis", totalInputValue)
 
 	changeAmount := totalInputValue - satoshiAmount
-	log.Printf("Change amount: %d satoshis", changeAmount)
+	Logf("Change amount: %d satoshis", changeAmount)
 
 	if changeAmount > 546 { // Dust threshold for Bitcoin
-		log.Printf("Adding change output because change amount exceeds dust threshold")
+		Logf("Adding change output because change amount exceeds dust threshold")
 		if _, ok := fromAddr.(*btcutil.AddressPubKeyHash); ok {
 			estimatedSize += 34
-			log.Println("Change output is P2PKH: Added 34 bytes")
+			Logln("Change output is P2PKH: Added 34 bytes")
 		} else if _, ok := fromAddr.(*btcutil.AddressScriptHash); ok {
 			estimatedSize += 34
-			log.Println("Change output is P2SH: Added 34 bytes")
+			Logln("Change output is P2SH: Added 34 bytes")
 		} else if _, ok := fromAddr.(*btcutil.AddressWitnessPubKeyHash); ok {
 			estimatedSize += 31
-			log.Println("Change output is P2WPKH: Added 31 bytes")
+			Logln("Change output is P2WPKH: Added 31 bytes")
 		} else if _, ok := fromAddr.(*btcutil.AddressWitnessScriptHash); ok {
 			estimatedSize += 43
-			log.Println("Change output is P2WSH: Added 43 bytes")
+			Logln("Change output is P2WSH: Added 43 bytes")
 		} else if _, ok := fromAddr.(*btcutil.AddressTaproot); ok {
 			estimatedSize += 34
-			log.Println("Change output is P2TR: Added 34 bytes")
+			Logln("Change output is P2TR: Added 34 bytes")
 		} else {
 			return 0, fmt.Errorf("unsupported address type for sender")
 		}
 	}
 
-	log.Printf("Final estimated transaction size: %d bytes", estimatedSize)
+	Logf("Final estimated transaction size: %d bytes", estimatedSize)
 
 	// Calculate fee
 	estimatedFee := int64(estimatedSize * feeRate / 1000)
-	log.Printf("Estimated Fee: %d satoshis", estimatedFee)
+	Logf("Estimated Fee: %d satoshis", estimatedFee)
 
 	// 1 sat/vb
 	if estimatedFee < int64(estimatedSize) {
@@ -608,7 +607,7 @@ func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 }
 
 func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, preview, amountSatoshi int64) (string, error) {
-	log.Println("BBMTLog", "invoking SendBitcoin...")
+	Logln("BBMTLog", "invoking SendBitcoin...")
 	params := &chaincfg.TestNet3Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
@@ -666,7 +665,7 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 	}
 
 	estimatedFee := int64(estimatedSize * feeRate / 1000)
-	log.Printf("Estimated Fee: %d", estimatedFee)
+	Logf("Estimated Fee: %d", estimatedFee)
 
 	if preview > 0 {
 		return fmt.Sprintf("%d", estimatedFee), nil
@@ -680,7 +679,7 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
 		outPoint := wire.NewOutPoint(hash, utxo.Vout)
 		tx.AddTxIn(wire.NewTxIn(outPoint, nil, nil))
-		log.Printf("Selected UTXOs: %+v", utxo)
+		Logf("Selected UTXOs: %+v", utxo)
 	}
 
 	if totalAmount < amountSatoshi+estimatedFee {
@@ -712,8 +711,8 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 		return "", fmt.Errorf("failed to decode receiver address: %w", err)
 	}
 
-	log.Printf("Sender Address Type: %T", fromAddr)
-	log.Printf("Receiver Address Type: %T", toAddr)
+	Logf("Sender Address Type: %T", fromAddr)
+	Logf("Receiver Address Type: %T", toAddr)
 
 	// Add recipient output
 	pkScript, err := txscript.PayToAddrScript(toAddr)
@@ -744,7 +743,7 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 		prevOutFetcher := txscript.NewCannedPrevOutputFetcher(txOut.PkScript, txOut.Value)
 
 		if isWitness {
-			log.Printf("Processing SegWit input for index: %d", i)
+			Logf("Processing SegWit input for index: %d", i)
 			// For SegWit outputs
 			hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
 			sigHash, err = txscript.CalcWitnessSigHash(txOut.PkScript, hashCache, txscript.SigHashAll, tx, i, txOut.Value)
@@ -762,9 +761,9 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 				pubKeyBytes,
 			}
 			tx.TxIn[i].SignatureScript = nil
-			log.Printf("Witness set for input %d: %v", i, tx.TxIn[i].Witness)
+			Logf("Witness set for input %d: %v", i, tx.TxIn[i].Witness)
 		} else {
-			log.Printf("Processing P2PKH input for index: %d", i)
+			Logf("Processing P2PKH input for index: %d", i)
 			// For P2PKH outputs
 			sigHash, err = txscript.CalcSignatureHash(txOut.PkScript, txscript.SigHashAll, tx, i)
 			if err != nil {
@@ -786,7 +785,7 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 			}
 			tx.TxIn[i].SignatureScript = scriptSig
 			tx.TxIn[i].Witness = nil
-			log.Printf("SignatureScript set for input %d: %x", i, tx.TxIn[i].SignatureScript)
+			Logf("SignatureScript set for input %d: %x", i, tx.TxIn[i].SignatureScript)
 		}
 
 		// Script validation
@@ -815,7 +814,7 @@ func SendBitcoin(wifKey, publicKey, senderAddress, receiverAddress string, previ
 	}
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
-	fmt.Println("Raw Transaction:", rawTx) // Print raw transaction for debugging
+	Logln("Raw Transaction:", rawTx) // Print raw transaction for debugging
 
 	txid, err := PostTx(rawTx)
 	if err != nil {

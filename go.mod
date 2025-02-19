@@ -18,7 +18,10 @@ require (
 	github.com/decred/dcrd/crypto/blake256 v1.0.1 // indirect
 	github.com/fomichev/secp256k1 v0.0.0-20180413221153-00116ff8c62f // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
-	golang.org/x/mobile v0.0.0-20250106192035-c31d5b91ecc3 // indirect
+	golang.org/x/mobile v0.0.0-20250218173827-cd096645fcd3 // indirect
+	golang.org/x/mod v0.23.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	golang.org/x/tools v0.30.0 // indirect
 )
 
 require (
@@ -30,7 +33,6 @@ require (
 	github.com/ecies/go/v2 v2.0.3
 	github.com/gogo/protobuf v1.3.3 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
-	github.com/gorilla/rpc v1.2.1
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
@@ -42,7 +44,7 @@ require (
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )
 

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"math/big"
 	"os"
 	"sort"
@@ -28,77 +27,77 @@ func (s *ServiceImpl) ApplyData(msg string) error {
 }
 
 func LocalPreParams(ppmFile string, timeoutMinutes int) (bool, error) {
-	log.Println("BBMTLog", "ppm generation...")
+	Logln("BBMTLog", "ppm generation...")
 
 	if _, err := os.Stat(ppmFile); err != nil {
 		if os.IsNotExist(err) {
-			log.Println("BBMTLog", "ppm file not found...")
+			Logln("BBMTLog", "ppm file not found...")
 		} else {
 			return false, fmt.Errorf("failed to generate pre-parameters: %w", err)
 		}
-		log.Println("BBMTLog", "ppm creation...")
-		log.Println("BBMTLog", "ppm GeneratePreParams...")
+		Logln("BBMTLog", "ppm creation...")
+		Logln("BBMTLog", "ppm GeneratePreParams...")
 		preParams, err := ecdsaKeygen.GeneratePreParams(time.Duration(timeoutMinutes) * time.Minute)
 		if err != nil {
 			return false, fmt.Errorf("failed to generate pre-parameters: %w", err)
 		}
 		if len(ppmFile) > 0 {
-			log.Println("BBMTLog", "ppm saving...")
+			Logln("BBMTLog", "ppm saving...")
 			if err := savePreParamsToFile(preParams, ppmFile); err != nil {
 				return false, fmt.Errorf("failed to save pre-parameters to file: %w", err)
 			}
-			log.Println("BBMTLog", "ppm ok...")
+			Logln("BBMTLog", "ppm ok...")
 			return true, nil
 		} else {
-			log.Println("BBMTLog", "ppm empty skip saving...")
+			Logln("BBMTLog", "ppm empty skip saving...")
 			return true, nil
 		}
 	} else {
-		log.Println("BBMTLog", "ppm file found...")
-		log.Println("BBMTLog", "ppm loading...")
+		Logln("BBMTLog", "ppm file found...")
+		Logln("BBMTLog", "ppm loading...")
 		_, err := loadPreParamsFromFile(ppmFile)
 		if err != nil {
 			return false, fmt.Errorf("failed to load pre-parameters from file: %w", err)
 		}
-		log.Println("BBMTLog", "ppm ok...")
+		Logln("BBMTLog", "ppm ok...")
 		return true, nil
 	}
 }
 
 func PreParams(ppmFile string) (*ecdsaKeygen.LocalPreParams, error) {
-	log.Println("BBMTLog", "ppm generation...")
+	Logln("BBMTLog", "ppm generation...")
 
 	if _, err := os.Stat(ppmFile); err != nil {
 		if os.IsNotExist(err) {
-			log.Println("BBMTLog", "ppm file not found...")
+			Logln("BBMTLog", "ppm file not found...")
 		} else {
 			return nil, fmt.Errorf("failed to generate pre-parameters: %w", err)
 		}
-		log.Println("BBMTLog", "ppm creation...")
-		log.Println("BBMTLog", "ppm GeneratePreParams...")
+		Logln("BBMTLog", "ppm creation...")
+		Logln("BBMTLog", "ppm GeneratePreParams...")
 		preParams, err := ecdsaKeygen.GeneratePreParams(10 * time.Minute)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate pre-parameters: %w", err)
 		}
 		if len(ppmFile) > 0 {
-			log.Println("BBMTLog", "ppm saving...")
+			Logln("BBMTLog", "ppm saving...")
 			if err := savePreParamsToFile(preParams, ppmFile); err != nil {
 				return nil, fmt.Errorf("failed to save pre-parameters to file: %w", err)
 			}
-			log.Println("BBMTLog", "ppm ok...")
+			Logln("BBMTLog", "ppm ok...")
 			return preParams, nil
 		} else {
-			log.Println("BBMTLog", "ppm empty skip saving...")
+			Logln("BBMTLog", "ppm empty skip saving...")
 			return preParams, nil
 		}
 	} else {
-		log.Println("BBMTLog", "ppm file found...")
-		log.Println("BBMTLog", "ppm loading...")
+		Logln("BBMTLog", "ppm file found...")
+		Logln("BBMTLog", "ppm loading...")
 		preParams, err := loadPreParamsFromFile(ppmFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load pre-parameters from file: %w", err)
 		}
-		log.Println("BBMTLog", "ppm ok...")
+		Logln("BBMTLog", "ppm ok...")
 		return preParams, nil
 	}
 }
@@ -208,13 +207,13 @@ func (s *ServiceImpl) KeygenECDSA(req *KeygenRequest) (*KeygenResponse, error) {
 	go func() {
 		tErr := localPartyECDSA.Start()
 		if tErr != nil {
-			log.Println("BBMTLog", "failed to start keygen process", "error", tErr)
+			Logln("BBMTLog", "failed to start keygen process", "error", tErr)
 			close(errChan)
 		}
 	}()
 	pubKey, err := s.processKeygen(localPartyECDSA, errChan, outCh, endCh, localState, partyIDs)
 	if err != nil {
-		log.Println("BBMTLog", "failed to process keygen", "error", err)
+		Logln("BBMTLog", "failed to process keygen", "error", err)
 		return nil, err
 	}
 	return &KeygenResponse{
@@ -327,7 +326,7 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 				if err := s.saveLocalStateData(localState); err != nil {
 					return "", fmt.Errorf("failed to save local state data, error: %w", err)
 				}
-				log.Println("BBMTLog", "pubKey done, finalizing...")
+				Logln("BBMTLog", "pubKey done, finalizing...")
 			}
 
 		// Periodic or idle check
@@ -341,7 +340,7 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 					return "", err
 				default:
 					if len(pubKey) > 0 {
-						log.Println("BBMTLog", "keyshare generated: ", localParty.PartyID().Moniker)
+						Logln("BBMTLog", "keyshare generated: ", localParty.PartyID().Moniker)
 						time.Sleep(250 * time.Millisecond) // give space time for message sender channels
 						return pubKey, nil
 					}
@@ -371,7 +370,7 @@ func (s *ServiceImpl) KeysignECDSA(req *KeysignRequest) (*KeysignResponse, error
 		return nil, fmt.Errorf("failed to decode message to sign, error: %w", err)
 	}
 	// restore the local saved data
-	log.Println("BBMTLog", "restoring local state...")
+	Logln("BBMTLog", "restoring local state...")
 	localStateStr, err := s.stateAccessor.GetLocalState(req.PubKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get local state, error: %w", err)
@@ -426,25 +425,25 @@ func (s *ServiceImpl) KeysignECDSA(req *KeysignRequest) (*KeysignResponse, error
 	go func() {
 		tErr := keysignParty.Start()
 		if tErr != nil {
-			log.Println("BBMTLog", "failed to start keysign process", "error", tErr)
+			Logln("BBMTLog", "failed to start keysign process", "error", tErr)
 			close(errCh)
 		}
 	}()
 	sig, err := s.processKeySign(keysignParty, errCh, outCh, endCh, keysignPartyIDs)
 	if err != nil {
-		log.Println("BBMTLog", "failed to process keysign", "error", err)
+		Logln("BBMTLog", "failed to process keysign", "error", err)
 		return nil, err
 	}
 
 	// let's verify the signature
 	if ecdsa.Verify(localKey[0].ECDSAPub.ToECDSAPubKey(), bytesToSign, new(big.Int).SetBytes(sig.R), new(big.Int).SetBytes(sig.S)) {
-		log.Println("BBMTLog", "signature is valid")
+		Logln("BBMTLog", "signature is valid")
 	} else {
 		return nil, fmt.Errorf("invalid signature")
 	}
 	derSig, err := GetDERSignature(new(big.Int).SetBytes(sig.R), new(big.Int).SetBytes(sig.S))
 	if err != nil {
-		log.Println("BBMTLog", "fail to get DER signature", "error", err)
+		Logln("BBMTLog", "fail to get DER signature", "error", err)
 	}
 
 	return &KeysignResponse{
@@ -488,7 +487,7 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 					errChan <- fmt.Errorf("failed to marshal message to json, error: %w", err)
 				}
 				// for debug
-				log.Println("BBMTLog", "send message from ", msg.GetFrom(), "to", msg.GetTo())
+				Logln("BBMTLog", "send message from ", msg.GetFrom(), "to", msg.GetTo())
 				outboundPayload := base64.StdEncoding.EncodeToString(jsonBytes)
 				if r.IsBroadcast {
 					for _, item := range sortedPartyIds {
@@ -523,7 +522,7 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 		default:
 			time.Sleep(250 * time.Millisecond)
 			if time.Since(until) > 0 {
-				log.Println("BBMTLog", "Received timeout to end downloadMessage. Stopping...")
+				Logln("BBMTLog", "Received timeout to end downloadMessage. Stopping...")
 				return nil, fmt.Errorf("keysign timeout, didn't finish in %d seconds", keySignTimeout)
 			} else {
 				select {
@@ -531,7 +530,7 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 					return nil, err
 				default:
 					if signature != nil {
-						log.Println("BBMTLog", "signature generated: ", localParty.PartyID().Moniker)
+						Logln("BBMTLog", "signature generated: ", localParty.PartyID().Moniker)
 						time.Sleep(250 * time.Millisecond) // give space time for message sender channels
 						return signature, nil
 					}

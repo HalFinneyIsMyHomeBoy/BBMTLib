@@ -51,7 +51,7 @@ func getHashParam(r *http.Request) string {
 }
 
 func pf(format string, v ...interface{}) {
-	log.Printf(format, v...)
+	Logf(format, v...)
 }
 
 // ---- Session Handlers ----
@@ -138,7 +138,7 @@ func completedKeysign(w http.ResponseWriter, r *http.Request) {
 
 	// Respond to client
 	w.WriteHeader(http.StatusOK)
-	log.Printf("BBMTLog: completedKeysign succeeded: Session %s, MessageID %s", sessionID, messageID)
+	Logf("BBMTLog: completedKeysign succeeded: Session %s, MessageID %s", sessionID, messageID)
 }
 
 func completedKeygen(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +157,7 @@ func completedKeygen(w http.ResponseWriter, r *http.Request) {
 
 	// Respond to client
 	w.WriteHeader(http.StatusCreated)
-	log.Printf("BBMTLog: completedKeygen succeeded: Session %s, LocalPartyID %s", sessionID, localPartyID[0])
+	Logf("BBMTLog: completedKeygen succeeded: Session %s, LocalPartyID %s", sessionID, localPartyID[0])
 }
 
 // ---- Message Handlers ----
