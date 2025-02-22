@@ -41,9 +41,9 @@ func Logf(format string, v ...any) {
 
 // Logln: Logs a message like fmt.Println
 func Logln(v ...any) {
-	msg := fmt.Sprintln(v...) // Convert args to a single string
+	msg := fmt.Sprint(v...) // Convert args to a single string
 	logToReactNative(msg)
-	log.Println(msg)
+	log.Println(v...)
 }
 
 func InitLog() {

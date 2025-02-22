@@ -34,11 +34,12 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 		if srcIP != "" && dstIP != "" && srcPubkey != "" {
 			go func() {
 				client := http.Client{
-					Timeout: 5 * time.Second,
+					Timeout: 2 * time.Second,
 				}
+				srcIP, _, _ := net.SplitHostPort(r.RemoteAddr)
 				url := "http://" + srcIP + ":" + port + "/?src=" + dstIP + "&dst=" + srcIP + "&id=" + id + "&pubkey=" + pubkey
 				Logln("BBMTLog", "Sending callback to:", url)
-				_, err := client.Get(url)
+				_, err = client.Get(url)
 				if err != nil {
 					Logln("BBMTLog", "Error in callback:", err)
 				}
@@ -79,10 +80,11 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 	}
 }
 
-func DiscoverPeer(id, pubkey, localIP, port, timeout string) (string, error) {
+func DiscoverPeer(id, pubkey, localIP, remoteIP, port, timeout string) (string, error) {
 	if localIP == "" {
 		return "", fmt.Errorf("no local IP detected, skipping peer discovery")
 	}
+
 	baseIP := localIP[:strings.LastIndex(localIP, ".")+1]
 	peerFound := make(chan string)
 	tout, err := strconv.Atoi(timeout)
@@ -92,37 +94,47 @@ func DiscoverPeer(id, pubkey, localIP, port, timeout string) (string, error) {
 	if tout < 5 {
 		tout = 5
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(tout)*time.Second)
 	defer cancel()
+
+	client := &http.Client{Timeout: 2000 * time.Millisecond}
+
+	// Function to check a given IP
+	checkPeer := func(ip string) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			url := "http://" + ip + "/?src=" + localIP + "&dst=" + ip + "&id=" + id + "&pubkey=" + pubkey
+			resp, err := client.Get(url)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				Logf("Peer discovered at: %s\n", ip)
+				bodyBytes, err := io.ReadAll(resp.Body)
+				if err == nil {
+					peerFound <- string(bodyBytes)
+					cancel() // Cancel all other goroutines if a peer is found
+				}
+			}
+		}
+	}
+
+	// First, check remoteIP if provided
+	if remoteIP != "" && remoteIP != localIP {
+		checkPeer(fmt.Sprintf("%s:%s", remoteIP, port))
+	}
+
+	// Scan the local subnet
 	for i := 1; i <= 254; i++ {
-		targetIP := fmt.Sprintf("%s%d:%s", baseIP, i, port)
-		if localIP == fmt.Sprintf("%s%d", baseIP, i) {
+		targetIP := fmt.Sprintf("%s%d", baseIP, i)
+		if targetIP == localIP {
 			Logln("BBMTLog", "skip self peer")
 			continue
 		}
-		go func(ip string) {
-			select {
-			case <-ctx.Done():
-				return // If context is done (timeout or peer found), return early
-			default:
-				client := &http.Client{Timeout: 2000 * time.Millisecond}
-				url := "http://" + ip + "/?src=" + localIP + "&dst=" + ip + "&id=" + id + "&pubkey=" + pubkey
-				Logln("BBMTLog", "checking for peer connection:", url)
-				resp, err := client.Get(url)
-				if err == nil && resp.StatusCode == http.StatusOK {
-					Logln("Peer discovered at: %s\n", ip)
-					bodyBytes, err := io.ReadAll(resp.Body)
-					if err == nil {
-						peerFound <- string(bodyBytes)
-						cancel() // Cancel all other goroutines if a peer is found
-					}
-				} else {
-					Logln("BBMTLog", "Peer not available at:", ip)
-				}
-			}
-		}(targetIP)
+		go checkPeer(fmt.Sprintf("%s:%s", targetIP, port))
 		time.Sleep(10 * time.Millisecond)
 	}
+
 	select {
 	case peerIP := <-peerFound:
 		return peerIP, nil

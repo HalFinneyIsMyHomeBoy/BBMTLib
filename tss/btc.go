@@ -135,7 +135,8 @@ func RecommendedFees(feeType string) (int, error) {
 
 	var fees FeeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&fees); err != nil {
-		return 0, err
+		Logf("Error getting the feerate - using 2 sat/vB defaulted. %v", err)
+		return 2, nil
 	}
 
 	switch feeType {
@@ -275,7 +276,7 @@ func MpcSendBTC(
 	}
 	Logf("Fetched UTXOs: %+v", utxos)
 
-	selectedUTXOs, totalAmount, err := SelectUTXOs(utxos, amountSatoshi, "smallest")
+	selectedUTXOs, totalAmount, err := SelectUTXOs(utxos, amountSatoshi+estimatedFee, "smallest")
 	if err != nil {
 		Logf("Error selecting UTXOs: %v", err)
 		return "", err
@@ -491,18 +492,29 @@ func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 	}
 	Logf("Receiver Address Decoded: %s, Type: %T", receiverAddress, toAddr)
 
-	// Fetch fee rate for 1 confirmation
+	// Fetch fee rate (sat/vB)
 	feeRate, err := RecommendedFees(_fee_set)
 	if err != nil {
 		return 0, fmt.Errorf("failed to fetch fee rate: %w", err)
 	}
-	Logf("Fee Rate for 1 confirmation: %d sat/vB", feeRate)
+	Logf("Fee Rate for %s: %d sat/vB", _fee_set, feeRate)
 
-	// Estimate transaction size
-	var estimatedSize = 10 // Base size for version, locktime, etc.
-	Logf("Starting transaction size estimation with base size: %d bytes", estimatedSize)
+	// Calculate total input value
+	totalInputValue := int64(0)
+	for _, utxo := range utxos {
+		totalInputValue += utxo.Value
+	}
+	Logf("Total input value: %d satoshis", totalInputValue)
 
-	// Estimate input size based on UTXO type
+	// Initial transaction size estimation (in weight units for SegWit compatibility)
+	baseWeight := 40 // 4 bytes version + 1 byte input count + 1 byte output count + 4 bytes locktime = 10 bytes * 4 weight units
+	hasSegWit := false
+	inputCount := len(utxos)
+	if inputCount > 252 { // VarInt adjustment
+		baseWeight += 8 // Larger VarInt for input count
+	}
+
+	// Estimate input sizes
 	for i, utxo := range utxos {
 		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
 		if err != nil {
@@ -511,98 +523,113 @@ func previewTxFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 		Logf("UTXO %d: TXID %s, Vout %d, IsWitness: %v", i, utxo.TxID, utxo.Vout, isWitness)
 
 		if isWitness {
-			if txscript.IsPayToWitnessPubKeyHash(txOut.PkScript) {
-				Logf("UTXO %d is P2WPKH", i)
-				estimatedSize += 68  // SegWit input without witness data
-				estimatedSize += 107 // Witness data size (approx)
-			} else if txscript.IsWitnessProgram(txOut.PkScript) {
-				Logf("UTXO %d is P2TR", i)
-				estimatedSize += 68 // SegWit input without witness data
-				estimatedSize += 65 // Taproot signature
-			} else {
-				Logf("UTXO %d is other SegWit type", i)
-				estimatedSize += 68  // SegWit input without witness data
-				estimatedSize += 107 // Assuming P2WSH-like size for witness data
+			hasSegWit = true
+			if txscript.IsPayToWitnessPubKeyHash(txOut.PkScript) { // P2WPKH
+				baseWeight += 272 // 68 bytes * 4 (non-witness) + 105 bytes / 4 (witness) ≈ 68 vbytes
+				Logf("UTXO %d is P2WPKH: Added 68 vbytes", i)
+			} else if txscript.IsPayToTaproot(txOut.PkScript) { // P2TR
+				baseWeight += 230 // 57.5 vbytes: 43 bytes * 4 + 65 bytes / 4
+				Logf("UTXO %d is P2TR: Added 57.5 vbytes", i)
+			} else { // P2WSH or other SegWit
+				baseWeight += 300 // Estimate: ~75 vbytes, conservative for P2WSH
+				Logf("UTXO %d is other SegWit type: Added 75 vbytes", i)
 			}
 		} else {
-			if txscript.IsPayToScriptHash(txOut.PkScript) {
-				Logf("UTXO %d is P2SH", i)
-				estimatedSize += 180 // Assuming a 2-of-3 multi-sig for P2SH
-			} else if txscript.IsPayToPubKeyHash(txOut.PkScript) {
-				Logf("UTXO %d is P2PKH", i)
-				estimatedSize += 148
-			} else {
-				Logf("UTXO %d assumed to be P2MS", i)
-				estimatedSize += 180 // This is an approximation; actual size can vary
+			if txscript.IsPayToPubKeyHash(txOut.PkScript) { // P2PKH
+				baseWeight += 592 // 148 bytes * 4 = 148 vbytes
+				Logf("UTXO %d is P2PKH: Added 148 vbytes", i)
+			} else if txscript.IsPayToScriptHash(txOut.PkScript) { // P2SH
+				baseWeight += 720 // ~180 bytes * 4, varies with redeem script
+				Logf("UTXO %d is P2SH: Added 180 vbytes", i)
+			} else { // P2MS or other
+				baseWeight += 720 // Conservative estimate
+				Logf("UTXO %d assumed P2MS: Added 180 vbytes", i)
 			}
 		}
-		Logf("Current estimated size after UTXO %d: %d bytes", i, estimatedSize)
 	}
 
-	// Estimate output size based on address types
-	Logf("Estimating output size for receiver address...")
-	if _, ok := toAddr.(*btcutil.AddressPubKeyHash); ok {
-		estimatedSize += 34
-		Logln("Receiver is P2PKH: Added 34 bytes")
-	} else if _, ok := toAddr.(*btcutil.AddressScriptHash); ok {
-		estimatedSize += 34
-		Logln("Receiver is P2SH: Added 34 bytes")
-	} else if _, ok := toAddr.(*btcutil.AddressWitnessPubKeyHash); ok {
-		estimatedSize += 31
-		Logln("Receiver is P2WPKH: Added 31 bytes")
-	} else if _, ok := toAddr.(*btcutil.AddressWitnessScriptHash); ok {
-		estimatedSize += 43
-		Logln("Receiver is P2WSH: Added 43 bytes")
-	} else if _, ok := toAddr.(*btcutil.AddressTaproot); ok {
-		estimatedSize += 34
-		Logln("Receiver is P2TR: Added 34 bytes")
-	} else {
-		return 0, fmt.Errorf("unsupported address type for receiver")
+	// Add SegWit marker and flag (2 bytes, only if SegWit inputs exist)
+	if hasSegWit {
+		baseWeight += 8 // 2 bytes * 4 weight units
+		Logf("Added SegWit marker and flag: 2 vbytes")
 	}
 
-	// Check if change is needed
-	totalInputValue := int64(0)
-	for _, utxo := range utxos {
-		totalInputValue += utxo.Value
+	// Recipient output size
+	outputCount := 1 // Start with receiver output
+	switch toAddr.(type) {
+	case *btcutil.AddressPubKeyHash: // P2PKH
+		baseWeight += 136 // 34 bytes * 4 = 34 vbytes
+		Logln("Receiver is P2PKH: Added 34 vbytes")
+	case *btcutil.AddressScriptHash: // P2SH
+		baseWeight += 128 // 32 bytes * 4 = 32 vbytes
+		Logln("Receiver is P2SH: Added 32 vbytes")
+	case *btcutil.AddressWitnessPubKeyHash: // P2WPKH
+		baseWeight += 124 // 31 bytes * 4 = 31 vbytes
+		Logln("Receiver is P2WPKH: Added 31 vbytes")
+	case *btcutil.AddressWitnessScriptHash: // P2WSH
+		baseWeight += 172 // 43 bytes * 4 = 43 vbytes
+		Logln("Receiver is P2WSH: Added 43 vbytes")
+	case *btcutil.AddressTaproot: // P2TR
+		baseWeight += 136 // 34 bytes * 4 = 34 vbytes
+		Logln("Receiver is P2TR: Added 34 vbytes")
+	default:
+		return 0, fmt.Errorf("unsupported receiver address type: %T", toAddr)
 	}
-	Logf("Total input value: %d satoshis", totalInputValue)
 
-	changeAmount := totalInputValue - satoshiAmount
-	Logf("Change amount: %d satoshis", changeAmount)
+	// Initial fee estimate
+	vbytes := baseWeight / 4
+	if baseWeight%4 != 0 {
+		vbytes++ // Round up
+	}
+	estimatedFee := int64(vbytes) * int64(feeRate)
+	Logf("Initial estimated size: %d vbytes, Fee: %d satoshis", vbytes, estimatedFee)
 
-	if changeAmount > 546 { // Dust threshold for Bitcoin
-		Logf("Adding change output because change amount exceeds dust threshold")
-		if _, ok := fromAddr.(*btcutil.AddressPubKeyHash); ok {
-			estimatedSize += 34
-			Logln("Change output is P2PKH: Added 34 bytes")
-		} else if _, ok := fromAddr.(*btcutil.AddressScriptHash); ok {
-			estimatedSize += 34
-			Logln("Change output is P2SH: Added 34 bytes")
-		} else if _, ok := fromAddr.(*btcutil.AddressWitnessPubKeyHash); ok {
-			estimatedSize += 31
-			Logln("Change output is P2WPKH: Added 31 bytes")
-		} else if _, ok := fromAddr.(*btcutil.AddressWitnessScriptHash); ok {
-			estimatedSize += 43
-			Logln("Change output is P2WSH: Added 43 bytes")
-		} else if _, ok := fromAddr.(*btcutil.AddressTaproot); ok {
-			estimatedSize += 34
-			Logln("Change output is P2TR: Added 34 bytes")
-		} else {
-			return 0, fmt.Errorf("unsupported address type for sender")
+	// Check for change output
+	changeAmount := totalInputValue - satoshiAmount - estimatedFee
+	if changeAmount > 546 { // Dust threshold
+		outputCount++
+		switch fromAddr.(type) {
+		case *btcutil.AddressPubKeyHash: // P2PKH
+			baseWeight += 136 // 34 bytes * 4
+			Logln("Change is P2PKH: Added 34 vbytes")
+		case *btcutil.AddressScriptHash: // P2SH
+			baseWeight += 128 // 32 bytes * 4
+			Logln("Change is P2SH: Added 32 vbytes")
+		case *btcutil.AddressWitnessPubKeyHash: // P2WPKH
+			baseWeight += 124 // 31 bytes * 4
+			Logln("Change is P2WPKH: Added 31 vbytes")
+		case *btcutil.AddressWitnessScriptHash: // P2WSH
+			baseWeight += 172 // 43 bytes * 4
+			Logln("Change is P2WSH: Added 43 vbytes")
+		case *btcutil.AddressTaproot: // P2TR
+			baseWeight += 136 // 34 bytes * 4
+			Logln("Change is P2TR: Added 34 vbytes")
+		default:
+			return 0, fmt.Errorf("unsupported sender address type: %T", fromAddr)
 		}
+		// Recalculate with change output
+		vbytes = baseWeight / 4
+		if baseWeight%4 != 0 {
+			vbytes++
+		}
+		if outputCount > 252 {
+			baseWeight += 8 // Adjust VarInt for output count
+			vbytes = baseWeight / 4
+			if baseWeight%4 != 0 {
+				vbytes++
+			}
+		}
+		estimatedFee = int64(vbytes) * int64(feeRate)
+		Logf("Added change output, new size: %d vbytes, Fee: %d satoshis", vbytes, estimatedFee)
 	}
 
-	Logf("Final estimated transaction size: %d bytes", estimatedSize)
-
-	// Calculate fee
-	estimatedFee := int64(estimatedSize * feeRate / 1000)
-	Logf("Estimated Fee: %d satoshis", estimatedFee)
-
-	// 1 sat/vb
-	if estimatedFee < int64(estimatedSize) {
-		return int64(estimatedSize), nil
+	// Ensure minimum fee (1 sat/vB)
+	if estimatedFee < int64(vbytes) {
+		estimatedFee = int64(vbytes)
+		Logf("Adjusted to minimum fee: %d satoshis (1 sat/vB)", estimatedFee)
 	}
 
+	Logf("Final estimated transaction size: %d vbytes, Fee: %d satoshis", vbytes, estimatedFee)
 	return estimatedFee, nil
 }
 
