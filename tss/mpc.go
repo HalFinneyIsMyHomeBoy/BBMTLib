@@ -61,12 +61,10 @@ func SessionState(session string) string {
 	index := status.Index
 	info := status.Info
 	time := status.Time
-	done := 0
-	if status.Done {
-		done = 1
-	}
+	done := status.Done
+
 	return fmt.Sprintf(
-		`{ "time": %d, "step": %d, "type": "%s", "info": "%s", "sentNo": %d, "receivedNo": %d, "done": %d }`,
+		`{ "time": %d, "step": %d, "type": "%s", "info": "%s", "sentNo": %d, "receivedNo": %d, "done": %t }`,
 		time, step, status.Type, info, seqNo, index, done,
 	)
 }
@@ -149,6 +147,7 @@ func setStep(session, info string, step int) {
 		statusLog[session] = []Status{}
 	}
 	statusLog[session] = append(statusLog[session], status)
+	Hook(SessionState(session))
 }
 
 func setStatus(session string, status Status) {
@@ -158,6 +157,7 @@ func setStatus(session string, status Status) {
 		statusLog[session] = []Status{}
 	}
 	statusLog[session] = append(statusLog[session], status)
+	Hook(SessionState(session))
 }
 
 func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey string) (string, error) {

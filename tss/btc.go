@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -230,6 +231,21 @@ func ecdsaSign(senderWIF string, data []byte) []byte {
 	return signature.Serialize()
 }
 
+func mpcHook(info, session, utxo_session string, utxo_current, utxo_total int, done bool) {
+	hookData := fmt.Sprintf(
+		`{ "time": %d, "type": "%s",  "info": "%s", "session": "%s", "utxo_session": "%s", "utxo_current": %d, "utxo_total": %d, "done": %t }`,
+		int(time.Now().Unix()),
+		"btc_send",
+		info,
+		session,
+		utxo_session,
+		utxo_current,
+		utxo_total,
+		done,
+	)
+	Hook(hookData)
+}
+
 func MpcSendBTC(
 	/* tss */
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath,
@@ -242,8 +258,10 @@ func MpcSendBTC(
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 		Logln("Using mainnet parameters")
+		mpcHook("using mainnet", session, "", 0, 0, false)
 	} else {
 		Logln("Using testnet parameters")
+		mpcHook("using testnet", session, "", 0, 0, false)
 	}
 
 	pubKeyBytes, err := hex.DecodeString(publicKey)
@@ -261,6 +279,7 @@ func MpcSendBTC(
 	Logln("Sender address decoded successfully")
 
 	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
+	mpcHook("checking receiver address", session, "", 0, 0, false)
 	if err != nil {
 		Logf("Error decoding receiver address: %v", err)
 		return "", fmt.Errorf("failed to decode receiver address: %w", err)
@@ -269,6 +288,7 @@ func MpcSendBTC(
 	Logf("Sender Address Type: %T", fromAddr)
 	Logf("Receiver Address Type: %T", toAddr)
 
+	mpcHook("fetching utxos", session, "", 0, 0, false)
 	utxos, err := FetchUTXOs(senderAddress)
 	if err != nil {
 		Logf("Error fetching UTXOs: %v", err)
@@ -276,6 +296,7 @@ func MpcSendBTC(
 	}
 	Logf("Fetched UTXOs: %+v", utxos)
 
+	mpcHook("selecting utxos", session, "", 0, 0, false)
 	selectedUTXOs, totalAmount, err := SelectUTXOs(utxos, amountSatoshi+estimatedFee, "smallest")
 	if err != nil {
 		Logf("Error selecting UTXOs: %v", err)
@@ -288,6 +309,11 @@ func MpcSendBTC(
 	Logln("New transaction created")
 
 	// Add all inputs
+	utxoCount := len(selectedUTXOs)
+	utxoIndex := 0
+	utxoSession := ""
+
+	mpcHook("adding inputs", session, utxoSession, utxoIndex, utxoCount, false)
 	for _, utxo := range selectedUTXOs {
 		hash, _ := chainhash.NewHashFromStr(utxo.TxID)
 		outPoint := wire.NewOutPoint(hash, utxo.Vout)
@@ -296,7 +322,6 @@ func MpcSendBTC(
 	}
 
 	Logf("Estimated Fee: %d", estimatedFee)
-
 	if totalAmount < amountSatoshi+estimatedFee {
 		Logf("Insufficient funds: available %d, needed %d", totalAmount, amountSatoshi+estimatedFee)
 		return "", fmt.Errorf("insufficient funds: available %d, needed %d", totalAmount, amountSatoshi+estimatedFee)
@@ -304,6 +329,7 @@ func MpcSendBTC(
 	Logln("Sufficient funds available")
 
 	// Add recipient output
+	mpcHook("creating  output script", session, utxoSession, utxoIndex, utxoCount, false)
 	pkScript, err := txscript.PayToAddrScript(toAddr)
 	if err != nil {
 		Logf("Error creating output script: %v", err)
@@ -314,6 +340,8 @@ func MpcSendBTC(
 
 	// Add change output if necessary
 	changeAmount := totalAmount - amountSatoshi - estimatedFee
+	mpcHook("calculating change amount", session, utxoSession, utxoIndex, utxoCount, false)
+
 	if changeAmount > 546 {
 		changePkScript, err := txscript.PayToAddrScript(fromAddr)
 		if err != nil {
@@ -325,7 +353,14 @@ func MpcSendBTC(
 	}
 
 	// Sign each input
+	mpcHook("signing inputs", session, utxoSession, utxoIndex, utxoCount, false)
 	for i, utxo := range selectedUTXOs {
+
+		// update utxo session - counter
+		utxoIndex = i + 1
+		utxoSession = fmt.Sprintf("%s%d", session, i)
+
+		mpcHook("fetching utxo defails", session, utxoSession, utxoIndex, utxoCount, false)
 		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
 		if err != nil {
 			Logf("Error fetching UTXO details: %v", err)
@@ -346,8 +381,8 @@ func MpcSendBTC(
 
 			// Sign each utxo
 			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-			session := fmt.Sprintf("%s%d", session, i)
-			sigJSON, err := JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
+			sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 			if err != nil {
 				return "", fmt.Errorf("failed to sign transaction: signature is empty")
 			}
@@ -366,6 +401,7 @@ func MpcSendBTC(
 			signatureWithHashType := append(signature, byte(txscript.SigHashAll))
 
 			// Use Witness for SegWit
+			mpcHook("appending signature - segwit", session, utxoSession, utxoIndex, utxoCount, false)
 			tx.TxIn[i].Witness = wire.TxWitness{
 				signatureWithHashType,
 				pubKeyBytes,
@@ -383,8 +419,8 @@ func MpcSendBTC(
 
 			// Sign
 			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-			session := fmt.Sprintf("%s%d", session, i)
-			sigJSON, err := JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
+			sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
 			if err != nil {
 				return "", fmt.Errorf("failed to sign transaction: signature is empty")
 			}
@@ -403,6 +439,7 @@ func MpcSendBTC(
 			signatureWithHashType := append(signature, byte(txscript.SigHashAll))
 
 			// Use SignatureScript for P2PKH
+			mpcHook("appending signature - p2pkh", session, utxoSession, utxoIndex, utxoCount, false)
 			builder := txscript.NewScriptBuilder()
 			builder.AddData(signatureWithHashType)
 			builder.AddData(pubKeyBytes)
@@ -417,6 +454,7 @@ func MpcSendBTC(
 		}
 
 		// Script validation
+		mpcHook("validating tx script", session, utxoSession, utxoIndex, utxoCount, false)
 		vm, err := txscript.NewEngine(
 			txOut.PkScript,
 			tx,
@@ -439,6 +477,7 @@ func MpcSendBTC(
 	}
 
 	// Serialize and broadcast
+	mpcHook("serializing tx", session, utxoSession, utxoIndex, utxoCount, false)
 	var signedTx bytes.Buffer
 	if err := tx.Serialize(&signedTx); err != nil {
 		Logf("Error serializing transaction: %v", err)
@@ -453,7 +492,7 @@ func MpcSendBTC(
 		Logf("Error broadcasting transaction: %v", err)
 		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
-
+	mpcHook("txid:"+txid, session, utxoSession, utxoIndex, utxoCount, true)
 	Logf("Transaction broadcasted successfully, txid: %s", txid)
 	return txid, nil
 }
