@@ -11,8 +11,10 @@ func SetHookListener(h HookListener) {
 }
 
 func Hook(message string) {
-	if hookListener != nil {
-		hookListener.OnMessage(message)
-	}
-	Logln(message)
+	go func() {
+		if hookListener != nil {
+			hookListener.OnMessage(message)
+		}
+		Logln(message)
+	}()
 }
