@@ -53,7 +53,7 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 	if server != nil {
 		StopRelay()
 	}
-	time.Sleep(time.Second)
+
 	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
 
 	go func() {
@@ -71,11 +71,12 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 	select {
 	case peerIP := <-peerFound:
 		Logln("BBMTLog", "Peer detected, shutting down server...")
-		_ = server.Close()
+		time.Sleep(2000)
+		StopRelay()
 		return peerIP, nil
 	case <-time.After(time.Duration(tout) * time.Second):
 		Logln("BBMTLog", "Timeout reached, shutting down server...")
-		_ = server.Close()
+		StopRelay()
 		return "", fmt.Errorf("timeout waiting for peer connection")
 	}
 }
@@ -192,7 +193,7 @@ func PublishData(port, timeout, enckey, data string) (string, error) {
 		StopRelay()
 	}
 	time.Sleep(time.Second)
-	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
+	server = &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
 	go func() {
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
 			Logln("HTTP server error:", err)
@@ -205,11 +206,12 @@ func PublishData(port, timeout, enckey, data string) (string, error) {
 	select {
 	case isOk := <-published:
 		Logln("BBMTLog", "published", isOk)
-		_ = server.Close()
+		time.Sleep(1000)
+		StopRelay()
 		return isOk, nil
 	case <-time.After(time.Duration(tout) * time.Second):
 		Logln("BBMTLog", "Timeout reached, shutting down server...")
-		_ = server.Close()
+		StopRelay()
 		return "", fmt.Errorf("timeout waiting for peer connection")
 	}
 }
