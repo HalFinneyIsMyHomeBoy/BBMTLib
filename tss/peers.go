@@ -12,57 +12,80 @@ import (
 )
 
 func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
-	Logln("BBMTLog", "listening for peer...")
+	Logln("BBMTLog", "Listening for peer...")
 
-	// Channel to capture the peer IP
-	peerFound := make(chan string)
+	// Channel to capture the peer IP (buffered to prevent deadlocks)
+	peerFound := make(chan string, 1)
+	stopServer := make(chan struct{})
+
+	// Ensure no existing server is running on this port
+	if isPortInUse(port) {
+		Logln("BBMTLog", "Port", port, "is already in use. Stopping previous server...")
+		StopRelay()
+		time.Sleep(1 * time.Second) // Ensure cleanup
+	}
 
 	// HTTP handler to detect peer IP
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-stopServer:
+			return // Stop handling requests when shutdown is triggered
+		default:
+		}
+
 		clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
-			Logln("BBMTLog", "error getting client IP:", err)
+			Logln("BBMTLog", "Error getting client IP:", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		Logf("BBMTLog: got a peer connection from %s\n", clientIP)
+
+		Logf("BBMTLog Got a peer connection from %s\n", clientIP)
+
 		srcIP := r.URL.Query().Get("src")
 		dstIP := r.URL.Query().Get("dst")
 		srcId := r.URL.Query().Get("id")
 		srcPubkey := r.URL.Query().Get("pubkey")
+
 		if srcIP != "" && dstIP != "" && srcPubkey != "" {
 			go func() {
-				client := http.Client{
-					Timeout: 2 * time.Second,
-				}
+				client := http.Client{Timeout: 2 * time.Second}
 				srcIP, _, _ := net.SplitHostPort(r.RemoteAddr)
 				url := "http://" + srcIP + ":" + port + "/?src=" + dstIP + "&dst=" + srcIP + "&id=" + id + "&pubkey=" + pubkey
 				Logln("BBMTLog", "Sending callback to:", url)
-				_, err = client.Get(url)
+				_, err := client.Get(url)
 				if err != nil {
 					Logln("BBMTLog", "Error in callback:", err)
 				}
 			}()
-			peerFound <- (clientIP + "@" + srcId + "@" + srcPubkey + "," + dstIP + "@" + id + "@" + pubkey)
+			select {
+			case peerFound <- clientIP + "@" + srcId + "@" + srcPubkey + "," + dstIP + "@" + id + "@" + pubkey:
+			default:
+			}
 		}
+
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, dstIP+"@"+id+"@"+pubkey+","+clientIP+"@"+srcId+"@"+srcPubkey)
 	})
 
-	if server != nil {
-		StopRelay()
+	// Create and start server
+	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		Logln("BBMTLog", "Error binding to port:", err)
+		return "", err
 	}
 
-	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
-
+	// Start HTTP server
 	go func() {
 		Logln("BBMTLog", "Waiting for peer connection on port:", port, ", timeout:", timeout)
-		if err := server.ListenAndServe(); err != http.ErrServerClosed {
-			Logln("HTTP server error:", err)
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			Logln("BBMTLog", "HTTP server error:", err)
 		}
 	}()
 
+	// Convert timeout to int
 	tout, err := strconv.Atoi(timeout)
 	if err != nil {
 		tout = 30
@@ -71,14 +94,27 @@ func ListenForPeer(id, pubkey, port, timeout string) (string, error) {
 	select {
 	case peerIP := <-peerFound:
 		Logln("BBMTLog", "Peer detected, shutting down server...")
-		time.Sleep(2000)
-		StopRelay()
+		Logln("BBMTLog", "Forcefully stopping server...")
+		time.Sleep(2 * time.Second)
+		listener.Close()
+		server.Close()
 		return peerIP, nil
 	case <-time.After(time.Duration(tout) * time.Second):
 		Logln("BBMTLog", "Timeout reached, shutting down server...")
-		StopRelay()
+		listener.Close()
+		server.Close()
 		return "", fmt.Errorf("timeout waiting for peer connection")
 	}
+}
+
+// Check if the port is in use
+func isPortInUse(port string) bool {
+	conn, err := net.DialTimeout("tcp", "localhost:"+port, 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
 
 func DiscoverPeer(id, pubkey, localIP, remoteIP, port, timeout string) (string, error) {
@@ -192,26 +228,39 @@ func PublishData(port, timeout, enckey, data string) (string, error) {
 	if server != nil {
 		StopRelay()
 	}
-	time.Sleep(time.Second)
-	server = &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
+
+	// Create and start server
+	server := &http.Server{Addr: "0.0.0.0:" + port, Handler: mux}
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		Logln("BBMTLog", "Error binding to port:", err)
+		return "", err
+	}
+
+	// Start HTTP server
 	go func() {
-		if err := server.ListenAndServe(); err != http.ErrServerClosed {
-			Logln("HTTP server error:", err)
+		Logln("BBMTLog", "Waiting for peer connection on port:", port, ", timeout:", timeout)
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			Logln("BBMTLog", "HTTP server error:", err)
 		}
 	}()
+
 	tout, err := strconv.Atoi(timeout)
 	if err != nil {
 		tout = 30
 	}
+
 	select {
 	case isOk := <-published:
 		Logln("BBMTLog", "published", isOk)
 		time.Sleep(1000)
-		StopRelay()
+		listener.Close()
+		server.Close()
 		return isOk, nil
 	case <-time.After(time.Duration(tout) * time.Second):
 		Logln("BBMTLog", "Timeout reached, shutting down server...")
-		StopRelay()
+		listener.Close()
+		server.Close()
 		return "", fmt.Errorf("timeout waiting for peer connection")
 	}
 }
