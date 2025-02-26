@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 )
 
 type GoLogListener interface {
@@ -41,7 +42,7 @@ func Logf(format string, v ...any) {
 
 // Logln: Logs a message like fmt.Println
 func Logln(v ...any) {
-	msg := fmt.Sprint(v...) // Convert args to a single string
+	msg := strings.TrimSpace(fmt.Sprintln(v...))
 	logToReactNative(msg)
 	log.Println(v...)
 }
