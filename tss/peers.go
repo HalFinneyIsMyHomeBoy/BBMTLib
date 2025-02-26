@@ -183,12 +183,12 @@ func DiscoverPeer(id, pubkey, localIP, remoteIP, port, timeout string) (string, 
 	}
 }
 
-func FetchData(url, decKey string) (string, error) {
+func FetchData(url, decKey, data string) (string, error) {
 	client := http.Client{
 		Timeout: 5 * time.Second,
 	}
 	Logln("BBMTLog", "checking for peer connection:", url)
-	resp, err := client.Get(url)
+	resp, err := client.Get(url + "?data=" + data)
 	if err != nil {
 		return "", fmt.Errorf("error getting data: %w", err)
 	}
@@ -222,7 +222,7 @@ func PublishData(port, timeout, enckey, data string) (string, error) {
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, encryptedData)
-		published <- "ok"
+		published <- r.URL.RawQuery
 	})
 
 	if server != nil {
@@ -251,12 +251,12 @@ func PublishData(port, timeout, enckey, data string) (string, error) {
 	}
 
 	select {
-	case isOk := <-published:
-		Logln("BBMTLog", "published", isOk)
+	case data := <-published:
+		Logln("BBMTLog", "published. received:", data)
 		time.Sleep(1000)
 		listener.Close()
 		server.Close()
-		return isOk, nil
+		return data, nil
 	case <-time.After(time.Duration(tout) * time.Second):
 		Logln("BBMTLog", "Timeout reached, shutting down server...")
 		listener.Close()
