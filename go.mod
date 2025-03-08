@@ -18,10 +18,6 @@ require (
 	github.com/decred/dcrd/crypto/blake256 v1.0.1 // indirect
 	github.com/fomichev/secp256k1 v0.0.0-20180413221153-00116ff8c62f // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
-	golang.org/x/mobile v0.0.0-20250218173827-cd096645fcd3 // indirect
-	golang.org/x/mod v0.23.0 // indirect
-	golang.org/x/sync v0.11.0 // indirect
-	golang.org/x/tools v0.30.0 // indirect
 )
 
 require (
