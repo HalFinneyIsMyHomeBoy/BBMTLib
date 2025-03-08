@@ -53,7 +53,7 @@ func main() {
 		if err != nil {
 			fmt.Printf("Go Error: %v", err)
 		} else {
-			fmt.Printf("Peer2 Keygen Result:" + keygen)
+			fmt.Printf(party + " Keygen Result:" + keygen)
 		}
 	}
 }
