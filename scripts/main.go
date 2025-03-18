@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -49,11 +50,36 @@ func main() {
 		decKey := os.Args[8]
 		sessionKey := ""
 		ppmFile := party + ".json"
+		keyshareFile := party + "-ks.json"
 		keygen, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey)
 		if err != nil {
-			fmt.Printf("Go Error: %v", err)
+			fmt.Printf("Go Error: %v\n", err)
 		} else {
-			fmt.Printf(party + " Keygen Result:" + keygen)
+			fmt.Printf(party + " Keygen Result Saved")
+			if err := os.WriteFile(keyshareFile, []byte(keygen), 0644); err != nil {
+				fmt.Printf("Failed to save keyshare for Peer1: %v\n", err)
+			}
+
+			var kgR tss.KeygenResponse
+			if err := json.Unmarshal([]byte(keygen), &kgR); err != nil {
+				fmt.Printf("Failed to parse keyshare for %s: %v\n", party, err)
+			}
+
+			fmt.Printf(party+" Public Key: %s\n", kgR.PubKey)
+			xPub := kgR.PubKey
+			btcPath := "m/44'/0'/0'/0/0"
+			btcPub, err := tss.GetDerivedPubKey(xPub, chainCode, btcPath, false)
+			if err != nil {
+				fmt.Printf("Failed to generate btc pubkey for %s: %v\n", party, err)
+			} else {
+				fmt.Printf(party+" BTC Public Key: %s\n", btcPub)
+				btcP2Pkh, err := tss.ConvertPubKeyToBTCAddress(btcPub, "testnet3")
+				if err != nil {
+					fmt.Printf("Failed to generate btc address for %s: %v\n", party, err)
+				} else {
+					fmt.Printf(party+" address btcP2Pkh: %s\n", btcP2Pkh)
+				}
+			}
 		}
 	}
 }
