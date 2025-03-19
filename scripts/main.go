@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -41,6 +42,8 @@ func main() {
 	}
 
 	if mode == "keygen" {
+
+		// prepare args
 		server := os.Args[2]
 		session := os.Args[3]
 		chainCode := os.Args[4]
@@ -50,21 +53,27 @@ func main() {
 		decKey := os.Args[8]
 		sessionKey := ""
 		ppmFile := party + ".json"
-		keyshareFile := party + "-ks.json"
-		keygen, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey)
+		keyshareFile := party + ".ks"
+
+		//join keygen
+		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey)
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
+
+			// save keyshare file - base64 encoded
 			fmt.Printf(party + " Keygen Result Saved")
-			if err := os.WriteFile(keyshareFile, []byte(keygen), 0644); err != nil {
+			encodedResult := base64.StdEncoding.EncodeToString([]byte(keyshare))
+			if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
 				fmt.Printf("Failed to save keyshare for Peer1: %v\n", err)
 			}
 
 			var kgR tss.KeygenResponse
-			if err := json.Unmarshal([]byte(keygen), &kgR); err != nil {
+			if err := json.Unmarshal([]byte(keyshare), &kgR); err != nil {
 				fmt.Printf("Failed to parse keyshare for %s: %v\n", party, err)
 			}
 
+			// print out pubkeys and p2pkh address
 			fmt.Printf(party+" Public Key: %s\n", kgR.PubKey)
 			xPub := kgR.PubKey
 			btcPath := "m/44'/0'/0'/0/0"
@@ -80,6 +89,36 @@ func main() {
 					fmt.Printf(party+" address btcP2Pkh: %s\n", btcP2Pkh)
 				}
 			}
+		}
+	}
+
+	if mode == "keysign" {
+
+		// prepare args
+		server := os.Args[2]
+		session := os.Args[3]
+		party := os.Args[4]
+		parties := os.Args[5]
+		encKey := os.Args[6]
+		decKey := os.Args[7]
+		sessionKey := ""
+		keyshare := os.Args[8]
+		derivePath := os.Args[9]
+		message := os.Args[10]
+
+		// message hash, base64 encoded
+		messageHash, _ := tss.Sha256(message)
+		messageHashBytes := []byte(messageHash)
+		messageHashBase64 := base64.StdEncoding.EncodeToString(messageHashBytes)
+
+		// join keysign
+		keysign, err := tss.JoinKeysign(server, party, parties, session, sessionKey, encKey, decKey, keyshare, derivePath, messageHashBase64)
+		time.Sleep(time.Second)
+
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		} else {
+			fmt.Printf("\n [%s] Keysign Result %s\n", party, keysign)
 		}
 	}
 }
