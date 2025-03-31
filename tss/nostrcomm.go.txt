@@ -1,0 +1,54 @@
+package tss
+
+import (
+	"time"
+
+	"github.com/patrickmn/go-cache"
+)
+
+// Global Cache
+var messageCache = cache.New(5*time.Minute, 10*time.Minute)
+
+type ProtoMessage struct {
+	SessionID    string   `json:"sessionID"`
+	Participants []string `json:"participants"`
+}
+
+type RawMessage struct {
+	SessionID string   `json:"session_id,omitempty"`
+	From      string   `json:"from,omitempty"`
+	To        []string `json:"to,omitempty"`
+	Body      string   `json:"body,omitempty"`
+	SeqNo     string   `json:"sequence_no,omitempty"`
+	Hash      string   `json:"hash,omitempty"`
+}
+
+type NostrStatus {
+
+}
+
+func setNPubs() {
+
+}
+
+func hanshake() {
+
+}
+
+
+// NOSTR Callback
+func nostrListen() {
+
+	// whenever we receive a message just push it to the cache
+	sessionID := "some_session"
+	messageRaw := "some_json_tss_message"
+	messageCache.Set(sessionID, RawMessage{nil})
+}
+
+func nostSend(session, raw_message string) {
+	// nostr implementation to send the proto_message
+}
+
+func nostrDownloadMessage(sessionID string) (string, error) {
+	messageCache.Get(sessionID)
+}

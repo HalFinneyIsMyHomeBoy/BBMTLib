@@ -16,39 +16,47 @@ go build -o "$BUILD_DIR/$BIN_NAME" main.go
 # Generate key pairs
 KEYPAIR1=$("$BUILD_DIR/$BIN_NAME" keypair)
 KEYPAIR2=$("$BUILD_DIR/$BIN_NAME" keypair)
+KEYPAIR3=$("$BUILD_DIR/$BIN_NAME" keypair)
 
 PRIVATE_KEY1=$(echo "$KEYPAIR1" | jq -r '.privateKey')
 PRIVATE_KEY2=$(echo "$KEYPAIR2" | jq -r '.privateKey')
+PRIVATE_KEY3=$(echo "$KEYPAIR3" | jq -r '.privateKey')
 
 PUBLIC_KEY1=$(echo "$KEYPAIR1" | jq -r '.publicKey')
 PUBLIC_KEY2=$(echo "$KEYPAIR2" | jq -r '.publicKey')
+PUBLIC_KEY3=$(echo "$KEYPAIR3" | jq -r '.publicKey')
 
 # Generate random session ID and chain code
 SESSION_ID=$("$BUILD_DIR/$BIN_NAME" random)
 CHAIN_CODE=$("$BUILD_DIR/$BIN_NAME" random)
 
 # Server and party details
-PORT=55055
+PORT=55056
 HOST="127.0.0.1"
 SERVER="http://$HOST:$PORT"
 
 PARTY1="peer1"
 PARTY2="peer2"
-PARTIES="$PARTY1,$PARTY2"  # Participants
+PARTY3="peer3"
+PARTIES="$PARTY1,$PARTY2,$PARTY3"  # Participants
 
 echo "Generated Parameters:"
 
 echo "PARTY1: $PARTY1"
 echo "PARTY2: $PARTY2"
+echo "PARTY3: $PARTY3"
 
 echo "KEYPAIR1: $KEYPAIR1"
 echo "KEYPAIR2: $KEYPAIR2"
+echo "KEYPAIR3: $KEYPAIR3"
 
 echo "PRIVATE_KEY1: $PRIVATE_KEY1"
 echo "PRIVATE_KEY2: $PRIVATE_KEY2"
+echo "PRIVATE_KEY3: $PRIVATE_KEY3"
 
 echo "PUBLIC_KEY1: $PUBLIC_KEY1"
 echo "PUBLIC_KEY2: $PUBLIC_KEY2"
+echo "PUBLIC_KEY3: $PUBLIC_KEY3"
 
 echo "SESSION ID: $SESSION_ID"
 echo "CHAIN CODE: $CHAIN_CODE"
@@ -58,14 +66,21 @@ echo "Starting Relay..."
 "$BUILD_DIR/$BIN_NAME" relay "$PORT" &
 PID0=$!
 
+SESSION_KEY=$("$BUILD_DIR/$BIN_NAME" random)
+
+
 # Start Keygen for both parties
 echo "Starting Keygen for PARTY1..."
-"$BUILD_DIR/$BIN_NAME" keygen "$SERVER" "$SESSION_ID" "$CHAIN_CODE" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" &
+"$BUILD_DIR/$BIN_NAME" keygen "$SERVER" "$SESSION_ID" "$CHAIN_CODE" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$SESSION_KEY" &
 PID1=$!
 
 echo "Starting Keygen for PARTY2..."
-"$BUILD_DIR/$BIN_NAME" keygen "$SERVER" "$SESSION_ID" "$CHAIN_CODE" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" &
+"$BUILD_DIR/$BIN_NAME" keygen "$SERVER" "$SESSION_ID" "$CHAIN_CODE" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$SESSION_KEY" &
 PID2=$!
+
+echo "Starting Keygen for PARTY3..."
+"$BUILD_DIR/$BIN_NAME" keygen "$SERVER" "$SESSION_ID" "$CHAIN_CODE" "$PARTY3" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2"  "$SESSION_KEY" &
+PID3=$!
 
 # Handle cleanup on exit
 trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2; exit" SIGINT SIGTERM

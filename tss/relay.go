@@ -50,10 +50,6 @@ func getHashParam(r *http.Request) string {
 	return vars["hash"]
 }
 
-func pf(format string, v ...interface{}) {
-	log.Printf(format, v...)
-}
-
 // ---- Session Handlers ----
 func postSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := getSessionID(r)
@@ -81,7 +77,7 @@ func postSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	pf("Session %s registered with participants: %v", sessionID, participants)
+	Logf("Session %s registered with participants: %v", sessionID, participants)
 }
 
 func getSession(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +103,7 @@ func deleteSession(w http.ResponseWriter, r *http.Request) {
 	dataCache.Delete(key)
 	dataCache.Delete(key + "-start")
 	w.WriteHeader(http.StatusOK)
-	pf("Session %s deleted", sessionID)
+	Logf("Session %s deleted", sessionID)
 }
 
 func completedKeysign(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +178,7 @@ func postMessage(w http.ResponseWriter, r *http.Request) {
 	setData(key, messages)
 
 	w.WriteHeader(http.StatusOK)
-	pf("Message added to session %s: %+v", sessionID, msg)
+	Logf("Message added to session %s: %+v", sessionID, msg)
 }
 
 func getMessage(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +223,7 @@ func deleteTssMessage(w http.ResponseWriter, r *http.Request) {
 		}
 		setData(key, filtered)
 		w.WriteHeader(http.StatusOK)
-		pf("Message deleted from session %s by %s with hash %s", sessionID, participantKey, hash)
+		Logf("Message deleted from session %s by %s with hash %s", sessionID, participantKey, hash)
 		return
 	}
 

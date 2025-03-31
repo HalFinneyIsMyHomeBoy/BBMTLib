@@ -162,9 +162,7 @@ func setStatus(session string, status Status) {
 
 func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
-	if len(parties) != 2 {
-		return "", fmt.Errorf("only two parties")
-	}
+
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
@@ -273,9 +271,6 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 
 func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
-	if len(parties) != 2 {
-		return "", fmt.Errorf("only two parties")
-	}
 
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
@@ -529,6 +524,11 @@ func (m *MessengerImp) Send(from, to, body string) error {
 		return fmt.Errorf("fail to marshal message: %w", err)
 	}
 
+	// TODO
+	// if net_type == 'nostr' {
+	// 	nostrSend(session, bytes.NewReader(requestBody))
+	// }
+
 	url := m.Server + "/message/" + m.SessionID
 	Logln("BBMTLog", "sending message...")
 
@@ -756,6 +756,7 @@ func flagPartyComplete(serverURL, session, localPartyID string) error {
 }
 
 func downloadMessage(server, session, sessionKey, key string, tssServerImp ServiceImpl, endCh chan struct{}, wg *sync.WaitGroup) {
+
 	defer wg.Done()
 	isApplyingMessages := false
 	until := time.Now().Add(time.Duration(msgFetchTimeout) * time.Second)
@@ -781,8 +782,13 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			isApplyingMessages = true
 			Logln("BBMTLog", "Fetching messages...")
 
-			// Fetch messages from the server
+			// TODO: illustrative
+			// if type_net == "nostr" {
+			// 	resp, err := nostrDownloadMessage(session)
+			// } else {
+			// Fetch messages from the server ( master device localnet relay )
 			resp, err := http.Get(server + "/message/" + session + "/" + key)
+			//}
 			if err != nil {
 				Logln("BBMTLog", "Error fetching messages:", err)
 				isApplyingMessages = false
@@ -811,6 +817,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			resp.Body.Close()
 
 			// Decode the messages from the response
+			// ProtoMessage.raw_message ->
 			var messages []struct {
 				SessionID string   `json:"session_id,omitempty"`
 				From      string   `json:"from,omitempty"`

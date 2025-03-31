@@ -11,3 +11,4 @@ Tss.xcframework/
 scripts/bin/
 
 scripts/*.json
+scripts/*.ks

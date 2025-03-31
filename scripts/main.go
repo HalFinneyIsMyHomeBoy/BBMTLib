@@ -51,7 +51,14 @@ func main() {
 		parties := os.Args[6]
 		encKey := os.Args[7]
 		decKey := os.Args[8]
-		sessionKey := ""
+
+		sessionKey := os.Args[9]
+
+		if len(sessionKey) > 0 {
+			encKey = ""
+			decKey = ""
+		}
+
 		ppmFile := party + ".json"
 		keyshareFile := party + ".ks"
 
@@ -101,10 +108,16 @@ func main() {
 		parties := os.Args[5]
 		encKey := os.Args[6]
 		decKey := os.Args[7]
-		sessionKey := ""
 		keyshare := os.Args[8]
 		derivePath := os.Args[9]
 		message := os.Args[10]
+
+		sessionKey := os.Args[11]
+
+		if len(sessionKey) > 0 {
+			encKey = ""
+			decKey = ""
+		}
 
 		// message hash, base64 encoded
 		messageHash, _ := tss.Sha256(message)

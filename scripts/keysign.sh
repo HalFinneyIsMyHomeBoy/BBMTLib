@@ -26,6 +26,7 @@ PUBLIC_KEY2=$(echo "$KEYPAIR2" | jq -r '.publicKey')
 # Generate random session ID and chain code
 SESSION_ID=$("$BUILD_DIR/$BIN_NAME" random)
 MESSAGE=$("$BUILD_DIR/$BIN_NAME" random)
+SESSION_KEY=$("$BUILD_DIR/$BIN_NAME" random)
 
 # Server and party details
 PORT=55055
@@ -34,12 +35,14 @@ SERVER="http://$HOST:$PORT"
 
 PARTY1="peer1"
 PARTY2="peer2"
+PARTY3="peer3"
 PARTIES="$PARTY1,$PARTY2"  # Participants
 
 echo "Generated Parameters:"
 
 echo "PARTY1: $PARTY1"
 echo "PARTY2: $PARTY2"
+echo "PARTY3: $PARTY3"
 
 echo "KEYPAIR1: $KEYPAIR1"
 echo "KEYPAIR2: $KEYPAIR2"
@@ -56,6 +59,7 @@ echo "MESSAGE: $MESSAGE"
 # load keyshares
 KEYSHARE1=$(cat "$PARTY1".ks)
 KEYSHARE2=$(cat "$PARTY2".ks)
+KEYSHARE3=$(cat "$PARTY3".ks)
 
 # Optional: Add error checking
 if [ -z "$KEYSHARE1" ] || [ -z "$KEYSHARE2" ]; then
@@ -75,15 +79,19 @@ sleep 1
 
 # Start keysign for both parties
 echo "Starting keysign for PARTY1..."
-"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$MESSAGE" &
+"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" &
 PID1=$!
 
 echo "Starting keysign for PARTY2..."
-"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$MESSAGE" &
+"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" &
 PID2=$!
 
-# Handle cleanup on exit
-trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2; exit" SIGINT SIGTERM
+#echo "Starting keysign for PARTY2..."
+#"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY3" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE3" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" &
+#PID3=$!
+
+# Handle cleanup on exit/ 2 out of 3 
+trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3; exit" SIGINT SIGTERM
 
 echo "keysign processes running. Press Ctrl+C to stop."
 
