@@ -40,6 +40,8 @@ type LocalState struct {
 	LocalPartyKey       string                         `json:"local_party_key"`
 	ChainCodeHex        string                         `json:"chain_code_hex"`
 	ResharePrefix       string                         `json:"reshare_prefix"`
+	NostrPubKey         string                         `json:"nostr_pub_key"`
+	NostrPrivKey        string                         `json:"nostr_priv_key"`
 }
 
 type KeygenRequest struct {

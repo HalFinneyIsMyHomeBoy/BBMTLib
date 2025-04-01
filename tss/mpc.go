@@ -160,7 +160,7 @@ func setStatus(session string, status Status) {
 	Hook(SessionState(session))
 }
 
-func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey string) (string, error) {
+func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey string, useNostr bool, nostrRelay, nostrPubKey, nostrPrivKey string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
 
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {

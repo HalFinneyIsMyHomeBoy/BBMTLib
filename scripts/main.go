@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
@@ -36,8 +37,13 @@ func main() {
 
 	if mode == "relay" {
 		port := os.Args[2]
+		useNostr, err := strconv.ParseBool(os.Args[10])
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		}
+		nostrRelay := os.Args[4]
 		defer tss.StopRelay()
-		tss.RunRelay(port)
+		tss.RunRelay(port, useNostr, nostrRelay)
 		select {}
 	}
 
@@ -54,6 +60,15 @@ func main() {
 
 		sessionKey := os.Args[9]
 
+		useNostr, err := strconv.ParseBool(os.Args[10])
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		}
+
+		nostrRelay := os.Args[11]
+		nostrPubKey := os.Args[12]
+		nostrPrivKey := os.Args[13]
+
 		if len(sessionKey) > 0 {
 			encKey = ""
 			decKey = ""
@@ -63,16 +78,45 @@ func main() {
 		keyshareFile := party + ".ks"
 
 		//join keygen
-		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey)
+		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, useNostr, nostrRelay, nostrPubKey, nostrPrivKey)
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
 
+			// Create LocalState with Nostr keys
+
+			var localState tss.LocalState
+
+			if err := json.Unmarshal([]byte(keyshare), &localState); err != nil {
+
+				fmt.Printf("Failed to parse keyshare for %s: %v\n", party, err)
+
+			}
+
+			localState.NostrPubKey = peerNostrPubKey
+
+			localState.NostrPrivKey = peerNostrPrivKey
+
+			// Marshal the updated LocalState
+
+			updatedKeyshare, err := json.Marshal(localState)
+
+			if err != nil {
+
+				fmt.Printf("Failed to marshal updated keyshare for %s: %v\n", party, err)
+
+			}
+
 			// save keyshare file - base64 encoded
+
 			fmt.Printf(party + " Keygen Result Saved")
-			encodedResult := base64.StdEncoding.EncodeToString([]byte(keyshare))
+
+			encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
+
 			if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
-				fmt.Printf("Failed to save keyshare for Peer1: %v\n", err)
+
+				fmt.Printf("Failed to save keyshare for %s: %v\n", party, err)
+
 			}
 
 			var kgR tss.KeygenResponse
