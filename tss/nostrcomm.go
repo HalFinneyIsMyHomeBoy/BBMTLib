@@ -5,6 +5,7 @@ import (
 
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/patrickmn/go-cache"
@@ -136,5 +137,8 @@ func nostSend(session, raw_message string) {
 }
 
 func nostrDownloadMessage(sessionID string) (string, error) {
-	messageCache.Get(sessionID)
+	if msg, found := messageCache.Get(sessionID); found {
+		return msg.(string), nil
+	}
+	return "", fmt.Errorf("message not found for session %s", sessionID)
 }

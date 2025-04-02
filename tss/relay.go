@@ -275,14 +275,14 @@ func listen(port string) *http.Server {
 
 var server *http.Server = nil
 
-func RunRelay(port string, useNostr bool, nostrRelay string) (string, error) {
+func RunRelay(port string, useNostr bool, nostrRelay, nostrPubKey, nostrPrivKey string) (string, error) {
 	if server != nil {
 		StopRelay()
 	}
 	time.Sleep(time.Second)
 	go func() {
 		if useNostr {
-			nostrListen(nostrRelay, nostrPubKey)
+			//server = nostrListen(nostrRelay, nostrPubKey, nostrPrivKey)
 		} else {
 			server = listen(port)
 		}

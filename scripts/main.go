@@ -37,18 +37,19 @@ func main() {
 
 	if mode == "relay" {
 		port := os.Args[2]
-		useNostr, err := strconv.ParseBool(os.Args[10])
+		useNostr, err := strconv.ParseBool(os.Args[3])
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		}
 		nostrRelay := os.Args[4]
+		nostrPubKey := os.Args[5]
+		nostrPrivKey := os.Args[6]
 		defer tss.StopRelay()
-		tss.RunRelay(port, useNostr, nostrRelay)
+		tss.RunRelay(port, useNostr, nostrRelay, nostrPubKey, nostrPrivKey)
 		select {}
 	}
 
 	if mode == "keygen" {
-
 		// prepare args
 		server := os.Args[2]
 		session := os.Args[3]
@@ -68,6 +69,7 @@ func main() {
 		nostrRelay := os.Args[11]
 		nostrPubKey := os.Args[12]
 		nostrPrivKey := os.Args[13]
+		nostrPartyPubKeys := os.Args[14]
 
 		if len(sessionKey) > 0 {
 			encKey = ""
@@ -78,7 +80,7 @@ func main() {
 		keyshareFile := party + ".ks"
 
 		//join keygen
-		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, useNostr, nostrRelay, nostrPubKey, nostrPrivKey)
+		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, useNostr, nostrRelay, nostrPubKey, nostrPrivKey, nostrPartyPubKeys)
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
@@ -93,9 +95,9 @@ func main() {
 
 			}
 
-			localState.NostrPubKey = peerNostrPubKey
+			//localState.NostrPubKey = peerNostrPubKey
 
-			localState.NostrPrivKey = peerNostrPrivKey
+			//localState.NostrPrivKey = peerNostrPrivKey
 
 			// Marshal the updated LocalState
 
@@ -109,7 +111,7 @@ func main() {
 
 			// save keyshare file - base64 encoded
 
-			fmt.Printf(party + " Keygen Result Saved")
+			fmt.Printf(party + " Keygen Result Saved\n")
 
 			encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
 
@@ -138,6 +140,7 @@ func main() {
 					fmt.Printf("Failed to generate btc address for %s: %v\n", party, err)
 				} else {
 					fmt.Printf(party+" address btcP2Pkh: %s\n", btcP2Pkh)
+					fmt.Printf(party+" Nostr Party PubKeys: %s\n", nostrPartyPubKeys)
 				}
 			}
 		}

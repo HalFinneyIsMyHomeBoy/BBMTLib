@@ -32,6 +32,8 @@ SESSION_KEY=$("$BUILD_DIR/$BIN_NAME" random)
 PORT=55055
 HOST="127.0.0.1"
 SERVER="http://$HOST:$PORT"
+USENOSTR="false"
+NOSTRRELAY="ws://bbw-nostr.xyz"
 
 PARTY1="peer1"
 PARTY2="peer2"
@@ -70,7 +72,7 @@ fi
 
 # Start Relay in the background and track its PID
 echo "Starting Relay..."
-"$BUILD_DIR/$BIN_NAME" relay "$PORT" &
+"$BUILD_DIR/$BIN_NAME" relay "$PORT" "$USENOSTR" "$NOSTRRELAY" "$NOSTR_PUBLIC_KEY1" "$NOSTR_PRIVATE_KEY1" &
 PID0=$!
 
 DERIVATION_PATH="m/44'/0'/0'/0/0"
