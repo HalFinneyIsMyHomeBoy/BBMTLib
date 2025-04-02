@@ -42,6 +42,7 @@ type LocalState struct {
 	ResharePrefix       string                         `json:"reshare_prefix"`
 	NostrPubKey         string                         `json:"nostr_pub_key"`
 	NostrPrivKey        string                         `json:"nostr_priv_key"`
+	NostrPartyPubKeys   map[string]string              `json:"nostr_party_pub_keys"`
 }
 
 type KeygenRequest struct {

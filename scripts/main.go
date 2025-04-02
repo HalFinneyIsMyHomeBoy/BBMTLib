@@ -95,12 +95,18 @@ func main() {
 
 			}
 
-			//localState.NostrPubKey = peerNostrPubKey
-
-			//localState.NostrPrivKey = peerNostrPrivKey
+			var nostrPartyPubKeysMap struct {
+				NostrPubKeys map[string]string `json:"nostr_party_pub_keys"`
+			}
+			if err := json.Unmarshal([]byte(nostrPartyPubKeys), &nostrPartyPubKeysMap); err != nil {
+				fmt.Printf("Failed to parse nostr party pubkeys: %v\n", err)
+			}
+			localState.NostrPubKey = nostrPubKey
+			localState.NostrPrivKey = nostrPrivKey
+			localState.NostrPartyPubKeys = nostrPartyPubKeysMap.NostrPubKeys
+			//var peer1 = localState.NostrPartyPubKeys["peer1"]
 
 			// Marshal the updated LocalState
-
 			updatedKeyshare, err := json.Marshal(localState)
 
 			if err != nil {

@@ -61,7 +61,7 @@ NOSTR_PARTY_PUBKEYS=$(jq -n \
   --arg p2 "$PARTY2" --arg k2 "$NOSTR_PUBLIC_KEY2" \
   --arg p3 "$PARTY3" --arg k3 "$NOSTR_PUBLIC_KEY3" \
   '{
-    "nostr_pubkeys": {
+    "nostr_party_pub_keys": {
       ($p1): $k1,
       ($p2): $k2,
       ($p3): $k3
