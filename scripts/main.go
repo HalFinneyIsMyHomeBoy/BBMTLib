@@ -101,8 +101,8 @@ func main() {
 			if err := json.Unmarshal([]byte(nostrPartyPubKeys), &nostrPartyPubKeysMap); err != nil {
 				fmt.Printf("Failed to parse nostr party pubkeys: %v\n", err)
 			}
-			localState.NostrPubKey = nostrPubKey
-			localState.NostrPrivKey = nostrPrivKey
+			localState.LocalNostrPubKey = nostrPubKey
+			localState.LocalNostrPrivKey = nostrPrivKey
 			localState.NostrPartyPubKeys = nostrPartyPubKeysMap.NostrPubKeys
 			//var peer1 = localState.NostrPartyPubKeys["peer1"]
 
@@ -147,6 +147,17 @@ func main() {
 				} else {
 					fmt.Printf(party+" address btcP2Pkh: %s\n", btcP2Pkh)
 					fmt.Printf(party+" Nostr Party PubKeys: %s\n", nostrPartyPubKeys)
+
+					// Master host is the party with the largest nostr public key
+					var maxPeer string
+					var maxKey string
+					for peer, key := range localState.NostrPartyPubKeys {
+						if key > maxKey { // Direct string comparison
+							maxKey = key
+							maxPeer = peer
+						}
+					}
+					fmt.Printf("Master host of the party is : %s: %s\n", maxPeer, maxKey)
 				}
 			}
 		}
