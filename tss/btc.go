@@ -250,7 +250,7 @@ func MpcSendBTC(
 	/* tss */
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath,
 	/* btc */
-	publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64) (string, error) {
+	publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, net_type string) (string, error) {
 
 	Logln("BBMTLog", "invoking MpcSendBTC...")
 
@@ -382,7 +382,7 @@ func MpcSendBTC(
 			// Sign each utxo
 			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
-			sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+			sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 			if err != nil {
 				return "", fmt.Errorf("failed to sign transaction: signature is empty")
 			}
@@ -420,7 +420,7 @@ func MpcSendBTC(
 			// Sign
 			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
-			sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+			sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 			if err != nil {
 				return "", fmt.Errorf("failed to sign transaction: signature is empty")
 			}

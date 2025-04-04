@@ -34,6 +34,7 @@ type MessengerImp struct {
 	SessionID  string
 	SessionKey string
 	Mutex      sync.Mutex
+	Net_Type   string
 }
 
 type LocalStateAccessorImp struct {
@@ -160,7 +161,7 @@ func setStatus(session string, status Status) {
 	Hook(SessionState(session))
 }
 
-func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey string, useNostr bool, nostrRelay, nostrPubKey, nostrPrivKey, nostrPartyPubKeys string) (string, error) {
+func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey, net_type string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
 
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
@@ -206,6 +207,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 		Server:     server,
 		SessionID:  session,
 		SessionKey: sessionKey,
+		Net_Type:   net_type,
 	}
 
 	localStateAccessor := &LocalStateAccessorImp{
@@ -269,7 +271,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	return localState, nil
 }
 
-func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message string) (string, error) {
+func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message, net_type string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
 
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
@@ -277,6 +279,10 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	}
 	if len(sessionKey) == 0 && (len(encKey) == 0 || len(decKey) == 0) {
 		return "", fmt.Errorf("either a session key, either both enc/dec keys")
+	}
+
+	if net_type == "nostr" {
+		nostrListen(key)
 	}
 
 	encryptionKey = encKey
@@ -315,6 +321,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		Server:     server,
 		SessionID:  session,
 		SessionKey: sessionKey,
+		Net_Type:   net_type,
 	}
 
 	localStateAccessor := &LocalStateAccessorImp{
@@ -476,7 +483,6 @@ func unpadPKCS7(data []byte) []byte {
 }
 
 func (m *MessengerImp) Send(from, to, body string) error {
-
 	m.Mutex.Lock()
 	defer m.Mutex.Unlock()
 
@@ -524,42 +530,42 @@ func (m *MessengerImp) Send(from, to, body string) error {
 		return fmt.Errorf("fail to marshal message: %w", err)
 	}
 
-	// TODO
-	// if net_type == 'nostr' {
-	// 	nostrSend(session, bytes.NewReader(requestBody))
-	// }
+	//TODO: nostr send
+	if m.Net_Type == "nostr" {
+		nostrSend(m.SessionID, string(requestBody))
+	} else {
+		url := m.Server + "/message/" + m.SessionID
+		Logln("BBMTLog", "sending message...")
 
-	url := m.Server + "/message/" + m.SessionID
-	Logln("BBMTLog", "sending message...")
+		// Prepare the HTTP request
+		resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
+		if err != nil {
+			Logln("BBMTLog", "fail to send message: ", err)
+			return fmt.Errorf("fail to send message: %w", err)
+		}
+		defer resp.Body.Close()
 
-	// Prepare the HTTP request
-	resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
-	if err != nil {
-		Logln("BBMTLog", "fail to send message: ", err)
-		return fmt.Errorf("fail to send message: %w", err)
+		// Log the response
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			Logln("BBMTLog", "fail to read response: ", err)
+			return fmt.Errorf("fail to read response: %w", err)
+		}
+		Logln("BBMTLog", "message sent, status:", resp.Status)
+
+		// Check for non-200 status codes
+		if resp.StatusCode != http.StatusOK {
+			Logln("BBMTLog", "message sent, response body:", string(respBody)[:min(80, len(string(respBody)))]+"...")
+			return fmt.Errorf("fail to send message: %s", resp.Status)
+		}
+
+		// Increment the sequence number after successful send
+		Logln("BBMTLog", "incremented Sent Message To OutSeqNo", status.SeqNo)
+		status.Info = fmt.Sprintf("Sent Message %d", status.SeqNo)
+		status.Step++
+		status.SeqNo++
+		setSeqNo(m.SessionID, status.Info, status.Step, status.SeqNo)
 	}
-	defer resp.Body.Close()
-
-	// Log the response
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		Logln("BBMTLog", "fail to read response: ", err)
-		return fmt.Errorf("fail to read response: %w", err)
-	}
-	Logln("BBMTLog", "message sent, status:", resp.Status)
-
-	// Check for non-200 status codes
-	if resp.StatusCode != http.StatusOK {
-		Logln("BBMTLog", "message sent, response body:", string(respBody)[:min(80, len(string(respBody)))]+"...")
-		return fmt.Errorf("fail to send message: %s", resp.Status)
-	}
-
-	// Increment the sequence number after successful send
-	Logln("BBMTLog", "incremented Sent Message To OutSeqNo", status.SeqNo)
-	status.Info = fmt.Sprintf("Sent Message %d", status.SeqNo)
-	status.Step++
-	status.SeqNo++
-	setSeqNo(m.SessionID, status.Info, status.Step, status.SeqNo)
 
 	return nil
 }

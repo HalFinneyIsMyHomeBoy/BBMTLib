@@ -269,23 +269,18 @@ func listen(port string) *http.Server {
 			log.Fatalf("Server failed: %v", err)
 		}
 	}()
-
 	return server
 }
 
 var server *http.Server = nil
 
-func RunRelay(port string, useNostr bool, nostrRelay, nostrPubKey, nostrPrivKey string) (string, error) {
+func RunRelay(port string) (string, error) {
 	if server != nil {
 		StopRelay()
 	}
 	time.Sleep(time.Second)
 	go func() {
-		if useNostr {
-			//server = nostrListen(nostrRelay, nostrPubKey, nostrPrivKey)
-		} else {
-			server = listen(port)
-		}
+		server = listen(port)
 	}()
 	return "ok", nil
 }

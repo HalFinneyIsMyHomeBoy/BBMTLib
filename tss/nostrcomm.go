@@ -1,17 +1,17 @@
 package tss
 
 import (
-	"time"
-
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
-
-	"github.com/patrickmn/go-cache"
+	"os"
+	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip04"
+	"github.com/patrickmn/go-cache"
 )
 
 // Global Cache
@@ -51,6 +51,40 @@ type NostrEvent struct {
 	Sig       string     `json:"sig"`
 }
 
+func GetKeyShare(party string) (LocalState, error) {
+
+	data, err := os.ReadFile(party + ".ks")
+	if err != nil {
+		fmt.Printf("Go Error: %v\n", err)
+	}
+
+	// Decode base64
+	decodedData, err := base64.StdEncoding.DecodeString(string(data))
+	if err != nil {
+		fmt.Printf("Go Error: %v\n", err)
+	}
+
+	// Parse JSON into LocalState
+	var keyShare LocalState
+	if err := json.Unmarshal(decodedData, &keyShare); err != nil {
+		fmt.Printf("Go Error: %v\n", err)
+	}
+
+	return keyShare, nil
+}
+
+func GetMaster(keyShare LocalState) (string, string) {
+	var masterPeer string
+	var masterPubKey string
+	for peer, key := range keyShare.NostrPartyPubKeys {
+		if key > masterPubKey { // Direct string comparison
+			masterPubKey = key
+			masterPeer = peer
+		}
+	}
+	return masterPeer, masterPubKey
+}
+
 func setNPubs() {
 	// set the nostr pubkeys for the participants
 
@@ -61,8 +95,27 @@ func hanshake() {
 }
 
 // NOSTR Callback
-func nostrListen(nostrRelay string, nostrPubKey string, nostrPrivKey string) {
+func nostrListen(localParty string) {
+	keyShare, err := GetKeyShare(localParty)
+	masterPeer, masterPubKey := GetMaster(keyShare)
+	var isMaster bool
+	var port string = "55055"
+	var nostrRelay string = "ws://bbw-nostr.xyz"
 
+	if masterPeer == keyShare.LocalPartyKey && masterPubKey == keyShare.LocalNostrPubKey {
+		// we are the master, so we start the host
+		isMaster = true
+		fmt.Printf("%s is master\n", localParty)
+	} else {
+		isMaster = false
+	}
+
+	if isMaster {
+		RunRelay(port)
+		fmt.Printf("relay started by %s\n", localParty)
+		//select {}
+	}
+	//fmt.Printf("%s Listening for messages on nostr\n", localParty)
 	// senderPrivkey string, recipients []string
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -80,7 +133,7 @@ func nostrListen(nostrRelay string, nostrPubKey string, nostrPrivKey string) {
 	filters := nostr.Filters{
 		{
 			Kinds: []int{nostr.KindEncryptedDirectMessage},
-			Tags:  nostr.TagMap{"p": []string{nostrPubKey}}, //Only messages for this pubkey
+			Tags:  nostr.TagMap{"p": []string{keyShare.LocalNostrPubKey}}, //Only messages for this pubkey
 			Since: &since,
 		},
 	}
@@ -90,11 +143,11 @@ func nostrListen(nostrRelay string, nostrPubKey string, nostrPrivKey string) {
 		log.Printf("Error subscribing to events: %v\n", err)
 		return
 	}
-
+	fmt.Printf("%s subscribed to nostr\n", localParty)
 	for {
 		select {
 		case event := <-sub.Events:
-			sharedSecret, err := nip04.ComputeSharedSecret(event.PubKey, nostrPrivKey) //TODO: event.PubKey should be senderPubkey???
+			sharedSecret, err := nip04.ComputeSharedSecret(event.PubKey, keyShare.LocalNostrPrivKey) //TODO: event.PubKey should be senderPubkey???
 			if err != nil {
 				log.Printf("Error computing shared secret: %v\n", err)
 				continue
@@ -132,8 +185,9 @@ func nostrListen(nostrRelay string, nostrPubKey string, nostrPrivKey string) {
 	//messageCache.Set(sessionID, rawMessage{nil})
 }
 
-func nostSend(session, raw_message string) {
+func nostrSend(session, raw_message string) {
 	// nostr implementation to send the proto_message
+
 }
 
 func nostrDownloadMessage(sessionID string) (string, error) {

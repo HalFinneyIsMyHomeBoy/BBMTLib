@@ -34,11 +34,12 @@ HOST="127.0.0.1"
 SERVER="http://$HOST:$PORT"
 USENOSTR="false"
 NOSTRRELAY="ws://bbw-nostr.xyz"
+NET_TYPE=""
 
 PARTY1="peer1"
 PARTY2="peer2"
 PARTY3="peer3"
-PARTIES="$PARTY1,$PARTY2"  # Participants
+PARTIES="$PARTY1,$PARTY2,$PARTY3"  # Participants
 
 echo "Generated Parameters:"
 
@@ -70,27 +71,32 @@ if [ -z "$KEYSHARE1" ] || [ -z "$KEYSHARE2" ]; then
     exit 1
 fi
 
-# Start Relay in the background and track its PID
-echo "Starting Relay..."
-"$BUILD_DIR/$BIN_NAME" relay "$PORT" "$USENOSTR" "$NOSTRRELAY" "$NOSTR_PUBLIC_KEY1" "$NOSTR_PRIVATE_KEY1" &
-PID0=$!
+if [ "$USENOSTR" = "true" ]; then
+    echo "Starting Nostr Relay..."
+    NET_TYPE="nostr"
+else
+    echo "Starting Standard LAN Relay..."
+    NET_TYPE=""
+    "$BUILD_DIR/$BIN_NAME" relay "$PORT" "$NET_TYPE" & PID0=$!
+fi
+
 
 DERIVATION_PATH="m/44'/0'/0'/0/0"
 
 sleep 1
-
+#"$BUILD_DIR/$BIN_NAME" test "$PARTY1" & PID1=$!
 # Start keysign for both parties
 echo "Starting keysign for PARTY1..."
-"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" &
+"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "$NET_TYPE" &
 PID1=$!
 
 echo "Starting keysign for PARTY2..."
-"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" &
+"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "$NET_TYPE" &
 PID2=$!
 
-#echo "Starting keysign for PARTY2..."
-#"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY3" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE3" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" &
-#PID3=$!
+echo "Starting keysign for PARTY2..."
+"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY3" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE3" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "$NET_TYPE" &
+PID3=$!
 
 # Handle cleanup on exit/ 2 out of 3 
 trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3; exit" SIGINT SIGTERM

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
@@ -22,9 +21,65 @@ func randomSeed(length int) string {
 	return string(result)
 }
 
+// func getKeyShare(party string) (tss.LocalState, error) {
+
+// 	data, err := os.ReadFile(party + ".ks")
+// 	if err != nil {
+// 		fmt.Printf("Go Error: %v\n", err)
+// 	}
+
+// 	// Decode base64
+// 	decodedData, err := base64.StdEncoding.DecodeString(string(data))
+// 	if err != nil {
+// 		fmt.Printf("Go Error: %v\n", err)
+// 	}
+
+// 	// Parse JSON into LocalState
+// 	var keyShare tss.LocalState
+// 	if err := json.Unmarshal(decodedData, &keyShare); err != nil {
+// 		fmt.Printf("Go Error: %v\n", err)
+// 	}
+
+// 	// var masterPeer string
+// 	// var maxKey string
+// 	// for peer, key := range localState.NostrPartyPubKeys {
+// 	// 	if key > maxKey { // Direct string comparison
+// 	// 		maxKey = key
+// 	// 		masterPeer = peer
+// 	// 	}
+// 	// }
+// 	// fmt.Printf("Master host of the party is : %s: %s\n", masterPeer, maxKey)
+// 	return keyShare, nil
+// }
+
 func main() {
 
 	mode := os.Args[1]
+
+	if mode == "test" {
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: go run main.go test <localParty>")
+			return
+		}
+		localParty := os.Args[2]
+		keyShare, err := tss.GetKeyShare(localParty)
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		}
+
+		masterPeer, masterPubKey := tss.GetMaster(keyShare)
+		var isMaster bool
+
+		if masterPeer == keyShare.LocalPartyKey && masterPubKey == keyShare.LocalNostrPubKey {
+			// we are the master, so we start the host
+			isMaster = true
+		} else {
+			isMaster = false
+		}
+		fmt.Printf("Master peer: %s\n", masterPeer)
+		fmt.Printf("Master pubkey: %s\n", masterPubKey)
+		fmt.Printf("Is master: %t\n", isMaster)
+	}
 
 	if mode == "keypair" {
 		kp, _ := tss.GenerateKeyPair()
@@ -37,15 +92,16 @@ func main() {
 
 	if mode == "relay" {
 		port := os.Args[2]
-		useNostr, err := strconv.ParseBool(os.Args[3])
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		}
-		nostrRelay := os.Args[4]
-		nostrPubKey := os.Args[5]
-		nostrPrivKey := os.Args[6]
+		//useNostr, err := strconv.ParseBool(os.Args[3])
+		// if err != nil {
+		// 	fmt.Printf("Go Error: %v\n", err)
+		// }
+		//net_type := os.Args[3]
+		// nostrRelay := os.Args[4]
+		// nostrPubKey := os.Args[5]
+		// nostrPrivKey := os.Args[6]
 		defer tss.StopRelay()
-		tss.RunRelay(port, useNostr, nostrRelay, nostrPubKey, nostrPrivKey)
+		tss.RunRelay(port)
 		select {}
 	}
 
@@ -61,12 +117,16 @@ func main() {
 
 		sessionKey := os.Args[9]
 
-		useNostr, err := strconv.ParseBool(os.Args[10])
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		}
+		//ol(os.Args[10])
+		// var net_type string
 
-		nostrRelay := os.Args[11]
+		// if useNostr {
+		// 	net_type = "nostr"
+		// } else {
+		// 	net_type = ""
+		// }
+
+		//nostrRelay := os.Args[11]
 		nostrPubKey := os.Args[12]
 		nostrPrivKey := os.Args[13]
 		nostrPartyPubKeys := os.Args[14]
@@ -80,7 +140,7 @@ func main() {
 		keyshareFile := party + ".ks"
 
 		//join keygen
-		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, useNostr, nostrRelay, nostrPubKey, nostrPrivKey, nostrPartyPubKeys)
+		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, "")
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
@@ -177,6 +237,7 @@ func main() {
 		message := os.Args[10]
 
 		sessionKey := os.Args[11]
+		net_type := os.Args[12]
 
 		if len(sessionKey) > 0 {
 			encKey = ""
@@ -188,8 +249,7 @@ func main() {
 		messageHashBytes := []byte(messageHash)
 		messageHashBase64 := base64.StdEncoding.EncodeToString(messageHashBytes)
 
-		// join keysign
-		keysign, err := tss.JoinKeysign(server, party, parties, session, sessionKey, encKey, decKey, keyshare, derivePath, messageHashBase64)
+		keysign, err := tss.JoinKeysign(server, party, parties, session, sessionKey, encKey, decKey, keyshare, derivePath, messageHashBase64, net_type)
 		time.Sleep(time.Second)
 
 		if err != nil {
