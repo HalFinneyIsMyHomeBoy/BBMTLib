@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/patrickmn/go-cache"
 )
 
 type Status struct {
@@ -532,7 +534,8 @@ func (m *MessengerImp) Send(from, to, body string) error {
 
 	//TODO: nostr send
 	if m.Net_Type == "nostr" {
-		nostrSend(m.SessionID, string(requestBody))
+		messageCache.Set(m.SessionID, string(requestBody), cache.DefaultExpiration)
+		nostrCacheSet(m.SessionID, string(requestBody))
 	} else {
 		url := m.Server + "/message/" + m.SessionID
 		Logln("BBMTLog", "sending message...")
