@@ -32,7 +32,7 @@ SESSION_KEY=$("$BUILD_DIR/$BIN_NAME" random)
 PORT=55055
 HOST="127.0.0.1"
 SERVER="http://$HOST:$PORT"
-USENOSTR="false"
+USENOSTR="true"
 NOSTRRELAY="ws://bbw-nostr.xyz"
 NET_TYPE=""
 

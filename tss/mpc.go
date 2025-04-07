@@ -17,8 +17,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/patrickmn/go-cache"
 )
 
 type Status struct {
@@ -229,7 +227,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	Logln("BBMTLog", "downloadMessage active...")
-	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
+	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg, net_type)
 	Logln("BBMTLog", "doing ECDSA keygen...")
 	_, err = tssServerImp.KeygenECDSA(&KeygenRequest{
 		LocalPartyID: key,
@@ -284,7 +282,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	}
 
 	if net_type == "nostr" {
-		nostrListen(key)
+		go nostrListen(key)
 	}
 
 	encryptionKey = encKey
@@ -343,7 +341,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	Logln("BBMTLog", "downloadMessage active...")
-	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
+	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg, net_type)
 	Logln("BBMTLog", "start ECDSA keysign...")
 	resp, err := tssServerImp.KeysignECDSA(&KeysignRequest{
 		PubKey:               keyshare,
@@ -534,7 +532,7 @@ func (m *MessengerImp) Send(from, to, body string) error {
 
 	//TODO: nostr send
 	if m.Net_Type == "nostr" {
-		messageCache.Set(m.SessionID, string(requestBody), cache.DefaultExpiration)
+		//messageCache.Set(m.SessionID, string(requestBody), cache.DefaultExpiration)
 		nostrCacheSet(m.SessionID, string(requestBody))
 	} else {
 		url := m.Server + "/message/" + m.SessionID
@@ -764,7 +762,7 @@ func flagPartyComplete(serverURL, session, localPartyID string) error {
 	return nil
 }
 
-func downloadMessage(server, session, sessionKey, key string, tssServerImp ServiceImpl, endCh chan struct{}, wg *sync.WaitGroup) {
+func downloadMessage(server, session, sessionKey, key string, tssServerImp ServiceImpl, endCh chan struct{}, wg *sync.WaitGroup, type_net string) {
 
 	defer wg.Done()
 	isApplyingMessages := false
@@ -792,12 +790,25 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			Logln("BBMTLog", "Fetching messages...")
 
 			// TODO: illustrative
-			// if type_net == "nostr" {
-			// 	resp, err := nostrDownloadMessage(session)
-			// } else {
-			// Fetch messages from the server ( master device localnet relay )
-			resp, err := http.Get(server + "/message/" + session + "/" + key)
-			//}
+			var resp *http.Response
+			var err error
+			if type_net == "nostr" {
+				msg, err := nostrDownloadMessage(session, key)
+				if err != nil {
+					Logln("BBMTLog", "Error fetching messages from nostr:", err)
+					isApplyingMessages = false
+					continue
+				}
+
+				resp = &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(msg)),
+				}
+			} else {
+				//Fetch messages from the server ( master device localnet relay )
+				resp, err = http.Get(server + "/message/" + session + "/" + key)
+			}
+
 			if err != nil {
 				Logln("BBMTLog", "Error fetching messages:", err)
 				isApplyingMessages = false
@@ -837,11 +848,13 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			}
 			if err := json.Unmarshal(bodyBytes, &messages); err != nil {
 				Logln("BBMTLog", "Failed to decode messages:", err)
+				//TODO: this is where the problem is. Need to find out why the body is not being unmarshalled
+				Logln("BBMTLog", "Body:", string(bodyBytes))
 				isApplyingMessages = false
 				continue
+			} else {
+				Logln("BBMTLog", "CLEANEDBody:", string(bodyBytes))
 			}
-
-			Logln("BBMTLog", "Got messages count:", len(messages))
 
 			// Sort messages by sequence number
 			sort.SliceStable(messages, func(i, j int) bool {

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
+	"github.com/nbd-wtf/go-nostr"
 )
 
 func randomSeed(length int) string {
@@ -56,34 +58,20 @@ func main() {
 
 	mode := os.Args[1]
 
-	if mode == "test" {
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: go run main.go test <localParty>")
-			return
-		}
-		localParty := os.Args[2]
-		keyShare, err := tss.GetKeyShare(localParty)
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		}
-
-		masterPeer, masterPubKey := tss.GetMaster(keyShare)
-		var isMaster bool
-
-		if masterPeer == keyShare.LocalPartyKey && masterPubKey == keyShare.LocalNostrPubKey {
-			// we are the master, so we start the host
-			isMaster = true
-		} else {
-			isMaster = false
-		}
-		fmt.Printf("Master peer: %s\n", masterPeer)
-		fmt.Printf("Master pubkey: %s\n", masterPubKey)
-		fmt.Printf("Is master: %t\n", isMaster)
-	}
-
 	if mode == "keypair" {
 		kp, _ := tss.GenerateKeyPair()
 		fmt.Println(kp)
+	}
+
+	if mode == "nostrKeypair" {
+		privKey := nostr.GeneratePrivateKey()
+		pubKey, _ := nostr.GetPublicKey(privKey)
+		keyPair := map[string]string{
+			"privateKey": privKey,
+			"publicKey":  pubKey,
+		}
+		keyPairJSON, _ := json.Marshal(keyPair)
+		fmt.Println(string(keyPairJSON))
 	}
 
 	if mode == "random" {
@@ -257,5 +245,95 @@ func main() {
 		} else {
 			fmt.Printf("\n [%s] Keysign Result %s\n", party, keysign)
 		}
+	}
+
+	//This is used to test with debugging
+	if mode == "test" {
+
+		parties := "peer1,peer2,peer3" // All participating parties
+		session := randomSeed(64)      // Generate random session ID
+		message := randomSeed(64)      // Random message to sign
+		sessionKey := randomSeed(64)   // Random session key
+		// Split parties string into individual peers
+		peerList := strings.Split(parties, ",")
+		net_type := "nostr"
+
+		if net_type == "nostr" {
+			net_type = "nostr"
+		} else {
+			go tss.RunRelay("55055")
+			time.Sleep(time.Second)
+		}
+		// Loop through each peer
+
+		for _, peer := range peerList {
+			fmt.Printf("Processing peer: %s\n", peer)
+
+			// Read and decode keyshare file for this peer
+			keyshare, err := os.ReadFile(peer + ".ks")
+			if err != nil {
+				fmt.Printf("Error reading keyshare file for %s: %v\n", peer, err)
+				continue
+			}
+
+			// Decode base64
+			decodedData, err := base64.StdEncoding.DecodeString(string(keyshare))
+			if err != nil {
+				fmt.Printf("Error decoding base64 for %s: %v\n", peer, err)
+				continue
+			}
+
+			// Parse JSON into LocalState
+			var localState tss.LocalState
+			if err := json.Unmarshal(decodedData, &localState); err != nil {
+				fmt.Printf("Error parsing JSON for %s: %v\n", peer, err)
+				continue
+			}
+
+			fmt.Printf("Successfully processed keyshare for %s\n", peer)
+
+			fmt.Println("Testing...")
+			// prepare args
+			server := "http://127.0.0.1:55055" // Default relay server
+			party := peer                      // Local party identifier
+
+			// Generate keypair for encryption/decryption
+			keypair, err := tss.GenerateKeyPair()
+			if err != nil {
+				fmt.Printf("Error generating keypair: %v\n", err)
+				return
+			}
+			var keypairMap map[string]string
+			if err := json.Unmarshal([]byte(keypair), &keypairMap); err != nil {
+				fmt.Printf("Error parsing keypair: %v\n", err)
+				return
+			}
+			encKey := keypairMap["PublicKey"]  // Public key for encryption
+			decKey := keypairMap["PrivateKey"] // Private key for decryption
+
+			derivePath := "m/44'/0'/0'/0/0" // Standard BTC derivation path
+
+			if len(sessionKey) > 0 {
+				encKey = ""
+				decKey = ""
+			}
+
+			// message hash, base64 encoded
+			messageHash, _ := tss.Sha256(message)
+			messageHashBytes := []byte(messageHash)
+			messageHashBase64 := base64.StdEncoding.EncodeToString(messageHashBytes)
+
+			//go func(peer string) {
+			go func() {
+				keysign, err := tss.JoinKeysign(server, party, parties, session, sessionKey, encKey, decKey, string(keyshare), derivePath, messageHashBase64, net_type)
+				if err != nil {
+					fmt.Printf("Go Error: %v\n", err)
+				} else {
+					fmt.Printf("\n [%s] Keysign Result %s\n", party, keysign)
+				}
+			}()
+			//}(peer)
+		}
+		select {}
 	}
 }
