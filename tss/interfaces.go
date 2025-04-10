@@ -11,7 +11,7 @@ type Service interface {
 }
 
 type Messenger interface {
-	Send(from, to, body string) error
+	Send(from, to, body string, keygenCommitteeKeys string) error
 }
 
 type LocalStateAccessor interface {

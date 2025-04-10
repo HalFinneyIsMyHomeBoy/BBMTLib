@@ -250,10 +250,10 @@ func main() {
 	//This is used to test with debugging
 	if mode == "test" {
 
-		parties := "peer1,peer2,peer3" // All participating parties
-		session := randomSeed(64)      // Generate random session ID
-		message := randomSeed(64)      // Random message to sign
-		sessionKey := randomSeed(64)   // Random session key
+		parties := "peer1,peer2"     // All participating parties
+		session := randomSeed(64)    // Generate random session ID
+		message := randomSeed(64)    // Random message to sign
+		sessionKey := randomSeed(64) // Random session key
 		// Split parties string into individual peers
 		peerList := strings.Split(parties, ",")
 		net_type := "nostr"
@@ -267,6 +267,9 @@ func main() {
 		// Loop through each peer
 
 		for _, peer := range peerList {
+			masterPeer, masterPubKey := tss.GetMaster(strings.Join(peerList, ","), peer)
+			fmt.Printf("Master peer: %s\n", masterPeer)
+			fmt.Printf("Master pubkey: %s\n", masterPubKey)
 			fmt.Printf("Processing peer: %s\n", peer)
 
 			// Read and decode keyshare file for this peer

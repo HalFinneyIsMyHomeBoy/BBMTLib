@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
@@ -19,6 +20,7 @@ var (
 	nostrMessageCache = cache.New(5*time.Minute, 10*time.Minute)
 	globalRelay       *nostr.Relay
 	globalCtx         context.Context
+	nostrRelay        string = "ws://bbw-nostr.xyz"
 )
 
 type ProtoMessage struct {
@@ -29,6 +31,10 @@ type ProtoMessage struct {
 	Datetime     string   `json:"datetime"`
 	SeqNo        string   `json:"sequence_no"`
 	RawMessage   string   `json:"raw_message"`
+	RequestPath  string   `json:"request_path"`
+	RequestType  string   `json:"request_type"`
+	From         string   `json:"from"`
+	NostrEventID string   `json:"nostr_event_id"`
 }
 
 type RawMessage struct {
@@ -77,17 +83,64 @@ func GetKeyShare(party string) (LocalState, error) {
 	return keyShare, nil
 }
 
-func GetMaster(keyShare LocalState) (string, string) {
+func GetMaster(currentParties string, localParty string) (string, string) {
+	keyShare, err := GetKeyShare(localParty)
+	if err != nil {
+		log.Printf("Error getting key share: %v\n", err)
+		return "", ""
+	}
+
 	var masterPeer string
 	var masterPubKey string
-	for peer, key := range keyShare.NostrPartyPubKeys {
-		if key > masterPubKey { // Direct string comparison
-			masterPubKey = key
-			masterPeer = peer
+	parties := strings.Split(currentParties, ",")
+	for _, peer := range parties {
+		if pubKey, ok := keyShare.NostrPartyPubKeys[peer]; ok {
+			if pubKey > masterPubKey {
+				masterPubKey = pubKey
+				masterPeer = peer
+			}
 		}
 	}
 	return masterPeer, masterPubKey
 }
+
+func isMaster(currentParties string, localParty string) bool {
+	masterPeer, _ := GetMaster(currentParties, localParty)
+	if masterPeer == localParty {
+		return true
+	}
+	return false
+}
+
+// func GetMaster(currentParties string) (string, string) {
+
+// 	parties := strings.Split(currentParties, ",")
+// 	for _, peer := range parties {
+// 		keyShare, err := GetKeyShare(peer)
+// 		if err != nil {
+// 			log.Printf("Error getting key share: %v\n", err)
+// 			continue
+// 		}
+// 		if keyShare.LocalNostrPubKey > masterPubKey {
+// 			masterPeer := peer
+// 			masterPubKey := keyShare.LocalNostrPubKey
+// 		}
+// 	}
+// 	return masterPeer, masterPubKey
+// }
+
+// func isMaster(party string) bool {
+// 	keyShare, err := GetKeyShare(party)
+// 	if err != nil {
+// 		log.Printf("Error getting key share: %v\n", err)
+// 		return false
+// 	}
+// 	masterPeer, _ := GetMaster(keyShare)
+// 	if masterPeer == party {
+// 		return true
+// 	}
+// 	return false
+// }
 
 func setNPubs() {
 	// set the nostr pubkeys for the participants
@@ -114,18 +167,17 @@ func validateKeys(privateKey, publicKey string) error {
 }
 
 // NOSTR Callback
-func nostrListen(localParty string) {
+func nostrListen(localParty, parties string) {
 
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
 		log.Printf("Error getting key share: %v\n", err)
 		return
 	}
-	masterPeer, masterPubKey := GetMaster(keyShare)
+	masterPeer, masterPubKey := GetMaster(parties, localParty)
 
 	var isMaster bool
 	var port string = "55055"
-	var nostrRelay string = "ws://bbw-nostr.xyz"
 
 	if masterPeer == keyShare.LocalPartyKey && masterPubKey == keyShare.LocalNostrPubKey {
 		// we are the master, so we start the host
@@ -141,17 +193,17 @@ func nostrListen(localParty string) {
 		//select {}
 	}
 
-	// Convert hex private key to nsec format
-	npubFromPriv, err := nostr.GetPublicKey(keyShare.LocalNostrPrivKey)
-	if err != nil {
-		log.Printf("Error getting public key from private key: %v\n", err)
-		return
-	}
-	if !nostr.IsValidPublicKey(npubFromPriv) {
-		log.Printf("Invalid public key derived from private key\n")
-		return
-	}
-	keyShare.LocalNostrPubKey = npubFromPriv
+	// // Convert hex private key to nsec format
+	// npubFromPriv, err := nostr.GetPublicKey(keyShare.LocalNostrPrivKey)
+	// if err != nil {
+	// 	log.Printf("Error getting public key from private key: %v\n", err)
+	// 	return
+	// }
+	// if !nostr.IsValidPublicKey(npubFromPriv) {
+	// 	log.Printf("Invalid public key derived from private key\n")
+	// 	return
+	// }
+	// keyShare.LocalNostrPubKey = npubFromPriv
 
 	// Validate the public key format
 	if !nostr.IsValidPublicKey(keyShare.LocalNostrPubKey) {
@@ -213,16 +265,16 @@ func nostrListen(localParty string) {
 			}
 
 			// Parse the decrypted message into a RawMessage
-			var rawMessage RawMessage
-			if err := json.Unmarshal([]byte(decryptedMessage), &rawMessage); err != nil {
+			var protoMessage ProtoMessage
+			if err := json.Unmarshal([]byte(decryptedMessage), &protoMessage); err != nil {
 				log.Printf("Error parsing decrypted message into RawMessage: %v\n", err)
 				continue
 			}
-
-			log.Printf("Parsed RawMessage: %+v\n", rawMessage)
+			protoMessage.NostrEventID = event.ID
+			//log.Printf("Parsed RawMessage: %+v\n", rawMessage)
 
 			// Store the parsed raw message in cache using the session ID
-			nostrMessageCache.Set(rawMessage.SessionID, rawMessage, cache.DefaultExpiration)
+			nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
 
 		case <-globalCtx.Done():
 			return
@@ -238,90 +290,57 @@ func nostrListen(localParty string) {
 	//messageCache.Set(sessionID, rawMessage{nil})
 }
 
-func nostrSend(sessionID, message string) {
+func nostrSend(sessionID, message, requestPath, requestType, fromParty, toParty string) {
 	// Initialize context if nil
 	if globalCtx == nil {
 		globalCtx = context.Background()
 	}
 
-	var rawMessage RawMessage
-	// if msg, found := nostrMessageCache.Get(sessionID); found {
-	// 	rawMessage = msg.(RawMessage)
-	// 	log.Printf("RawMessage: %v\n", rawMessage)
-	// } else {
-	// 	log.Printf("Message not found in cache for session ID: %s\n", sessionID)
-	// 	return
-	// }
-
-	//messageBytes, err := json.Marshal(message)
-	if err := json.Unmarshal([]byte(message), &rawMessage); err != nil {
-		log.Printf("Error parsing message into RawMessage: %v\n", err)
-		return
-	}
-
-	keyShare, err := GetKeyShare(rawMessage.From)
+	keyShare, err := GetKeyShare(fromParty)
 	if err != nil {
 		log.Printf("Error getting key share: %v\n", err)
 		return
 	}
 
-	// Construct ProtoMessage
-	// protoMessage := ProtoMessage{
-	// 	Type:         "keysign",
-	// 	Participants: []string{rawMessage.From},
-	// 	Recipients:   rawMessage.To,
-	// 	SessionID:    rawMessage.SessionID,
-	// 	Datetime:     time.Now().UTC().Format(time.RFC3339),
-	// 	SeqNo:        rawMessage.SeqNo,
-	// 	RawMessage:   rawMessage.Body,
-	// }
-
-	// Marshal the ProtoMessage to JSON
-	// message, err := json.Marshal(protoMessage)
-	// if err != nil {
-	// 	log.Printf("Error marshaling ProtoMessage: %v\n", err)
-	// 	return
-	// }
-
-	// masterPeer, masterPubKey := GetMaster(keyShare)
-
-	// if masterPeer == keyShare.LocalPartyKey && masterPubKey == keyShare.LocalNostrPubKey {
-	// 	// we are the master
-	// 	isMaster = true
-	// 	//fmt.Printf("%s is master\n", rawMessage.From)
-	// } else {
-	// 	isMaster = false
-	// }
-
-	// Find which peer number corresponds to the recipient pubkey
 	var recipientPubKey string
 	for peer, pubKey := range keyShare.NostrPartyPubKeys {
-		if peer == rawMessage.To[0] {
+		if peer == toParty {
 			recipientPubKey = pubKey
 			break
 		}
 	}
 
-	privateKey := keyShare.LocalNostrPrivKey
-	// recipientPubKey, err = nostr.GetPublicKey(recipientPubKey)
-	// if err != nil {
-	// 	log.Printf("Error getting public key: %v\n", err)
-	// 	return
-	// }
-	// if err := validateKeys(privateKey, recipientPubKey); err != nil {
-	// 	log.Printf("Key validation error: %v\n", err)
-	// 	return
-	// }
+	var rawMsg RawMessage
+	if err := json.Unmarshal([]byte(message), &rawMsg); err != nil {
+		log.Printf("Failed to parse RawMessage: %v\n", err)
+		return
+	}
 
-	sharedSecret, err := nip04.ComputeSharedSecret(recipientPubKey, privateKey)
+	protoMessage := ProtoMessage{
+		SessionID:   sessionID,
+		RequestPath: requestPath,
+		RequestType: requestType,
+		From:        fromParty,
+		//Participants: []string{fromParty, toParty},
+		Recipients: []string{recipientPubKey},
+		Datetime:   time.Now().Format(time.RFC3339),
+		RawMessage: message,
+		SeqNo:      rawMsg.SeqNo,
+	}
+
+	protoMessageJSON, err := json.Marshal(protoMessage)
+	if err != nil {
+		log.Printf("Error marshalling protoMessage: %v\n", err)
+		return
+	}
+
+	sharedSecret, err := nip04.ComputeSharedSecret(recipientPubKey, keyShare.LocalNostrPrivKey)
 	if err != nil {
 		log.Printf("Error computing shared secret: %v\n", err)
 		return
 	}
 
-	finalMessage := string(message)
-
-	encryptedContent, err := nip04.Encrypt(finalMessage, sharedSecret)
+	encryptedContent, err := nip04.Encrypt(string(protoMessageJSON), sharedSecret)
 	if err != nil {
 		log.Printf("Error encrypting message: %v\n", err)
 		return
@@ -331,13 +350,13 @@ func nostrSend(sessionID, message string) {
 		PubKey:    keyShare.LocalNostrPubKey,
 		CreatedAt: nostr.Now(),
 		Kind:      nostr.KindEncryptedDirectMessage,
-		Tags:      nostr.Tags{{"p", recipientPubKey}},
+		Tags:      nostr.Tags{{"p", recipientPubKey}, {"s", rawMsg.SeqNo}},
 		Content:   encryptedContent,
 	}
 
-	event.Sign(privateKey)
+	event.Sign(keyShare.LocalNostrPrivKey)
 
-	ctx, cancel := context.WithTimeout(globalCtx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(globalCtx, 60*time.Second)
 	defer cancel()
 
 	err = globalRelay.Publish(ctx, event)
@@ -348,30 +367,29 @@ func nostrSend(sessionID, message string) {
 	}
 }
 
-func nostrCacheSet(sessionID string, message string) {
-	// Create a RawMessage struct with the provided data
-	// rawMessage := RawMessage{
-	// 	SessionID: sessionID,
-	// 	Body:      message,
+func nostrDownloadMessage(sessionID string) (ProtoMessage, error) {
+	msg, found := nostrMessageCache.Get(sessionID)
+	if !found {
+		return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
+	}
+	return msg.(ProtoMessage), nil
+	// protoMsg := msg.(ProtoMessage)
+	// var rawMsg RawMessage
+	// if err := json.Unmarshal([]byte(protoMsg.RawMessage), &rawMsg); err != nil {
+	// 	return ProtoMessage{}, fmt.Errorf("failed to parse raw message: %w", err)
 	// }
-	//TODO: this is where the problem is.  Making sure the structs are correct
-	// Store the RawMessage in cache
-	nostrMessageCache.Set(sessionID, message, cache.DefaultExpiration)
-
-	// Send the message
-	nostrSend(sessionID, message)
+	// if rawMsg.To[0] == key {
+	// 	// Unmarshal the protoMsg into a ProtoMessage struct
+	// 	var protoMessage ProtoMessage
+	// 	if err := json.Unmarshal([]byte(protoMsg.RawMessage), &protoMessage); err != nil {
+	// 		return ProtoMessage{}, fmt.Errorf("failed to unmarshal proto message: %w", err)
+	// 	}
+	// 	return protoMessage, nil
+	// }
+	// return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
 }
 
-func nostrDownloadMessage(sessionID string, key string) (string, error) {
-	if msg, found := nostrMessageCache.Get(sessionID); found {
-		switch v := msg.(type) {
-		case string:
-			return v, nil
-		case RawMessage:
-			return v.Body, nil
-		default:
-			return "", fmt.Errorf("unexpected message type: %T", msg)
-		}
-	}
-	return "", fmt.Errorf("message not found for session %s", sessionID)
+func nostrDeleteEvent(eventID string) {
+	// delete the event from the cache
+
 }
