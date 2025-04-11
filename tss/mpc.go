@@ -537,9 +537,9 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 
 	if m.Net_Type == "nostr" {
 		if !isMaster(parties, from) {
-			nostrSend(m.SessionID, string(requestBody), "/message/"+m.SessionID, "Post", from, to)
+			nostrSend(m.SessionID, to, string(requestBody), "/message/"+m.SessionID, "Post", from, to, parties)
 		} else if isMaster(parties, from) {
-			nostrSend(m.SessionID, string(requestBody), "/message/"+m.SessionID, "Post", from, to)
+			nostrSend(m.SessionID, to, string(requestBody), "/message/"+m.SessionID, "Post", from, to, parties)
 
 			// Prepare the HTTP request
 			resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
@@ -888,7 +888,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				}
 
 			} else if type_net == "nostr" {
-				protoMessage, err = nostrDownloadMessage(session)
+				protoMessage, err = nostrDownloadMessage(session, key)
 				if err != nil {
 					Logln("BBMTLog", "Error fetching messages from nostr:", err)
 					isApplyingMessages = false
@@ -1015,15 +1015,10 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 
 				// Delete applied message from the server
 				Logln("BBMTLog", "Deleting applied message:", message.Hash)
-				if type_net == "nostr" {
-					//deleteNostrMessage(session, message.Hash)
 
-					//TODO: Delete the message from the cache by key, and seqNo?
-					nostrMessageCache.Delete(session)
-					deleteMessage(server, session, key, message.Hash)
-				} else if type_net != "nostr" {
-					deleteMessage(server, session, key, message.Hash)
-				}
+				deleteMessage(server, session, key, message.Hash)
+				//nostrMessageCache.Delete(session)
+				//nostrMessageCache.Delete(session)
 			}
 			isApplyingMessages = false
 		}

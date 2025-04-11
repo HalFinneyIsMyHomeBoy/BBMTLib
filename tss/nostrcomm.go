@@ -34,7 +34,9 @@ type ProtoMessage struct {
 	RequestPath  string   `json:"request_path"`
 	RequestType  string   `json:"request_type"`
 	From         string   `json:"from"`
+	To           string   `json:"to"`
 	NostrEventID string   `json:"nostr_event_id"`
+	SessionKey   string   `json:"session_key"`
 }
 
 type RawMessage struct {
@@ -290,7 +292,7 @@ func nostrListen(localParty, parties string) {
 	//messageCache.Set(sessionID, rawMessage{nil})
 }
 
-func nostrSend(sessionID, message, requestPath, requestType, fromParty, toParty string) {
+func nostrSend(sessionID, key, message, requestPath, requestType, fromParty, toParty, parties string) {
 	// Initialize context if nil
 	if globalCtx == nil {
 		globalCtx = context.Background()
@@ -317,15 +319,16 @@ func nostrSend(sessionID, message, requestPath, requestType, fromParty, toParty 
 	}
 
 	protoMessage := ProtoMessage{
-		SessionID:   sessionID,
-		RequestPath: requestPath,
-		RequestType: requestType,
-		From:        fromParty,
-		//Participants: []string{fromParty, toParty},
-		Recipients: []string{recipientPubKey},
-		Datetime:   time.Now().Format(time.RFC3339),
-		RawMessage: message,
-		SeqNo:      rawMsg.SeqNo,
+		SessionID:    sessionID,
+		RequestPath:  requestPath,
+		RequestType:  requestType,
+		From:         fromParty,
+		Participants: []string{parties},
+		Recipients:   []string{recipientPubKey},
+		Datetime:     time.Now().Format(time.RFC3339),
+		RawMessage:   message,
+		SeqNo:        rawMsg.SeqNo,
+		To:           toParty,
 	}
 
 	protoMessageJSON, err := json.Marshal(protoMessage)
@@ -367,12 +370,16 @@ func nostrSend(sessionID, message, requestPath, requestType, fromParty, toParty 
 	}
 }
 
-func nostrDownloadMessage(sessionID string) (ProtoMessage, error) {
+func nostrDownloadMessage(sessionID string, key string) (ProtoMessage, error) {
 	msg, found := nostrMessageCache.Get(sessionID)
 	if !found {
 		return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
 	}
-	return msg.(ProtoMessage), nil
+	protoMsg := msg.(ProtoMessage)
+	if protoMsg.From == key {
+		return protoMsg, nil
+	}
+	return protoMsg, nil
 	// protoMsg := msg.(ProtoMessage)
 	// var rawMsg RawMessage
 	// if err := json.Unmarshal([]byte(protoMsg.RawMessage), &rawMsg); err != nil {
@@ -387,9 +394,4 @@ func nostrDownloadMessage(sessionID string) (ProtoMessage, error) {
 	// 	return protoMessage, nil
 	// }
 	// return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
-}
-
-func nostrDeleteEvent(eventID string) {
-	// delete the event from the cache
-
 }
