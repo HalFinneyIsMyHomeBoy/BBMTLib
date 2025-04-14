@@ -293,6 +293,7 @@ func nostrListen(localParty, parties string) {
 }
 
 func nostrSend(sessionID, key, message, requestPath, requestType, fromParty, toParty, parties string) {
+
 	// Initialize context if nil
 	if globalCtx == nil {
 		globalCtx = context.Background()
@@ -331,6 +332,7 @@ func nostrSend(sessionID, key, message, requestPath, requestType, fromParty, toP
 		To:           toParty,
 	}
 
+	time.Sleep(3 * time.Second)
 	protoMessageJSON, err := json.Marshal(protoMessage)
 	if err != nil {
 		log.Printf("Error marshalling protoMessage: %v\n", err)
@@ -363,11 +365,12 @@ func nostrSend(sessionID, key, message, requestPath, requestType, fromParty, toP
 	defer cancel()
 
 	err = globalRelay.Publish(ctx, event)
-	//time.Sleep(1 * time.Second)
+	//time.Sleep(2 * time.Second)
 	if err != nil {
 		log.Printf("Error publishing event: %v\n", err)
 		return
 	}
+
 }
 
 func nostrDownloadMessage(sessionID string, key string) (ProtoMessage, error) {
@@ -375,11 +378,11 @@ func nostrDownloadMessage(sessionID string, key string) (ProtoMessage, error) {
 	if !found {
 		return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
 	}
-	protoMsg := msg.(ProtoMessage)
-	if protoMsg.From == key {
-		return protoMsg, nil
-	}
-	return protoMsg, nil
+	// protoMsg := msg.(ProtoMessage)
+	// if protoMsg.To == key {
+	// 	return protoMsg, nil
+	// }
+	return msg.(ProtoMessage), nil
 	// protoMsg := msg.(ProtoMessage)
 	// var rawMsg RawMessage
 	// if err := json.Unmarshal([]byte(protoMsg.RawMessage), &rawMsg); err != nil {

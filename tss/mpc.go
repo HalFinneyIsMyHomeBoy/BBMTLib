@@ -49,8 +49,8 @@ var (
 	decryptionKey    = ""
 	localStateMemory = ""
 	keyGenTimeout    = 60
-	keySignTimeout   = 60
-	msgFetchTimeout  = 70
+	keySignTimeout   = 600 //TODO: change back to 60 after testing
+	msgFetchTimeout  = 700 //TODO: change back to 70 after testing
 )
 
 func SessionState(session string) string {
@@ -860,24 +860,6 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					continue
 				}
 				resp.Body.Close()
-
-				// Decode the messages from the response
-				// ProtoMessage.raw_message ->
-
-				// if type_net == "nostr" {
-				// 	var nostrMessage struct {
-				// 		SessionID string   `json:"session_id,omitempty"`
-				// 		From      string   `json:"from,omitempty"`
-				// 		To        []string `json:"to,omitempty"`
-				// 		Body      string   `json:"body,omitempty"`
-				// 		SeqNo     string   `json:"sequence_no,omitempty"`
-				// 		Hash      string   `json:"hash,omitempty"`
-				// 	}
-				// 	if err := json.Unmarshal(bodyBytes, &nostrMessage); err != nil {
-				// 		Logln("BBMTLog", "Failed to decode nostr message:", err)
-				// 	} else {
-				// 		messages = append(messages, nostrMessage)
-				// 	}
 
 				if err := json.Unmarshal(bodyBytes, &messages); err != nil {
 					Logln("BBMTLog", "Failed to decode messages:", err)
