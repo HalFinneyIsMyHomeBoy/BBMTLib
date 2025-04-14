@@ -537,8 +537,13 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 
 	if m.Net_Type == "nostr" {
 		if !isMaster(parties, from) {
+			time.Sleep(3 * time.Second)
+			//if not master, then pause a few seconds
 			nostrSend(m.SessionID, to, string(requestBody), "/message/"+m.SessionID, "Post", from, to, parties)
+
 		} else if isMaster(parties, from) {
+			//time.Sleep(1 * time.Second)
+
 			nostrSend(m.SessionID, to, string(requestBody), "/message/"+m.SessionID, "Post", from, to, parties)
 
 			// Prepare the HTTP request

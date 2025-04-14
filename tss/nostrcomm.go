@@ -332,7 +332,7 @@ func nostrSend(sessionID, key, message, requestPath, requestType, fromParty, toP
 		To:           toParty,
 	}
 
-	time.Sleep(3 * time.Second)
+	//time.Sleep(2 * time.Second)
 	protoMessageJSON, err := json.Marshal(protoMessage)
 	if err != nil {
 		log.Printf("Error marshalling protoMessage: %v\n", err)
