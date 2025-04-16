@@ -185,6 +185,11 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status.Info = "start joinSession"
 	setStatus(session, status)
 
+	//TODO: need to make nostr for this
+	if net_type == "nostr" {
+		nostrHandshake(session, key)
+	}
+
 	if err := joinSession(server, session, key); err != nil {
 		return "", fmt.Errorf("fail to register session: %w", err)
 	}
@@ -194,6 +199,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status.Info = "waiting parties"
 	setStatus(session, status)
 
+	//TODO: Change to use nostr
 	if err := awaitJoiners(parties, server, session); err != nil {
 		Logln("BBMTLog", "fail to wait all parties", "error", err)
 		return "", fmt.Errorf("fail to wait all parties: %w", err)
@@ -284,6 +290,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 
 	if net_type == "nostr" {
 		go nostrListen(key, strings.Join(parties, ","))
+		time.Sleep(time.Second * 2)
 	}
 
 	encryptionKey = encKey
@@ -299,8 +306,13 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	status.Info = "start joinSession"
 	setStatus(session, status)
 
-	if err := joinSession(server, session, key); err != nil {
-		return "", fmt.Errorf("fail to register session: %w", err)
+	//TODO: need to make nostr for this
+	if net_type == "nostr" {
+		nostrHandshake(session, key)
+	} else {
+		if err := joinSession(server, session, key); err != nil {
+			return "", fmt.Errorf("fail to register session: %w", err)
+		}
 	}
 
 	Logln("BBMTLog", "waiting parties...")
@@ -308,9 +320,41 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	status.Info = "waiting parties"
 	setStatus(session, status)
 
-	if err := awaitJoiners(parties, server, session); err != nil {
-		Logln("BBMTLog", "fail to wait all parties", "error", err)
-		return "", fmt.Errorf("fail to wait all parties: %w", err)
+	//TODO: Change to use nostr
+	if net_type == "nostr" {
+		//check cache for handshake response
+		var protoMessage ProtoMessage
+		var err error
+
+		// Set up timeout
+		timeout := time.NewTimer(60 * time.Second)
+		defer timeout.Stop()
+
+		// Loop until we get a valid message or timeout
+		for {
+			select {
+			case <-timeout.C:
+				return "", fmt.Errorf("timeout waiting for nostrhandshake message after 60 seconds")
+			default:
+				protoMessage, err = nostrDownloadMessage(session, key)
+				if err != nil {
+					Logln("BBMTLog", "Error downloading message:", err)
+					time.Sleep(2 * time.Second) // Add delay between retries
+					continue
+				}
+				if protoMessage.Type == "handshake" && protoMessage.SessionID == session && protoMessage.From != key {
+					fmt.Println("handshake message received from ", protoMessage.From)
+
+					continue
+				}
+				time.Sleep(2 * time.Second) // Add delay between retries
+			}
+		}
+	} else {
+		if err := awaitJoiners(parties, server, session); err != nil {
+			Logln("BBMTLog", "fail to wait all parties", "error", err)
+			return "", fmt.Errorf("fail to wait all parties: %w", err)
+		}
 	}
 
 	status.SeqNo++
@@ -537,36 +581,38 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 
 	if m.Net_Type == "nostr" {
 		if !isMaster(parties, from) {
-			time.Sleep(3 * time.Second)
+			//time.Sleep(3 * time.Second)
 			//if not master, then pause a few seconds
-			nostrSend(m.SessionID, to, string(requestBody), "/message/"+m.SessionID, "Post", from, to, parties)
+			//nostrSend(m.SessionID, from, ProtoMessage, "handshake", "", "", "")
+			nostrHandshake(m.SessionID, from)
 
 		} else if isMaster(parties, from) {
+			nostrHandshake(m.SessionID, from)
 			//time.Sleep(1 * time.Second)
 
-			nostrSend(m.SessionID, to, string(requestBody), "/message/"+m.SessionID, "Post", from, to, parties)
+			//nostrSend(m.SessionID, to, string(requestBody), "Post", from, to, parties)
 
-			// Prepare the HTTP request
-			resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
-			if err != nil {
-				Logln("BBMTLog", "fail to send message: ", err)
-				return fmt.Errorf("fail to send message: %w", err)
-			}
-			defer resp.Body.Close()
+			// // Prepare the HTTP request
+			// resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
+			// if err != nil {
+			// 	Logln("BBMTLog", "fail to send message: ", err)
+			// 	return fmt.Errorf("fail to send message: %w", err)
+			// }
+			// defer resp.Body.Close()
 
-			// Log the response
-			respBody, err := io.ReadAll(resp.Body)
-			if err != nil {
-				Logln("BBMTLog", "fail to read response: ", err)
-				return fmt.Errorf("fail to read response: %w", err)
-			}
-			Logln("BBMTLog", "message sent, status:", resp.Status)
+			// // Log the response
+			// respBody, err := io.ReadAll(resp.Body)
+			// if err != nil {
+			// 	Logln("BBMTLog", "fail to read response: ", err)
+			// 	return fmt.Errorf("fail to read response: %w", err)
+			// }
+			// Logln("BBMTLog", "message sent, status:", resp.Status)
 
-			// Check for non-200 status codes
-			if resp.StatusCode != http.StatusOK {
-				Logln("BBMTLog", "message sent, response body:", string(respBody)[:min(80, len(string(respBody)))]+"...")
-				return fmt.Errorf("fail to send message: %s", resp.Status)
-			}
+			// // Check for non-200 status codes
+			// if resp.StatusCode != http.StatusOK {
+			// 	Logln("BBMTLog", "message sent, response body:", string(respBody)[:min(80, len(string(respBody)))]+"...")
+			// 	return fmt.Errorf("fail to send message: %s", resp.Status)
+			// }
 		}
 	} else if m.Net_Type != "nostr" {
 
@@ -874,7 +920,9 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					continue
 				}
 
-			} else if type_net == "nostr" {
+			}
+
+			if type_net == "nostr" {
 				protoMessage, err = nostrDownloadMessage(session, key)
 				if err != nil {
 					Logln("BBMTLog", "Error fetching messages from nostr:", err)
@@ -890,47 +938,44 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				}
 
 				if isMaster(strings.Join(protoMessage.Participants, ","), rawMsg.From) {
-					resp, err = http.Get(server + "/message/" + session + "/" + key)
+					//resp, err = http.Get(server + "/message/" + session + "/" + key)
 
-					if err != nil {
-						Logln("BBMTLog", "Error fetching messages:", err)
-						isApplyingMessages = false
-						continue
-					}
+					// if err != nil {
+					// 	Logln("BBMTLog", "Error fetching messages:", err)
+					// 	isApplyingMessages = false
+					// 	continue
+					// }
 
-					if resp.StatusCode == http.StatusNotFound {
-						Logln("BBMTLog", "No messages found.")
-						isApplyingMessages = false
-						continue
-					}
+					// if resp.StatusCode == http.StatusNotFound {
+					// 	Logln("BBMTLog", "No messages found.")
+					// 	isApplyingMessages = false
+					// 	continue
+					// }
 
-					if resp.StatusCode != http.StatusOK {
-						Logln("BBMTLog", "Failed to get data from server:", resp.Status)
-						isApplyingMessages = false
-						continue
-					}
+					// if resp.StatusCode != http.StatusOK {
+					// 	Logln("BBMTLog", "Failed to get data from server:", resp.Status)
+					// 	isApplyingMessages = false
+					// 	continue
+					// }
 
-					// Read the response body
-					bodyBytes, err := io.ReadAll(resp.Body)
-					if err != nil {
-						Logln("BBMTLog", "Failed to read response body:", err)
-						isApplyingMessages = false
-						continue
-					}
-					if err := json.Unmarshal(bodyBytes, &messages); err != nil {
-						Logln("BBMTLog", "Failed to decode messages:", err)
-						//TODO: this is where the problem is. Need to find out why the body is not being unmarshalled
-						//Logln("BBMTLog", "Body:", string(bodyBytes))
-						isApplyingMessages = false
-						continue
-					}
-					resp.Body.Close()
+					// // Read the response body
+					// bodyBytes, err := io.ReadAll(resp.Body)
+					// if err != nil {
+					// 	Logln("BBMTLog", "Failed to read response body:", err)
+					// 	isApplyingMessages = false
+					// 	continue
+					// }
+					// if err := json.Unmarshal(bodyBytes, &messages); err != nil {
+					// 	Logln("BBMTLog", "Failed to decode messages:", err)
+					// 	//TODO: this is where the problem is. Need to find out why the body is not being unmarshalled
+					// 	//Logln("BBMTLog", "Body:", string(bodyBytes))
+					// 	isApplyingMessages = false
+					// 	continue
+					// }
+					// resp.Body.Close()
 					//messages = append(messages, rawMsg)
 				}
-				// resp = &http.Response{
-				// 	StatusCode: http.StatusOK,
-				// 	Body:       io.NopCloser(strings.NewReader(rawMsg.Body)),
-				// 	Header:     http.Header{"Content-Type": []string{"application/json"}},
+
 				messages = append(messages, rawMsg)
 			}
 

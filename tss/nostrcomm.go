@@ -23,20 +23,26 @@ var (
 	nostrRelay        string = "ws://bbw-nostr.xyz"
 )
 
+type NostrPartyPubKeys struct {
+	Party  string `json:"party"`
+	PubKey string `json:"pubkey"`
+}
+
 type ProtoMessage struct {
-	Type         string   `json:"type"`
-	Participants []string `json:"participants"`
-	Recipients   []string `json:"recipients"`
-	SessionID    string   `json:"sessionID"`
-	Datetime     string   `json:"datetime"`
-	SeqNo        string   `json:"sequence_no"`
-	RawMessage   string   `json:"raw_message"`
-	RequestPath  string   `json:"request_path"`
-	RequestType  string   `json:"request_type"`
-	From         string   `json:"from"`
-	To           string   `json:"to"`
-	NostrEventID string   `json:"nostr_event_id"`
-	SessionKey   string   `json:"session_key"`
+	Type            string              `json:"type"`
+	Participants    []string            `json:"participants"`
+	Recipients      []NostrPartyPubKeys `json:"recipients"`
+	FromNostrPubKey string              `json:"from_nostr_pubkey"`
+	SessionID       string              `json:"sessionID"`
+	Datetime        string              `json:"datetime"`
+	SeqNo           string              `json:"sequence_no"`
+	RawMessage      string              `json:"raw_message"`
+	RequestPath     string              `json:"request_path"`
+	RequestType     string              `json:"request_type"`
+	From            string              `json:"from"`
+	To              string              `json:"to"`
+	NostrEventID    string              `json:"nostr_event_id"`
+	SessionKey      string              `json:"session_key"`
 }
 
 type RawMessage struct {
@@ -144,14 +150,51 @@ func isMaster(currentParties string, localParty string) bool {
 // 	return false
 // }
 
+//=======================================================
+// By default, all parties enable nostr listen
+
+// a random peer wants a keysign
+// - sends handshake + session + peer name
+// - other peers see handshake and send back session, peer name + (ack handshake?)
+
+// timeout of 10 seconds to hear back from parties?
+// 	-if 2 out of 3 ratio is available, then proceed
+// 	-if not, then halt with error
+
+//=======================================================
+
 func setNPubs() {
 	// set the nostr pubkeys for the participants
 
 }
 
-func nostrHandshake() {
+func nostrHandshake(session, key string) {
 	// handshake with the master
+	keyShare, err := GetKeyShare(key)
+	if err != nil {
+		log.Printf("Error getting key share: %v\n", err)
+		return
+	}
 
+	protoMessage := ProtoMessage{
+		SessionID:       session,
+		Type:            "handshake",
+		From:            key,
+		FromNostrPubKey: keyShare.LocalNostrPubKey,
+		Recipients:      make([]NostrPartyPubKeys, 0, len(keyShare.NostrPartyPubKeys)),
+		Datetime:        time.Now().Format(time.RFC3339),
+		RawMessage:      "",
+	}
+
+	// Convert map to slice of NostrPartyPubKeys
+	for party, pubKey := range keyShare.NostrPartyPubKeys {
+		protoMessage.Recipients = append(protoMessage.Recipients, NostrPartyPubKeys{
+			Party:  party,
+			PubKey: pubKey,
+		})
+	}
+
+	nostrSend(session, key, protoMessage, "handshake", "", "", "")
 }
 
 func validateKeys(privateKey, publicKey string) error {
@@ -168,6 +211,11 @@ func validateKeys(privateKey, publicKey string) error {
 	return nil
 }
 
+// func nostrJoinSession(server, session, key string) error {
+// 	nostrSend(session, key, "", "join_session", "", "", "")
+// 	return nil
+// }
+
 // NOSTR Callback
 func nostrListen(localParty, parties string) {
 
@@ -179,7 +227,7 @@ func nostrListen(localParty, parties string) {
 	masterPeer, masterPubKey := GetMaster(parties, localParty)
 
 	var isMaster bool
-	var port string = "55055"
+	//var port string = "55055"
 
 	if masterPeer == keyShare.LocalPartyKey && masterPubKey == keyShare.LocalNostrPubKey {
 		// we are the master, so we start the host
@@ -190,22 +238,10 @@ func nostrListen(localParty, parties string) {
 	}
 
 	if isMaster {
-		RunRelay(port)
-		fmt.Printf("relay started by %s\n", localParty)
+		//RunRelay(port)
+		//fmt.Printf("relay started by %s\n", localParty)
 		//select {}
 	}
-
-	// // Convert hex private key to nsec format
-	// npubFromPriv, err := nostr.GetPublicKey(keyShare.LocalNostrPrivKey)
-	// if err != nil {
-	// 	log.Printf("Error getting public key from private key: %v\n", err)
-	// 	return
-	// }
-	// if !nostr.IsValidPublicKey(npubFromPriv) {
-	// 	log.Printf("Invalid public key derived from private key\n")
-	// 	return
-	// }
-	// keyShare.LocalNostrPubKey = npubFromPriv
 
 	// Validate the public key format
 	if !nostr.IsValidPublicKey(keyShare.LocalNostrPubKey) {
@@ -292,85 +328,68 @@ func nostrListen(localParty, parties string) {
 	//messageCache.Set(sessionID, rawMessage{nil})
 }
 
-func nostrSend(sessionID, key, message, requestPath, requestType, fromParty, toParty, parties string) {
+func nostrSend(sessionID, key string, message ProtoMessage, messageType, fromParty, toParty, parties string) {
 
 	// Initialize context if nil
 	if globalCtx == nil {
 		globalCtx = context.Background()
 	}
 
-	keyShare, err := GetKeyShare(fromParty)
+	keyShare, err := GetKeyShare(key)
 	if err != nil {
 		log.Printf("Error getting key share: %v\n", err)
 		return
 	}
 
-	var recipientPubKey string
-	for peer, pubKey := range keyShare.NostrPartyPubKeys {
-		if peer == toParty {
-			recipientPubKey = pubKey
-			break
-		}
-	}
+	// protoMessage := ProtoMessage{
+	// 	SessionID:    sessionID,
+	// 	Type:         messageType,
+	// 	From:         fromParty,
+	// 	Participants: []string{parties},
+	// 	//Recipients:   []string{recipientPubKey},
+	// 	Datetime: time.Now().Format(time.RFC3339),
+	// 	To:       toParty,
+	// }
 
-	var rawMsg RawMessage
-	if err := json.Unmarshal([]byte(message), &rawMsg); err != nil {
-		log.Printf("Failed to parse RawMessage: %v\n", err)
-		return
-	}
-
-	protoMessage := ProtoMessage{
-		SessionID:    sessionID,
-		RequestPath:  requestPath,
-		RequestType:  requestType,
-		From:         fromParty,
-		Participants: []string{parties},
-		Recipients:   []string{recipientPubKey},
-		Datetime:     time.Now().Format(time.RFC3339),
-		RawMessage:   message,
-		SeqNo:        rawMsg.SeqNo,
-		To:           toParty,
-	}
-
-	//time.Sleep(2 * time.Second)
-	protoMessageJSON, err := json.Marshal(protoMessage)
+	protoMessageJSON, err := json.Marshal(message)
 	if err != nil {
 		log.Printf("Error marshalling protoMessage: %v\n", err)
 		return
 	}
 
-	sharedSecret, err := nip04.ComputeSharedSecret(recipientPubKey, keyShare.LocalNostrPrivKey)
-	if err != nil {
-		log.Printf("Error computing shared secret: %v\n", err)
-		return
+	for _, recipient := range message.Recipients {
+		sharedSecret, err := nip04.ComputeSharedSecret(recipient.PubKey, keyShare.LocalNostrPrivKey)
+		if err != nil {
+			log.Printf("Error computing shared secret: %v\n", err)
+			return
+		}
+
+		encryptedContent, err := nip04.Encrypt(string(protoMessageJSON), sharedSecret)
+		if err != nil {
+			log.Printf("Error encrypting message: %v\n", err)
+			return
+		}
+
+		event := nostr.Event{
+			PubKey:    keyShare.LocalNostrPubKey,
+			CreatedAt: nostr.Now(),
+			Kind:      nostr.KindEncryptedDirectMessage,
+			Tags:      nostr.Tags{{"p", recipient.PubKey}},
+			Content:   encryptedContent,
+		}
+
+		event.Sign(keyShare.LocalNostrPrivKey)
+
+		ctx, cancel := context.WithTimeout(globalCtx, 60*time.Second)
+		defer cancel()
+
+		err = globalRelay.Publish(ctx, event)
+		//time.Sleep(2 * time.Second)
+		if err != nil {
+			log.Printf("Error publishing event: %v\n", err)
+			return
+		}
 	}
-
-	encryptedContent, err := nip04.Encrypt(string(protoMessageJSON), sharedSecret)
-	if err != nil {
-		log.Printf("Error encrypting message: %v\n", err)
-		return
-	}
-
-	event := nostr.Event{
-		PubKey:    keyShare.LocalNostrPubKey,
-		CreatedAt: nostr.Now(),
-		Kind:      nostr.KindEncryptedDirectMessage,
-		Tags:      nostr.Tags{{"p", recipientPubKey}, {"s", rawMsg.SeqNo}},
-		Content:   encryptedContent,
-	}
-
-	event.Sign(keyShare.LocalNostrPrivKey)
-
-	ctx, cancel := context.WithTimeout(globalCtx, 60*time.Second)
-	defer cancel()
-
-	err = globalRelay.Publish(ctx, event)
-	//time.Sleep(2 * time.Second)
-	if err != nil {
-		log.Printf("Error publishing event: %v\n", err)
-		return
-	}
-
 }
 
 func nostrDownloadMessage(sessionID string, key string) (ProtoMessage, error) {
@@ -378,11 +397,11 @@ func nostrDownloadMessage(sessionID string, key string) (ProtoMessage, error) {
 	if !found {
 		return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
 	}
-	// protoMsg := msg.(ProtoMessage)
-	// if protoMsg.To == key {
-	// 	return protoMsg, nil
-	// }
-	return msg.(ProtoMessage), nil
+	protoMsg := msg.(ProtoMessage)
+	//if protoMsg.To == key {
+	return protoMsg, nil
+	//}
+	//return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
 	// protoMsg := msg.(ProtoMessage)
 	// var rawMsg RawMessage
 	// if err := json.Unmarshal([]byte(protoMsg.RawMessage), &rawMsg); err != nil {
