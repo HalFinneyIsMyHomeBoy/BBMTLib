@@ -187,7 +187,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 
 	//TODO: need to make nostr for this
 	if net_type == "nostr" {
-		nostrHandshake(session, key)
+		//nostrHandshake(session, key)
 	}
 
 	if err := joinSession(server, session, key); err != nil {
@@ -289,7 +289,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	}
 
 	if net_type == "nostr" {
-		go nostrListen(key, strings.Join(parties, ","))
+		//go nostrListen(key, strings.Join(parties, ","))
 		time.Sleep(time.Second * 2)
 	}
 
@@ -308,7 +308,8 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 
 	//TODO: need to make nostr for this
 	if net_type == "nostr" {
-		nostrHandshake(session, key)
+
+		//nostrHandshake(session, key, txRequest)
 	} else {
 		if err := joinSession(server, session, key); err != nil {
 			return "", fmt.Errorf("fail to register session: %w", err)
@@ -584,10 +585,10 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 			//time.Sleep(3 * time.Second)
 			//if not master, then pause a few seconds
 			//nostrSend(m.SessionID, from, ProtoMessage, "handshake", "", "", "")
-			nostrHandshake(m.SessionID, from)
+			//nostrHandshake(m.SessionID, from)
 
 		} else if isMaster(parties, from) {
-			nostrHandshake(m.SessionID, from)
+			//nostrHandshake(m.SessionID, from)
 			//time.Sleep(1 * time.Second)
 
 			//nostrSend(m.SessionID, to, string(requestBody), "Post", from, to, parties)

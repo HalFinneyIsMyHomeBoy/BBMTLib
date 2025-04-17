@@ -17,14 +17,15 @@ import (
 
 // Global variables
 var (
-	nostrMessageCache = cache.New(5*time.Minute, 10*time.Minute)
-	globalRelay       *nostr.Relay
-	globalCtx         context.Context
-	nostrRelay        string = "ws://bbw-nostr.xyz"
+	nostrHandShakeCache = cache.New(5*time.Minute, 10*time.Minute)
+	nostrMessageCache   = cache.New(5*time.Minute, 10*time.Minute)
+	globalRelay         *nostr.Relay
+	globalCtx           context.Context
+	nostrRelay          string = "ws://bbw-nostr.xyz"
 )
 
 type NostrPartyPubKeys struct {
-	Party  string `json:"party"`
+	Peer   string `json:"peer"`
 	PubKey string `json:"pubkey"`
 }
 
@@ -37,12 +38,16 @@ type ProtoMessage struct {
 	Datetime        string              `json:"datetime"`
 	SeqNo           string              `json:"sequence_no"`
 	RawMessage      string              `json:"raw_message"`
-	RequestPath     string              `json:"request_path"`
-	RequestType     string              `json:"request_type"`
 	From            string              `json:"from"`
 	To              string              `json:"to"`
-	NostrEventID    string              `json:"nostr_event_id"`
 	SessionKey      string              `json:"session_key"`
+	TxRequest       TxRequest           `json:"tx_request"`
+	Master          Master              `json:"master"`
+}
+
+type Master struct {
+	MasterPeer   string `json:"master_peer"`
+	MasterPubKey string `json:"master_pubkey"`
 }
 
 type RawMessage struct {
@@ -67,6 +72,13 @@ type NostrEvent struct {
 	Tags      [][]string `json:"tags"`    //recipients
 	Content   string     `json:"content"` //raw message
 	Sig       string     `json:"sig"`
+}
+
+type TxRequest struct {
+	SenderAddress   string `json:"sender_address"`
+	ReceiverAddress string `json:"receiver_address"`
+	AmountSatoshi   int64  `json:"amount_satoshi"`
+	FeeSatoshi      int64  `json:"fee_satoshi"`
 }
 
 func GetKeyShare(party string) (LocalState, error) {
@@ -156,6 +168,7 @@ func isMaster(currentParties string, localParty string) bool {
 // a random peer wants a keysign
 // - sends handshake + session + peer name
 // - other peers see handshake and send back session, peer name + (ack handshake?)
+// -
 
 // timeout of 10 seconds to hear back from parties?
 // 	-if 2 out of 3 ratio is available, then proceed
@@ -168,7 +181,48 @@ func setNPubs() {
 
 }
 
-func nostrHandshake(session, key string) {
+func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
+	// handshake with the master
+	keyShare, err := GetKeyShare(key)
+	if err != nil {
+		log.Printf("Error getting key share: %v\n", err)
+		return
+	}
+
+	// protoMessage, err := nostrDownloadMessage(session, key)
+	// if err != nil {
+	// 	log.Printf("Error downloading message: %v\n", err)
+	// 	return
+	// }
+
+	if protoMessage.Type == "init_handshake" && protoMessage.SessionID == session && protoMessage.From != key {
+		fmt.Printf("handshake message received from %s\n", protoMessage.From)
+
+		//TODO: UI update - ask user to approve TX
+		//if approved == true, send ack
+
+		ackProtoMessage := ProtoMessage{
+			SessionID:       session,
+			Type:            "ack_handshake",
+			From:            key,
+			FromNostrPubKey: keyShare.LocalNostrPubKey,
+			Recipients:      []NostrPartyPubKeys{{Peer: protoMessage.Master.MasterPeer, PubKey: protoMessage.Master.MasterPubKey}},
+			Datetime:        time.Now().Format(time.RFC3339),
+			RawMessage:      "",
+			TxRequest:       protoMessage.TxRequest,
+		}
+
+		// for _, peer := range protoMessage.Recipients {
+		// 	if pubKey, ok := keyShare.NostrPartyPubKeys[peer.Party]; ok {
+		// 		protoMessage.Recipients = append(protoMessage.Recipients, NostrPartyPubKeys{Party: peer.Party, PubKey: pubKey})
+		// 	}
+		// }
+		nostrSend(session, key, ackProtoMessage, "", "", "", "")
+	}
+
+}
+
+func InitNostrHandshake(session, key string, txRequest TxRequest) {
 	// handshake with the master
 	keyShare, err := GetKeyShare(key)
 	if err != nil {
@@ -178,23 +232,25 @@ func nostrHandshake(session, key string) {
 
 	protoMessage := ProtoMessage{
 		SessionID:       session,
-		Type:            "handshake",
+		Type:            "init_handshake",
 		From:            key,
 		FromNostrPubKey: keyShare.LocalNostrPubKey,
 		Recipients:      make([]NostrPartyPubKeys, 0, len(keyShare.NostrPartyPubKeys)),
 		Datetime:        time.Now().Format(time.RFC3339),
 		RawMessage:      "",
+		TxRequest:       txRequest,
+		Master:          Master{MasterPeer: keyShare.LocalPartyKey, MasterPubKey: keyShare.LocalNostrPubKey},
 	}
 
 	// Convert map to slice of NostrPartyPubKeys
 	for party, pubKey := range keyShare.NostrPartyPubKeys {
 		protoMessage.Recipients = append(protoMessage.Recipients, NostrPartyPubKeys{
-			Party:  party,
+			Peer:   party,
 			PubKey: pubKey,
 		})
 	}
 
-	nostrSend(session, key, protoMessage, "handshake", "", "", "")
+	nostrSend(session, key, protoMessage, "init_handshake", "", "", "")
 }
 
 func validateKeys(privateKey, publicKey string) error {
@@ -217,31 +273,31 @@ func validateKeys(privateKey, publicKey string) error {
 // }
 
 // NOSTR Callback
-func nostrListen(localParty, parties string) {
+func NostrListen(localParty string) {
 
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
 		log.Printf("Error getting key share: %v\n", err)
 		return
 	}
-	masterPeer, masterPubKey := GetMaster(parties, localParty)
+	//masterPeer, masterPubKey := GetMaster(parties, localParty)
 
-	var isMaster bool
-	//var port string = "55055"
+	// var isMaster bool
+	// //var port string = "55055"
 
-	if masterPeer == keyShare.LocalPartyKey && masterPubKey == keyShare.LocalNostrPubKey {
-		// we are the master, so we start the host
-		isMaster = true
-		fmt.Printf("%s is master\n", localParty)
-	} else {
-		isMaster = false
-	}
+	// if masterPeer == keyShare.LocalPartyKey && masterPubKey == keyShare.LocalNostrPubKey {
+	// 	// we are the master, so we start the host
+	// 	isMaster = true
+	// 	fmt.Printf("%s is master\n", localParty)
+	// } else {
+	// 	isMaster = false
+	// }
 
-	if isMaster {
-		//RunRelay(port)
-		//fmt.Printf("relay started by %s\n", localParty)
-		//select {}
-	}
+	// if isMaster {
+	// 	//RunRelay(port)
+	// 	//fmt.Printf("relay started by %s\n", localParty)
+	// 	//select {}
+	// }
 
 	// Validate the public key format
 	if !nostr.IsValidPublicKey(keyShare.LocalNostrPubKey) {
@@ -308,11 +364,15 @@ func nostrListen(localParty, parties string) {
 				log.Printf("Error parsing decrypted message into RawMessage: %v\n", err)
 				continue
 			}
-			protoMessage.NostrEventID = event.ID
 			//log.Printf("Parsed RawMessage: %+v\n", rawMessage)
 
 			// Store the parsed raw message in cache using the session ID
-			nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
+
+			if protoMessage.Type == "init_handshake" {
+				AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
+			} else {
+				nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
+			}
 
 		case <-globalCtx.Done():
 			return
