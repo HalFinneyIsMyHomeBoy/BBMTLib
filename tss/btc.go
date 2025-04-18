@@ -393,43 +393,9 @@ func MpcSendBTC(
 					AmountSatoshi:   amountSatoshi,
 					FeeSatoshi:      estimatedFee,
 				}
+				ackHandshakeCount := coordinateNostrHandshake(session, key, txRequest)
+				fmt.Printf("Ack handshake count: %d\n", ackHandshakeCount)
 
-				// Initialize retry counter and max retries
-				maxRetries := 30
-				retryCount := 0
-				var protoMessage ProtoMessage
-				var err error
-
-				for retryCount < maxRetries {
-					InitNostrHandshake(session, key, txRequest)
-					time.Sleep(time.Second)
-
-					protoMessage, err = nostrDownloadMessage(session, key)
-					if err != nil {
-						Logf("Error downloading message (attempt %d/%d): %v", retryCount+1, maxRetries, err)
-						retryCount++
-						time.Sleep(time.Second)
-						continue
-					}
-
-					if protoMessage.Type == "ack_handshake" && protoMessage.SessionID == session && protoMessage.From != key {
-						Logf("Ack handshake message received from %s", protoMessage.From)
-						//TODO: Start here also duplicate this code above
-						sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-						if err != nil {
-							return "", fmt.Errorf("failed to sign transaction: signature is empty")
-						}
-						break
-					}
-
-					retryCount++
-					Logf("Invalid ack handshake response (attempt %d/%d), retrying...", retryCount, maxRetries)
-					time.Sleep(time.Second)
-				}
-
-				if retryCount >= maxRetries {
-					return "", fmt.Errorf("failed to receive valid ack handshake after %d attempts", maxRetries)
-				}
 			} else {
 				sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 				if err != nil {
@@ -480,43 +446,9 @@ func MpcSendBTC(
 					AmountSatoshi:   amountSatoshi,
 					FeeSatoshi:      estimatedFee,
 				}
+				ackHandshakeCount := coordinateNostrHandshake(session, key, txRequest)
+				fmt.Printf("Ack handshake count: %d\n", ackHandshakeCount)
 
-				// Initialize retry counter and max retries
-				maxRetries := 30
-				retryCount := 0
-				var protoMessage ProtoMessage
-				var err error
-
-				for retryCount < maxRetries {
-					InitNostrHandshake(session, key, txRequest)
-					time.Sleep(time.Second)
-
-					protoMessage, err = nostrDownloadMessage(session, key)
-					if err != nil {
-						Logf("Error downloading message (attempt %d/%d): %v", retryCount+1, maxRetries, err)
-						retryCount++
-						time.Sleep(time.Second)
-						continue
-					}
-
-					if protoMessage.Type == "ack_handshake" && protoMessage.SessionID == session && protoMessage.From != key {
-						Logf("Ack handshake message received from %s", protoMessage.From)
-						//TODO: Start here also duplicate this code above
-						sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-						if err != nil {
-							return "", fmt.Errorf("failed to sign transaction: signature is empty")
-						}
-						break
-					}
-
-					retryCount++
-					Logf("Invalid ack handshake response (attempt %d/%d), retrying...", retryCount, maxRetries)
-					time.Sleep(time.Second)
-				}
-
-				if retryCount >= maxRetries {
-					return "", fmt.Errorf("failed to receive valid ack handshake after %d attempts", maxRetries)
-				}
 			} else {
 				sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 				if err != nil {

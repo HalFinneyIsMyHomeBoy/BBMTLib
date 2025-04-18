@@ -17,11 +17,12 @@ import (
 
 // Global variables
 var (
-	nostrHandShakeCache = cache.New(5*time.Minute, 10*time.Minute)
-	nostrMessageCache   = cache.New(5*time.Minute, 10*time.Minute)
-	globalRelay         *nostr.Relay
-	globalCtx           context.Context
-	nostrRelay          string = "ws://bbw-nostr.xyz"
+	//nostrHandShakeCache = cache.New(5*time.Minute, 10*time.Minute)
+	nostrHandShakeList []ProtoMessage
+	nostrMessageCache  = cache.New(5*time.Minute, 10*time.Minute)
+	globalRelay        *nostr.Relay
+	globalCtx          context.Context
+	nostrRelay         string = "ws://bbw-nostr.xyz"
 )
 
 type NostrPartyPubKeys struct {
@@ -181,6 +182,85 @@ func setNPubs() {
 
 }
 
+func coordinateNostrHandshake(session, key string, txRequest TxRequest) int {
+
+	// Initialize retry counter and max retries
+	maxRetries := 30
+	ackHandshakeCount := 0
+	retryCount := 0
+	//var protoMessage ProtoMessage
+	//var err error
+
+	for retryCount < maxRetries {
+		InitNostrHandshake(session, key, txRequest)
+		time.Sleep(time.Second)
+
+		newProtoMessage, err := nostrDownloadMessage(session, key)
+		if err != nil {
+			Logf("Error downloading message: %v", err)
+			retryCount++
+			time.Sleep(time.Second)
+			continue
+		} else {
+
+			if newProtoMessage.Type == "ack_handshake" && newProtoMessage.SessionID == session && newProtoMessage.From != key {
+
+				for _, item := range nostrHandShakeList {
+					if item.SessionID == newProtoMessage.SessionID && newProtoMessage.Type == "ack_handshake" && newProtoMessage.From != key {
+						if item.TxRequest == txRequest {
+							fmt.Printf("Key: %s, Message: %+v\n", session, item)
+							ackHandshakeCount++
+							nostrHandShakeList = append(nostrHandShakeList, newProtoMessage)
+						}
+					}
+
+				}
+				// if !contains(nostrHandShakeList, newProtoMessage) {
+				// 	//this is a new handshake
+				// 	ackHandshakeCount++
+				// 	nostrHandShakeList = append(nostrHandShakeList, newProtoMessage)
+				// }
+			}
+
+			// for _, item := range nostrHandShakeList {
+			// 	if item.SessionID == session && item.Type == "ack_handshake" && item.From != key {
+			// 		if
+			// 		fmt.Printf("Key: %s, Message: %+v\n", session, item)
+			// 	}
+			// }
+
+			// protoMessage, ok :=
+			// if !ok {
+			// 	Logf("No handshake message in cache")
+			// 	retryCount++
+			// 	time.Sleep(time.Second)
+			// 	continue
+			// }
+			// protoMessage, err = nostrDownloadMessage(session, key)
+			// if err != nil {
+			// 	Logf("Error downloading message (attempt %d/%d): %v", retryCount+1, maxRetries, err)
+			// 	retryCount++
+			// 	time.Sleep(time.Second)
+			// 	continue
+			// }
+			// if ok {
+			// 	protoMsg := protoMessage // No type assertion needed since protoMessage is already ProtoMessage type
+			// 	if protoMsg.Type == "ack_handshake" && protoMsg.SessionID == session && protoMsg.From != key {
+			// 		Logf("Ack handshake message received from %s", protoMsg.From)
+			// 		ackHandshakeCount++
+			// 		nostrHandShakeList[session] = protoMessage
+			// 		//TODO: Start here also duplicate this code above
+
+			// 	}
+
+			retryCount++
+			//Logf("Invalid ack handshake response (attempt %d/%d), retrying...", retryCount, maxRetries)
+			time.Sleep(time.Second)
+		}
+	}
+	return ackHandshakeCount
+}
+
 func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 	// handshake with the master
 	keyShare, err := GetKeyShare(key)
@@ -189,15 +269,9 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 		return
 	}
 
-	// protoMessage, err := nostrDownloadMessage(session, key)
-	// if err != nil {
-	// 	log.Printf("Error downloading message: %v\n", err)
-	// 	return
-	// }
-
 	if protoMessage.Type == "init_handshake" && protoMessage.SessionID == session && protoMessage.From != key {
-		fmt.Printf("handshake message received from %s\n", protoMessage.From)
-
+		Logf("init handshake message received from %s\n", protoMessage.From)
+		Logf("sending ack handshake message to %s\n", key)
 		//TODO: UI update - ask user to approve TX
 		//if approved == true, send ack
 
@@ -207,9 +281,11 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 			From:            key,
 			FromNostrPubKey: keyShare.LocalNostrPubKey,
 			Recipients:      []NostrPartyPubKeys{{Peer: protoMessage.Master.MasterPeer, PubKey: protoMessage.Master.MasterPubKey}},
+			Participants:    []string{key},
 			Datetime:        time.Now().Format(time.RFC3339),
 			RawMessage:      "",
 			TxRequest:       protoMessage.TxRequest,
+			Master:          Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
 		}
 
 		// for _, peer := range protoMessage.Recipients {
@@ -217,6 +293,7 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 		// 		protoMessage.Recipients = append(protoMessage.Recipients, NostrPartyPubKeys{Party: peer.Party, PubKey: pubKey})
 		// 	}
 		// }
+		nostrHandShakeList = append(nostrHandShakeList, ackProtoMessage)
 		nostrSend(session, key, ackProtoMessage, "", "", "", "")
 	}
 
@@ -382,10 +459,6 @@ func NostrListen(localParty string) {
 		}
 	}
 
-	// whenever we receive a message just push it to the cache
-	//sessionID := NostrStatus.SessionID
-	//messageRaw := "some_json_tss_message"
-	//messageCache.Set(sessionID, rawMessage{nil})
 }
 
 func nostrSend(sessionID, key string, message ProtoMessage, messageType, fromParty, toParty, parties string) {
@@ -400,16 +473,6 @@ func nostrSend(sessionID, key string, message ProtoMessage, messageType, fromPar
 		log.Printf("Error getting key share: %v\n", err)
 		return
 	}
-
-	// protoMessage := ProtoMessage{
-	// 	SessionID:    sessionID,
-	// 	Type:         messageType,
-	// 	From:         fromParty,
-	// 	Participants: []string{parties},
-	// 	//Recipients:   []string{recipientPubKey},
-	// 	Datetime: time.Now().Format(time.RFC3339),
-	// 	To:       toParty,
-	// }
 
 	protoMessageJSON, err := json.Marshal(message)
 	if err != nil {

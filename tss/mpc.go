@@ -290,7 +290,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 
 	if net_type == "nostr" {
 		//go nostrListen(key, strings.Join(parties, ","))
-		time.Sleep(time.Second * 2)
+		//time.Sleep(time.Second * 2)
 	}
 
 	encryptionKey = encKey
@@ -325,10 +325,10 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	if net_type == "nostr" {
 		//check cache for handshake response
 		var protoMessage ProtoMessage
-		var err error
+		//var err error
 
 		// Set up timeout
-		timeout := time.NewTimer(60 * time.Second)
+		timeout := time.NewTimer(20 * time.Second)
 		defer timeout.Stop()
 
 		// Loop until we get a valid message or timeout
@@ -337,19 +337,22 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 			case <-timeout.C:
 				return "", fmt.Errorf("timeout waiting for nostrhandshake message after 60 seconds")
 			default:
-				protoMessage, err = nostrDownloadMessage(session, key)
-				if err != nil {
-					Logln("BBMTLog", "Error downloading message:", err)
-					time.Sleep(2 * time.Second) // Add delay between retries
-					continue
-				}
-				if protoMessage.Type == "handshake" && protoMessage.SessionID == session && protoMessage.From != key {
-					fmt.Println("handshake message received from ", protoMessage.From)
-
-					continue
-				}
-				time.Sleep(2 * time.Second) // Add delay between retries
+				// protoMessage, ok := nostrHandShakeList[session]
+				// if !ok {
+				// 	Logf("Error downloading message: %s\n", protoMessage)
+				// 	//time.Sleep(2 * time.Second) // Add delay between retries
+				// 	Logln("BBMTLog", "no handshake message in cache")
+				// 	continue
+				// }
+				Logf("test: %s\n", protoMessage)
+				// if protoMessage.Type == "ack_handshake" && protoMessage.SessionID == session && protoMessage.From != key {
+				// 	Logf("ack handshake message received from %s\n", protoMessage.From)
+				// 	//Begin Nostr signing
+				// 	continue
+				// }
+				//time.Sleep(2 * time.Second) // Add delay between retries
 			}
+			Logf("test: %s\n", protoMessage)
 		}
 	} else {
 		if err := awaitJoiners(parties, server, session); err != nil {
