@@ -256,7 +256,7 @@ func main() {
 		sessionKey := randomSeed(64) // Random session key
 		// Split parties string into individual peers
 		peerList := strings.Split(parties, ",")
-		net_type := "nostr"
+		net_type := ""
 
 		if net_type == "nostr" {
 			net_type = "nostr"
@@ -342,9 +342,9 @@ func main() {
 
 	if mode == "MPCSentBTC" {
 
-		parties := "peer1,peer2"  // All participating parties
-		session := randomSeed(64) // Generate random session ID
-		sessionKey := session     // Random session key
+		parties := "peer1,peer2,peer3" // All participating parties
+		session := randomSeed(64)      // Generate random session ID
+		sessionKey := session          // Random session key
 		// Split parties string into individual peers
 		peerList := strings.Split(parties, ",")
 		//keyshare := os.Args[8]
@@ -353,7 +353,7 @@ func main() {
 		amountSatoshi := 1000
 		estimatedFee := 600
 		peer := "peer1"
-		net_type := "nostr"
+		net_type := ""
 
 		if net_type == "nostr" {
 			net_type = "nostr"

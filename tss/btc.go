@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -393,9 +394,13 @@ func MpcSendBTC(
 					AmountSatoshi:   amountSatoshi,
 					FeeSatoshi:      estimatedFee,
 				}
-				ackHandshakeCount := coordinateNostrHandshake(session, key, txRequest)
-				fmt.Printf("Ack handshake count: %d\n", ackHandshakeCount)
 
+				nostrSession := coordinateNostrHandshake(utxoSession, key, txRequest)
+				fmt.Printf("Total parties in the session: %v\n", nostrSession.Participants)
+				sigJSON, err = JoinKeysign(server, key, strings.Join(nostrSession.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
+				if err != nil {
+					return "", fmt.Errorf("failed to sign transaction: signature is empty")
+				}
 			} else {
 				sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 				if err != nil {
@@ -438,6 +443,7 @@ func MpcSendBTC(
 			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
 			var sigJSON string
+
 			// TODO: Send request over nostr to sign transaction
 			if net_type == "nostr" {
 				txRequest := TxRequest{
@@ -446,9 +452,13 @@ func MpcSendBTC(
 					AmountSatoshi:   amountSatoshi,
 					FeeSatoshi:      estimatedFee,
 				}
-				ackHandshakeCount := coordinateNostrHandshake(session, key, txRequest)
-				fmt.Printf("Ack handshake count: %d\n", ackHandshakeCount)
-
+				nostrSession := coordinateNostrHandshake(utxoSession, key, txRequest)
+				//fmt.Printf("Ack handshake count: %d\n", ackHandshakeCount)
+				fmt.Printf("Total parties in the session: %s\n", nostrSession.Participants)
+				sigJSON, err = JoinKeysign(server, key, strings.Join(nostrSession.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
+				if err != nil {
+					return "", fmt.Errorf("failed to sign transaction: signature is empty")
+				}
 			} else {
 				sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 				if err != nil {

@@ -18,6 +18,7 @@ import (
 // Global variables
 var (
 	//nostrHandShakeCache = cache.New(5*time.Minute, 10*time.Minute)
+	nostrSessionList   []NostrSession
 	nostrHandShakeList []ProtoMessage
 	nostrMessageCache  = cache.New(5*time.Minute, 10*time.Minute)
 	globalRelay        *nostr.Relay
@@ -36,14 +37,21 @@ type ProtoMessage struct {
 	Recipients      []NostrPartyPubKeys `json:"recipients"`
 	FromNostrPubKey string              `json:"from_nostr_pubkey"`
 	SessionID       string              `json:"sessionID"`
-	Datetime        string              `json:"datetime"`
-	SeqNo           string              `json:"sequence_no"`
-	RawMessage      string              `json:"raw_message"`
-	From            string              `json:"from"`
-	To              string              `json:"to"`
-	SessionKey      string              `json:"session_key"`
-	TxRequest       TxRequest           `json:"tx_request"`
-	Master          Master              `json:"master"`
+	//Datetime        string              `json:"datetime"`
+	SeqNo      string    `json:"sequence_no"`
+	RawMessage string    `json:"raw_message"`
+	From       string    `json:"from"`
+	To         string    `json:"to"`
+	SessionKey string    `json:"session_key"`
+	TxRequest  TxRequest `json:"tx_request"`
+	Master     Master    `json:"master"`
+}
+
+type NostrSession struct {
+	SessionID    string    `json:"session_id"`
+	Participants []string  `json:"participants"`
+	Master       Master    `json:"master"`
+	TxRequest    TxRequest `json:"tx_request"`
 }
 
 type Master struct {
@@ -182,10 +190,20 @@ func setNPubs() {
 
 }
 
-func coordinateNostrHandshake(session, key string, txRequest TxRequest) int {
+func containsProtoMessage(list []ProtoMessage, msg ProtoMessage) bool {
+	for _, element := range list {
+		if element.Type == msg.Type &&
+			element.SessionID == msg.SessionID &&
+			element.From == msg.From {
+			return true
+		}
+	}
+	return false
+}
+func coordinateNostrHandshake(session, key string, txRequest TxRequest) NostrSession {
 
 	// Initialize retry counter and max retries
-	maxRetries := 30
+	maxRetries := 2
 	ackHandshakeCount := 0
 	retryCount := 0
 	//var protoMessage ProtoMessage
@@ -209,8 +227,12 @@ func coordinateNostrHandshake(session, key string, txRequest TxRequest) int {
 					if item.SessionID == newProtoMessage.SessionID && newProtoMessage.Type == "ack_handshake" && newProtoMessage.From != key {
 						if item.TxRequest == txRequest {
 							fmt.Printf("Key: %s, Message: %+v\n", session, item)
-							ackHandshakeCount++
-							nostrHandShakeList = append(nostrHandShakeList, newProtoMessage)
+
+							if !containsProtoMessage(nostrHandShakeList, newProtoMessage) {
+								nostrHandShakeList = append(nostrHandShakeList, newProtoMessage)
+								ackHandshakeCount++
+							}
+							fmt.Printf("handshake already in list")
 						}
 					}
 
@@ -258,7 +280,21 @@ func coordinateNostrHandshake(session, key string, txRequest TxRequest) int {
 			time.Sleep(time.Second)
 		}
 	}
-	return ackHandshakeCount
+	partiesCSV := ""
+	for _, item := range nostrHandShakeList {
+		// Join all participants into CSV string
+		partiesCSV += strings.Join(item.Participants, ",") + ","
+	}
+	partiesCSV += nostrHandShakeList[0].Master.MasterPeer
+
+	var nostrSession NostrSession
+	nostrSession.SessionID = session
+	nostrSession.Participants = strings.Split(partiesCSV, ",")
+	nostrSession.TxRequest = nostrHandShakeList[0].TxRequest
+	nostrSession.Master = nostrHandShakeList[0].Master
+
+	nostrSessionList = append(nostrSessionList, nostrSession)
+	return nostrSession
 }
 
 func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
@@ -269,7 +305,7 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 		return
 	}
 
-	if protoMessage.Type == "init_handshake" && protoMessage.SessionID == session && protoMessage.From != key {
+	if protoMessage.Type == "init_handshake" && protoMessage.From != key {
 		Logf("init handshake message received from %s\n", protoMessage.From)
 		Logf("sending ack handshake message to %s\n", key)
 		//TODO: UI update - ask user to approve TX
@@ -282,10 +318,10 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 			FromNostrPubKey: keyShare.LocalNostrPubKey,
 			Recipients:      []NostrPartyPubKeys{{Peer: protoMessage.Master.MasterPeer, PubKey: protoMessage.Master.MasterPubKey}},
 			Participants:    []string{key},
-			Datetime:        time.Now().Format(time.RFC3339),
-			RawMessage:      "",
-			TxRequest:       protoMessage.TxRequest,
-			Master:          Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
+			//Datetime:        time.Now().Format(time.RFC3339),
+			RawMessage: "",
+			TxRequest:  protoMessage.TxRequest,
+			Master:     Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
 		}
 
 		// for _, peer := range protoMessage.Recipients {
@@ -293,8 +329,11 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 		// 		protoMessage.Recipients = append(protoMessage.Recipients, NostrPartyPubKeys{Party: peer.Party, PubKey: pubKey})
 		// 	}
 		// }
-		nostrHandShakeList = append(nostrHandShakeList, ackProtoMessage)
-		nostrSend(session, key, ackProtoMessage, "", "", "", "")
+		if !containsProtoMessage(nostrHandShakeList, ackProtoMessage) {
+			nostrHandShakeList = append(nostrHandShakeList, ackProtoMessage)
+			nostrSend(session, key, ackProtoMessage, "", "", "", "")
+		}
+
 	}
 
 }
@@ -313,10 +352,10 @@ func InitNostrHandshake(session, key string, txRequest TxRequest) {
 		From:            key,
 		FromNostrPubKey: keyShare.LocalNostrPubKey,
 		Recipients:      make([]NostrPartyPubKeys, 0, len(keyShare.NostrPartyPubKeys)),
-		Datetime:        time.Now().Format(time.RFC3339),
-		RawMessage:      "",
-		TxRequest:       txRequest,
-		Master:          Master{MasterPeer: keyShare.LocalPartyKey, MasterPubKey: keyShare.LocalNostrPubKey},
+		//Datetime:        time.Now().Format(time.RFC3339),
+		RawMessage: "",
+		TxRequest:  txRequest,
+		Master:     Master{MasterPeer: keyShare.LocalPartyKey, MasterPubKey: keyShare.LocalNostrPubKey},
 	}
 
 	// Convert map to slice of NostrPartyPubKeys
@@ -403,7 +442,7 @@ func NostrListen(localParty string) {
 	}
 	defer globalRelay.Close()
 
-	cutoffTime := time.Now().Add(-5 * time.Minute)
+	cutoffTime := time.Now().Add(-10 * time.Second)
 	since := nostr.Timestamp(cutoffTime.Unix())
 
 	filters := nostr.Filters{
@@ -516,7 +555,10 @@ func nostrSend(sessionID, key string, message ProtoMessage, messageType, fromPar
 }
 
 func nostrDownloadMessage(sessionID string, key string) (ProtoMessage, error) {
+
+	//sessionID = sessionID[:len(sessionID)-1]
 	msg, found := nostrMessageCache.Get(sessionID)
+
 	if !found {
 		return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
 	}

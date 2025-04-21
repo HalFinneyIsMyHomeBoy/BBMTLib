@@ -280,7 +280,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 
 func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message, net_type string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
-
+	fmt.Printf("session at keysign: %v\n", session)
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
@@ -307,10 +307,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	setStatus(session, status)
 
 	//TODO: need to make nostr for this
-	if net_type == "nostr" {
-
-		//nostrHandshake(session, key, txRequest)
-	} else {
+	if net_type != "nostr" {
 		if err := joinSession(server, session, key); err != nil {
 			return "", fmt.Errorf("fail to register session: %w", err)
 		}
@@ -322,39 +319,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	setStatus(session, status)
 
 	//TODO: Change to use nostr
-	if net_type == "nostr" {
-		//check cache for handshake response
-		var protoMessage ProtoMessage
-		//var err error
-
-		// Set up timeout
-		timeout := time.NewTimer(20 * time.Second)
-		defer timeout.Stop()
-
-		// Loop until we get a valid message or timeout
-		for {
-			select {
-			case <-timeout.C:
-				return "", fmt.Errorf("timeout waiting for nostrhandshake message after 60 seconds")
-			default:
-				// protoMessage, ok := nostrHandShakeList[session]
-				// if !ok {
-				// 	Logf("Error downloading message: %s\n", protoMessage)
-				// 	//time.Sleep(2 * time.Second) // Add delay between retries
-				// 	Logln("BBMTLog", "no handshake message in cache")
-				// 	continue
-				// }
-				Logf("test: %s\n", protoMessage)
-				// if protoMessage.Type == "ack_handshake" && protoMessage.SessionID == session && protoMessage.From != key {
-				// 	Logf("ack handshake message received from %s\n", protoMessage.From)
-				// 	//Begin Nostr signing
-				// 	continue
-				// }
-				//time.Sleep(2 * time.Second) // Add delay between retries
-			}
-			Logf("test: %s\n", protoMessage)
-		}
-	} else {
+	if net_type != "nostr" {
 		if err := awaitJoiners(parties, server, session); err != nil {
 			Logln("BBMTLog", "fail to wait all parties", "error", err)
 			return "", fmt.Errorf("fail to wait all parties: %w", err)
@@ -364,7 +329,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	status.SeqNo++
 	status.Index++
 	setStatus(session, status)
-
+	fmt.Printf("session before messenger: %v\n", session)
 	Logln("BBMTLog", "inbound messenger up...")
 	messenger := &MessengerImp{
 		Server:     server,
@@ -381,7 +346,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	status.Step++
 	status.Info = "local state loaded"
 	setStatus(session, status)
-
+	fmt.Printf("session before NewService: %v\n", session)
 	Logln("BBMTLog", "preparing NewService...")
 	tssServerImp, err := NewService(messenger, localStateAccessor, false, "-")
 	if err != nil {
@@ -391,6 +356,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	Logln("BBMTLog", "downloadMessage active...")
+	fmt.Printf("session before downloadMessage: %v\n", session)
 	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg, net_type)
 	Logln("BBMTLog", "start ECDSA keysign...")
 	resp, err := tssServerImp.KeysignECDSA(&KeysignRequest{
@@ -584,7 +550,18 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 	Logln("BBMTLog", "sending message...")
 
 	if m.Net_Type == "nostr" {
+
+		var protoMessage ProtoMessage
+		protoMessage.Type = "keysign"
+		protoMessage.SessionID = m.SessionID
+		protoMessage.From = from
+		protoMessage.To = to
+		protoMessage.RawMessage = string(requestBody)
+		protoMessage.SeqNo = strconv.Itoa(status.SeqNo)
+
+		nostrSend(m.SessionID, from, protoMessage, "keysign", "", "", "")
 		if !isMaster(parties, from) {
+
 			//time.Sleep(3 * time.Second)
 			//if not master, then pause a few seconds
 			//nostrSend(m.SessionID, from, ProtoMessage, "handshake", "", "", "")
