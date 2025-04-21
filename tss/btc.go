@@ -393,10 +393,16 @@ func MpcSendBTC(
 					ReceiverAddress: receiverAddress,
 					AmountSatoshi:   amountSatoshi,
 					FeeSatoshi:      estimatedFee,
+					BtcPub:          publicKey,
+					DerivePath:      derivePath,
 				}
 
 				nostrSession := coordinateNostrHandshake(utxoSession, key, txRequest)
 				fmt.Printf("Total parties in the session: %v\n", nostrSession.Participants)
+				fmt.Printf("Starting nostr Session: %v\n", nostrSession.SessionID)
+				if nostrSession.Master.MasterPeer == key {
+					startNostrSession(nostrSession.SessionID, nostrSession.Participants, key, "send_btc")
+				}
 				sigJSON, err = JoinKeysign(server, key, strings.Join(nostrSession.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign transaction: signature is empty")
@@ -451,10 +457,16 @@ func MpcSendBTC(
 					ReceiverAddress: receiverAddress,
 					AmountSatoshi:   amountSatoshi,
 					FeeSatoshi:      estimatedFee,
+					BtcPub:          publicKey,
+					DerivePath:      derivePath,
 				}
+
 				nostrSession := coordinateNostrHandshake(utxoSession, key, txRequest)
-				//fmt.Printf("Ack handshake count: %d\n", ackHandshakeCount)
-				fmt.Printf("Total parties in the session: %s\n", nostrSession.Participants)
+				fmt.Printf("Total parties in the session: %v\n", nostrSession.Participants)
+				fmt.Printf("Starting nostr Session: %v\n", nostrSession.SessionID)
+				if nostrSession.Master.MasterPeer != key {
+					startNostrSession(nostrSession.SessionID, nostrSession.Participants, key, "send_btc")
+				}
 				sigJSON, err = JoinKeysign(server, key, strings.Join(nostrSession.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign transaction: signature is empty")

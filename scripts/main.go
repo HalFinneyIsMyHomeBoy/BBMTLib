@@ -342,9 +342,9 @@ func main() {
 
 	if mode == "MPCSentBTC" {
 
-		parties := "peer1,peer2,peer3" // All participating parties
-		session := randomSeed(64)      // Generate random session ID
-		sessionKey := session          // Random session key
+		parties := "peer1,peer2"     // All participating parties
+		session := randomSeed(64)    // Generate random session ID
+		sessionKey := randomSeed(64) // Random session key
 		// Split parties string into individual peers
 		peerList := strings.Split(parties, ",")
 		//keyshare := os.Args[8]
@@ -353,7 +353,7 @@ func main() {
 		amountSatoshi := 1000
 		estimatedFee := 600
 		peer := "peer1"
-		net_type := ""
+		net_type := "nostr"
 
 		if net_type == "nostr" {
 			net_type = "nostr"
@@ -368,9 +368,9 @@ func main() {
 		}
 		// Loop through each peer
 
-		masterPeer, masterPubKey := tss.GetMaster(strings.Join(peerList, ","), peer)
-		fmt.Printf("Master peer: %s\n", masterPeer)
-		fmt.Printf("Master pubkey: %s\n", masterPubKey)
+		// masterPeer, masterPubKey := tss.GetMaster(strings.Join(peerList, ","), peer)
+		// fmt.Printf("Master peer: %s\n", masterPeer)
+		// fmt.Printf("Master pubkey: %s\n", masterPubKey)
 		fmt.Printf("Processing peer: %s\n", peer)
 		keyshareFile := peer + ".ks"
 
@@ -412,7 +412,6 @@ func main() {
 		fmt.Println("Testing...")
 		// prepare args
 		server := "http://127.0.0.1:55055" // Default relay server
-		party := peer                      // Local party identifier
 
 		// Generate keypair for encryption/decryption
 		keypair, err := tss.GenerateKeyPair()
@@ -444,7 +443,7 @@ func main() {
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
-			fmt.Printf("\n [%s] Keysign Result %s\n", party, result)
+			fmt.Printf("\n [%s] Keysign Result %s\n", peer, result)
 		}
 
 		//}(peer)

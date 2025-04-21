@@ -88,6 +88,8 @@ type TxRequest struct {
 	ReceiverAddress string `json:"receiver_address"`
 	AmountSatoshi   int64  `json:"amount_satoshi"`
 	FeeSatoshi      int64  `json:"fee_satoshi"`
+	DerivePath      string `json:"derive_path"`
+	BtcPub          string `json:"btc_pub"`
 }
 
 func GetKeyShare(party string) (LocalState, error) {
@@ -189,6 +191,38 @@ func setNPubs() {
 	// set the nostr pubkeys for the participants
 
 }
+func startNostrSession(sessionID string, participants []string, localParty, type_session string) {
+
+	// protoMessage := ProtoMessage{
+	// 	SessionID:  sessionID,
+	// 	Type:       type_session,
+	// 	From:       localParty,
+	// 	Recipients: []NostrPartyPubKeys{{Peer: participants[0], PubKey: participants[0]}},
+	// }
+
+	//nostrSend(sessionID, localParty, protoMessage, "start_session", "", "", "")
+
+	keyshareFile := localParty + ".ks"
+	keyshare, err := os.ReadFile(keyshareFile)
+	if err != nil {
+		fmt.Printf("Error reading keyshare file for %s: %v\n", localParty, err)
+		return
+	}
+
+	for _, item := range nostrSessionList {
+		if item.SessionID == sessionID {
+
+			result, err := MpcSendBTC("", localParty, strings.Join(item.Participants, ","), sessionID, "", "", "", string(keyshare), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr")
+			if err != nil {
+				fmt.Printf("Go Error: %v\n", err)
+			} else {
+				fmt.Printf("\n [%s] Keysign Result %s\n", localParty, result)
+			}
+			break
+		}
+	}
+
+}
 
 func containsProtoMessage(list []ProtoMessage, msg ProtoMessage) bool {
 	for _, element := range list {
@@ -200,7 +234,8 @@ func containsProtoMessage(list []ProtoMessage, msg ProtoMessage) bool {
 	}
 	return false
 }
-func coordinateNostrHandshake(session, key string, txRequest TxRequest) NostrSession {
+
+func coordinateNostrHandshake(SessionID, key string, txRequest TxRequest) NostrSession {
 
 	// Initialize retry counter and max retries
 	maxRetries := 2
@@ -209,11 +244,19 @@ func coordinateNostrHandshake(session, key string, txRequest TxRequest) NostrSes
 	//var protoMessage ProtoMessage
 	//var err error
 
+	for _, session := range nostrSessionList {
+		if session.SessionID == SessionID {
+			// Found matching session
+			return session
+			//if session already exits, then skip everything and return session?
+		}
+	}
+
 	for retryCount < maxRetries {
-		InitNostrHandshake(session, key, txRequest)
+		InitNostrHandshake(SessionID, key, txRequest)
 		time.Sleep(time.Second)
 
-		newProtoMessage, err := nostrDownloadMessage(session, key)
+		newProtoMessage, err := nostrDownloadMessage(SessionID, key)
 		if err != nil {
 			Logf("Error downloading message: %v", err)
 			retryCount++
@@ -221,12 +264,12 @@ func coordinateNostrHandshake(session, key string, txRequest TxRequest) NostrSes
 			continue
 		} else {
 
-			if newProtoMessage.Type == "ack_handshake" && newProtoMessage.SessionID == session && newProtoMessage.From != key {
+			if newProtoMessage.Type == "ack_handshake" && newProtoMessage.SessionID == SessionID && newProtoMessage.From != key {
 
 				for _, item := range nostrHandShakeList {
 					if item.SessionID == newProtoMessage.SessionID && newProtoMessage.Type == "ack_handshake" && newProtoMessage.From != key {
 						if item.TxRequest == txRequest {
-							fmt.Printf("Key: %s, Message: %+v\n", session, item)
+							fmt.Printf("Key: %s, Message: %+v\n", SessionID, item)
 
 							if !containsProtoMessage(nostrHandShakeList, newProtoMessage) {
 								nostrHandShakeList = append(nostrHandShakeList, newProtoMessage)
@@ -237,43 +280,8 @@ func coordinateNostrHandshake(session, key string, txRequest TxRequest) NostrSes
 					}
 
 				}
-				// if !contains(nostrHandShakeList, newProtoMessage) {
-				// 	//this is a new handshake
-				// 	ackHandshakeCount++
-				// 	nostrHandShakeList = append(nostrHandShakeList, newProtoMessage)
-				// }
+
 			}
-
-			// for _, item := range nostrHandShakeList {
-			// 	if item.SessionID == session && item.Type == "ack_handshake" && item.From != key {
-			// 		if
-			// 		fmt.Printf("Key: %s, Message: %+v\n", session, item)
-			// 	}
-			// }
-
-			// protoMessage, ok :=
-			// if !ok {
-			// 	Logf("No handshake message in cache")
-			// 	retryCount++
-			// 	time.Sleep(time.Second)
-			// 	continue
-			// }
-			// protoMessage, err = nostrDownloadMessage(session, key)
-			// if err != nil {
-			// 	Logf("Error downloading message (attempt %d/%d): %v", retryCount+1, maxRetries, err)
-			// 	retryCount++
-			// 	time.Sleep(time.Second)
-			// 	continue
-			// }
-			// if ok {
-			// 	protoMsg := protoMessage // No type assertion needed since protoMessage is already ProtoMessage type
-			// 	if protoMsg.Type == "ack_handshake" && protoMsg.SessionID == session && protoMsg.From != key {
-			// 		Logf("Ack handshake message received from %s", protoMsg.From)
-			// 		ackHandshakeCount++
-			// 		nostrHandShakeList[session] = protoMessage
-			// 		//TODO: Start here also duplicate this code above
-
-			// 	}
 
 			retryCount++
 			//Logf("Invalid ack handshake response (attempt %d/%d), retrying...", retryCount, maxRetries)
@@ -288,7 +296,7 @@ func coordinateNostrHandshake(session, key string, txRequest TxRequest) NostrSes
 	partiesCSV += nostrHandShakeList[0].Master.MasterPeer
 
 	var nostrSession NostrSession
-	nostrSession.SessionID = session
+	nostrSession.SessionID = SessionID
 	nostrSession.Participants = strings.Split(partiesCSV, ",")
 	nostrSession.TxRequest = nostrHandShakeList[0].TxRequest
 	nostrSession.Master = nostrHandShakeList[0].Master
@@ -486,6 +494,9 @@ func NostrListen(localParty string) {
 
 			if protoMessage.Type == "init_handshake" {
 				AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
+			}
+			if protoMessage.Type == "send_btc" {
+				startNostrSession(protoMessage.SessionID, protoMessage.Participants, localParty, protoMessage.Type)
 			} else {
 				nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
 			}
