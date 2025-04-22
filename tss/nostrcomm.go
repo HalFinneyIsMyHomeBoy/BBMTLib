@@ -687,3 +687,61 @@ func nostrDownloadMessage(sessionID string, key string) (ProtoMessage, error) {
 	// }
 	// return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
 }
+
+// Default
+// - All parties start nostrListen
+// - if "type=init_handshake" is detected, ask user to approve
+
+// 	protoMessage := ProtoMessage{
+// 		SessionID:       session,
+// 		Type:            "init_handshake",
+// 		From:            key,
+// 		FromNostrPubKey: keyShare.LocalNostrPubKey,
+// 		Recipients:      make([]NostrPartyPubKeys, 0, len(keyShare.NostrPartyPubKeys)),
+// 		RawMessage: "",
+// 		TxRequest:  txRequest,
+// 		Master:     Master{MasterPeer: keyShare.LocalPartyKey, MasterPubKey: keyShare.LocalNostrPubKey},
+// 	}
+
+// - if approved, send back "ack_handshake" to the master (master is the one who sends the "type=init_handshake")
+
+// 		ackProtoMessage := ProtoMessage{
+// 			SessionID:       session,
+// 			Type:            "ack_handshake",
+// 			From:            key,
+// 			FromNostrPubKey: keyShare.LocalNostrPubKey,
+// 			Recipients:      []NostrPartyPubKeys{{Peer: protoMessage.Master.MasterPeer, PubKey: protoMessage.Master.MasterPubKey}},
+// 			Participants:    []string{key},
+// 			RawMessage: "",
+// 			TxRequest:  protoMessage.TxRequest,
+// 			Master:     Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
+// 		}
+
+// MASTER
+// - recives and stores ack_handshakes in nostrHandShakeList, makes sure the session details match the "init_handshake"
+// - prevents duplicates
+// - waits for 20 seconds???
+// - if 2/3 of participants approve/respond, master sends "type=start_keysign" with startNostrSession to all participants who approved
+
+// 	for _, item := range nostrSessionList {
+// 		if item.SessionID == sessionID {
+
+// 			startKeysignMessage := ProtoMessage{
+// 				SessionID:       sessionID,
+// 				Type:            type_session,
+// 				From:            localParty,
+// 				FromNostrPubKey: string(keyshare),
+// 				Recipients:      make([]NostrPartyPubKeys, 0, len(keyshare)),
+// 				Participants:    participants,
+// 				RawMessage:      "",
+// 				TxRequest:       item.TxRequest,
+// 				Master:          Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
+// 			}
+// 			nostrSend(sessionID, localParty, startKeysignMessage, type_session, "", "", "")
+// 		}
+// 	}
+
+// 	The following line is not being hit, this is the problem.
+// 						nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
+
+// 	Also why is func (m *MessengerImp) Send being run twice from peer1 to peer2?
