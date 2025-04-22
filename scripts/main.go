@@ -360,6 +360,7 @@ func main() {
 			for _, peer := range peerList {
 				// Activate nostr listener, which should be listening by default
 				go tss.NostrListen(peer)
+
 			}
 			time.Sleep(time.Second * 2)
 		} else {
@@ -439,7 +440,7 @@ func main() {
 		// messageHashBytes := []byte(messageHash)
 		// messageHashBase64 := base64.StdEncoding.EncodeToString(messageHashBytes)
 
-		result, err := tss.MpcSendBTC(server, peer, parties, session, sessionKey, encKey, decKey, string(keyshare), derivePath, btcPub, senderAddress, receiverAddress, int64(amountSatoshi), int64(estimatedFee), net_type)
+		result, err := tss.MpcSendBTC(server, peer, parties, session, sessionKey, encKey, decKey, string(keyshare), derivePath, btcPub, senderAddress, receiverAddress, int64(amountSatoshi), int64(estimatedFee), net_type, "true")
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {

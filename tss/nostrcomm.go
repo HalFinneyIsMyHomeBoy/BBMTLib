@@ -114,6 +114,14 @@ func GetKeyShare(party string) (LocalState, error) {
 	return keyShare, nil
 }
 
+func GetNostrPartyPubKeys(party string) (map[string]string, error) {
+	keyShare, err := GetKeyShare(party)
+	if err != nil {
+		return nil, err
+	}
+	return keyShare.NostrPartyPubKeys, nil
+}
+
 func GetMaster(currentParties string, localParty string) (string, string) {
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
@@ -191,17 +199,8 @@ func setNPubs() {
 	// set the nostr pubkeys for the participants
 
 }
-func startNostrSession(sessionID string, participants []string, localParty, type_session string) {
-
-	// protoMessage := ProtoMessage{
-	// 	SessionID:  sessionID,
-	// 	Type:       type_session,
-	// 	From:       localParty,
-	// 	Recipients: []NostrPartyPubKeys{{Peer: participants[0], PubKey: participants[0]}},
-	// }
-
-	//nostrSend(sessionID, localParty, protoMessage, "start_session", "", "", "")
-
+func initNostrKeysignSession(sessionID string, participants []string, localParty string) {
+	//This is only run by the master
 	keyshareFile := localParty + ".ks"
 	keyshare, err := os.ReadFile(keyshareFile)
 	if err != nil {
@@ -209,19 +208,93 @@ func startNostrSession(sessionID string, participants []string, localParty, type
 		return
 	}
 
-	for _, item := range nostrSessionList {
-		if item.SessionID == sessionID {
+	decodedKeyshare, err := base64.StdEncoding.DecodeString(string(keyshare))
+	if err != nil {
+		fmt.Printf("Go Error Decoding Base64: %v\n", err)
+		return
+	}
 
-			result, err := MpcSendBTC("", localParty, strings.Join(item.Participants, ","), sessionID, "", "", "", string(keyshare), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr")
+	var localState LocalState
+	if err := json.Unmarshal(decodedKeyshare, &localState); err != nil {
+		fmt.Printf("Go Error Unmarshalling LocalState: %v\n", err)
+		return
+	}
+
+	recipients := make([]NostrPartyPubKeys, 0, len(participants))
+	for _, participant := range participants {
+		if pubKey, ok := localState.NostrPartyPubKeys[participant]; ok {
+			recipients = append(recipients, NostrPartyPubKeys{
+				Peer:   participant,
+				PubKey: pubKey,
+			})
+		}
+	}
+
+	for _, item := range nostrSessionList {
+		if item.SessionID == sessionID { //Send to all participants except (self) master
+
+			startKeysignMessage := ProtoMessage{
+				SessionID:    sessionID,
+				Type:         "start_keysign",
+				From:         localParty,
+				Recipients:   recipients,
+				Participants: participants,
+				RawMessage:   "",
+				TxRequest:    item.TxRequest,
+				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
+			}
+			nostrSend(sessionID, localParty, startKeysignMessage, "", "", "")
+		}
+	}
+
+	// result, err := MpcSendBTC("", localParty, strings.Join(item.Participants, ","), sessionID, "", "", "", string(keyshare), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr")
+	// if err != nil {
+	// 	fmt.Printf("Go Error: %v\n", err)
+	// } else {
+	// 	fmt.Printf("\n [%s] Keysign Result %s\n", localParty, result)
+	// }
+	// break
+
+}
+
+func startNostrKeysignSession(sessionID string, participants []string, localParty string) {
+	for _, item := range nostrSessionList {
+		if item.SessionID == sessionID { //Send to all participants except (self) master
+
+			keyshare, err := GetKeyShare(localParty)
+			if err != nil {
+				Logf("Error getting key share: %v", err)
+				return
+			}
+
+			// Marshal the keyshare to JSON
+			keyshareJSON, err := json.Marshal(keyshare)
+			if err != nil {
+				Logf("Error marshaling keyshare: %v", err)
+				return
+			}
+
+			result, err := MpcSendBTC("", localParty, strings.Join(item.Participants, ","), sessionID, "", "", "", string(keyshareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
 			if err != nil {
 				fmt.Printf("Go Error: %v\n", err)
 			} else {
 				fmt.Printf("\n [%s] Keysign Result %s\n", localParty, result)
 			}
-			break
+			select {}
+			// startKeysignMessage := ProtoMessage{
+			// 	SessionID:       sessionID,
+			// 	Type:            "start_keysign",
+			// 	From:            localParty,
+			// 	FromNostrPubKey: string(keyshare),
+			// 	Recipients:      make([]NostrPartyPubKeys, 0, len(keyshare)),
+			// 	Participants:    participants,
+			// 	RawMessage:      "",
+			// 	TxRequest:       item.TxRequest,
+			// 	Master:          Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
+			// }
+			// nostrSend(sessionID, localParty, startKeysignMessage, "", "", "")
 		}
 	}
-
 }
 
 func containsProtoMessage(list []ProtoMessage, msg ProtoMessage) bool {
@@ -235,7 +308,7 @@ func containsProtoMessage(list []ProtoMessage, msg ProtoMessage) bool {
 	return false
 }
 
-func coordinateNostrHandshake(SessionID, key string, txRequest TxRequest) NostrSession {
+func coordinateNostrHandshake(SessionID, key string, txRequest TxRequest) {
 
 	// Initialize retry counter and max retries
 	maxRetries := 2
@@ -247,7 +320,8 @@ func coordinateNostrHandshake(SessionID, key string, txRequest TxRequest) NostrS
 	for _, session := range nostrSessionList {
 		if session.SessionID == SessionID {
 			// Found matching session
-			return session
+			Logf("Session already exists: %v", session)
+			return
 			//if session already exits, then skip everything and return session?
 		}
 	}
@@ -295,14 +369,41 @@ func coordinateNostrHandshake(SessionID, key string, txRequest TxRequest) NostrS
 	}
 	partiesCSV += nostrHandShakeList[0].Master.MasterPeer
 
-	var nostrSession NostrSession
-	nostrSession.SessionID = SessionID
-	nostrSession.Participants = strings.Split(partiesCSV, ",")
-	nostrSession.TxRequest = nostrHandShakeList[0].TxRequest
-	nostrSession.Master = nostrHandShakeList[0].Master
+	nostrSession := NostrSession{
+		SessionID:    SessionID,
+		Participants: strings.Split(partiesCSV, ","),
+		TxRequest:    nostrHandShakeList[0].TxRequest,
+		Master:       nostrHandShakeList[0].Master,
+	}
 
 	nostrSessionList = append(nostrSessionList, nostrSession)
-	return nostrSession
+
+	keyshare, err := GetKeyShare(key)
+	if err != nil {
+		Logf("Error getting key share: %v", err)
+		return
+	}
+
+	partyCount := len(keyshare.NostrPartyPubKeys)
+	participantCount := len(nostrSession.Participants)
+
+	if participantCount/partyCount >= 2/3 { //If more than 2/3 of participants have approved
+		fmt.Printf("Total parties in the session: %v\n", nostrSession.Participants)
+		fmt.Printf("Starting keysign session: %v\n", nostrSession.SessionID)
+
+		filteredParticipants := make([]string, 0)
+		for _, participant := range nostrSession.Participants {
+			if participant != nostrSession.Master.MasterPeer {
+				filteredParticipants = append(filteredParticipants, participant)
+			}
+		}
+
+		initNostrKeysignSession(nostrSession.SessionID, filteredParticipants, key)
+	} else {
+		fmt.Errorf("Not enought participants to start keysign session")
+		return
+	}
+
 }
 
 func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
@@ -326,10 +427,9 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 			FromNostrPubKey: keyShare.LocalNostrPubKey,
 			Recipients:      []NostrPartyPubKeys{{Peer: protoMessage.Master.MasterPeer, PubKey: protoMessage.Master.MasterPubKey}},
 			Participants:    []string{key},
-			//Datetime:        time.Now().Format(time.RFC3339),
-			RawMessage: "",
-			TxRequest:  protoMessage.TxRequest,
-			Master:     Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
+			RawMessage:      "",
+			TxRequest:       protoMessage.TxRequest,
+			Master:          Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
 		}
 
 		// for _, peer := range protoMessage.Recipients {
@@ -339,7 +439,7 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 		// }
 		if !containsProtoMessage(nostrHandShakeList, ackProtoMessage) {
 			nostrHandShakeList = append(nostrHandShakeList, ackProtoMessage)
-			nostrSend(session, key, ackProtoMessage, "", "", "", "")
+			nostrSend(session, key, ackProtoMessage, "", "", "")
 		}
 
 	}
@@ -374,7 +474,7 @@ func InitNostrHandshake(session, key string, txRequest TxRequest) {
 		})
 	}
 
-	nostrSend(session, key, protoMessage, "init_handshake", "", "", "")
+	nostrSend(session, key, protoMessage, "", "", "")
 }
 
 func validateKeys(privateKey, publicKey string) error {
@@ -398,30 +498,21 @@ func validateKeys(privateKey, publicKey string) error {
 
 // NOSTR Callback
 func NostrListen(localParty string) {
+	// Add recovery from panics
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Recovered from panic in NostrListen: %v", r)
+			// Restart the listener after a delay
+			time.Sleep(5 * time.Second)
+			go NostrListen(localParty)
+		}
+	}()
 
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
 		log.Printf("Error getting key share: %v\n", err)
 		return
 	}
-	//masterPeer, masterPubKey := GetMaster(parties, localParty)
-
-	// var isMaster bool
-	// //var port string = "55055"
-
-	// if masterPeer == keyShare.LocalPartyKey && masterPubKey == keyShare.LocalNostrPubKey {
-	// 	// we are the master, so we start the host
-	// 	isMaster = true
-	// 	fmt.Printf("%s is master\n", localParty)
-	// } else {
-	// 	isMaster = false
-	// }
-
-	// if isMaster {
-	// 	//RunRelay(port)
-	// 	//fmt.Printf("relay started by %s\n", localParty)
-	// 	//select {}
-	// }
 
 	// Validate the public key format
 	if !nostr.IsValidPublicKey(keyShare.LocalNostrPubKey) {
@@ -434,84 +525,87 @@ func NostrListen(localParty string) {
 		return
 	}
 
-	//log.Printf("Local Nostr PubKey: %s\n", keyShare.LocalNostrPubKey)
-	//log.Printf("Local Nostr PrivKey: %s\n", keyShare.LocalNostrPrivKey)
-
-	//fmt.Printf("%s Listening for messages on nostr\n", localParty)
-	// senderPrivkey string, recipients []string
-	globalCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var relayErr error
-	globalRelay, relayErr = nostr.RelayConnect(globalCtx, nostrRelay)
-	if relayErr != nil {
-		log.Printf("Error connecting to relay: %v\n", relayErr)
-		return
-	}
-	defer globalRelay.Close()
-
-	cutoffTime := time.Now().Add(-10 * time.Second)
-	since := nostr.Timestamp(cutoffTime.Unix())
-
-	filters := nostr.Filters{
-		{
-			Kinds: []int{nostr.KindEncryptedDirectMessage},
-			Tags:  nostr.TagMap{"p": []string{keyShare.LocalNostrPubKey}},
-			Since: &since,
-		},
-	}
-
-	sub, err := globalRelay.Subscribe(globalCtx, filters)
-	if err != nil {
-		log.Printf("Error subscribing to events: %v\n", err)
-		return
-	}
-	fmt.Printf("%s subscribed to nostr\n", localParty)
+	// Main connection loop with retry
 	for {
-		select {
-		case event := <-sub.Events:
-			sharedSecret, err := nip04.ComputeSharedSecret(event.PubKey, keyShare.LocalNostrPrivKey) //TODO: event.PubKey should be senderPubkey???
-			if err != nil {
-				log.Printf("Error computing shared secret: %v\n", err)
+		log.Printf("Starting Nostr listener for %s\n", localParty)
+
+		globalCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		var relayErr error
+		globalRelay, relayErr = nostr.RelayConnect(globalCtx, nostrRelay)
+		if relayErr != nil {
+			log.Printf("Error connecting to relay: %v\n", relayErr)
+			time.Sleep(5 * time.Second) // Wait before retrying
+			continue
+		}
+		defer globalRelay.Close()
+
+		cutoffTime := time.Now().Add(-30 * time.Second)
+		since := nostr.Timestamp(cutoffTime.Unix())
+
+		filters := nostr.Filters{
+			{
+				Kinds: []int{nostr.KindEncryptedDirectMessage},
+				Tags:  nostr.TagMap{"p": []string{keyShare.LocalNostrPubKey}},
+				Since: &since,
+			},
+		}
+
+		sub, err := globalRelay.Subscribe(globalCtx, filters)
+		if err != nil {
+			log.Printf("Error subscribing to events: %v\n", err)
+			time.Sleep(5 * time.Second) // Wait before retrying
+			continue
+		}
+		log.Printf("%s successfully subscribed to nostr\n", localParty)
+
+		// Event processing loop
+		for {
+			select {
+			case event := <-sub.Events:
+				sharedSecret, err := nip04.ComputeSharedSecret(event.PubKey, keyShare.LocalNostrPrivKey)
+				if err != nil {
+					log.Printf("Error computing shared secret: %v\n", err)
+					continue
+				}
+
+				decryptedMessage, err := nip04.Decrypt(event.Content, sharedSecret)
+				if err != nil {
+					log.Printf("Error decrypting message: %v\n", err)
+					continue
+				}
+
+				var protoMessage ProtoMessage
+				if err := json.Unmarshal([]byte(decryptedMessage), &protoMessage); err != nil {
+					log.Printf("Error parsing decrypted message: %v\n", err)
+					continue
+				}
+
+				if protoMessage.Type == "init_handshake" {
+					AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
+				} else if protoMessage.Type == "start_keysign" {
+					Logf("start_keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+					startNostrKeysignSession(protoMessage.SessionID, protoMessage.Participants, localParty)
+				}
+
+				if protoMessage.Type != "init_handshake" && protoMessage.Type != "start_keysign" && protoMessage.Type != "ack_handshake" {
+					nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
+				}
+
+			case <-globalCtx.Done():
+				log.Printf("Context cancelled, reconnecting...")
+				return
+
+			case <-sub.EndOfStoredEvents:
+				// Continue listening for new events
 				continue
 			}
-
-			decryptedMessage, err := nip04.Decrypt(event.Content, sharedSecret)
-			if err != nil {
-				log.Printf("Error decrypting message: %v\n", err)
-				continue
-			}
-
-			// Parse the decrypted message into a RawMessage
-			var protoMessage ProtoMessage
-			if err := json.Unmarshal([]byte(decryptedMessage), &protoMessage); err != nil {
-				log.Printf("Error parsing decrypted message into RawMessage: %v\n", err)
-				continue
-			}
-			//log.Printf("Parsed RawMessage: %+v\n", rawMessage)
-
-			// Store the parsed raw message in cache using the session ID
-
-			if protoMessage.Type == "init_handshake" {
-				AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
-			}
-			if protoMessage.Type == "send_btc" {
-				startNostrSession(protoMessage.SessionID, protoMessage.Participants, localParty, protoMessage.Type)
-			} else {
-				nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
-			}
-
-		case <-globalCtx.Done():
-			return
-
-		case <-sub.EndOfStoredEvents:
-			//fmt.Printf("Received all stored events, continuing to listen...\n")
 		}
 	}
-
 }
 
-func nostrSend(sessionID, key string, message ProtoMessage, messageType, fromParty, toParty, parties string) {
+func nostrSend(sessionID, key string, message ProtoMessage, fromParty, toParty, parties string) {
 
 	// Initialize context if nil
 	if globalCtx == nil {

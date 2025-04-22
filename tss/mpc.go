@@ -311,6 +311,8 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		if err := joinSession(server, session, key); err != nil {
 			return "", fmt.Errorf("fail to register session: %w", err)
 		}
+	} else if net_type == "nostr" {
+
 	}
 
 	Logln("BBMTLog", "waiting parties...")
@@ -552,49 +554,37 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 	if m.Net_Type == "nostr" {
 
 		var protoMessage ProtoMessage
-		protoMessage.Type = "keysign"
+		protoMessage.Type = ""
 		protoMessage.SessionID = m.SessionID
 		protoMessage.From = from
 		protoMessage.To = to
 		protoMessage.RawMessage = string(requestBody)
 		protoMessage.SeqNo = strconv.Itoa(status.SeqNo)
-
-		nostrSend(m.SessionID, from, protoMessage, "keysign", "", "", "")
-		if !isMaster(parties, from) {
-
-			//time.Sleep(3 * time.Second)
-			//if not master, then pause a few seconds
-			//nostrSend(m.SessionID, from, ProtoMessage, "handshake", "", "", "")
-			//nostrHandshake(m.SessionID, from)
-
-		} else if isMaster(parties, from) {
-			//nostrHandshake(m.SessionID, from)
-			//time.Sleep(1 * time.Second)
-
-			//nostrSend(m.SessionID, to, string(requestBody), "Post", from, to, parties)
-
-			// // Prepare the HTTP request
-			// resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
-			// if err != nil {
-			// 	Logln("BBMTLog", "fail to send message: ", err)
-			// 	return fmt.Errorf("fail to send message: %w", err)
-			// }
-			// defer resp.Body.Close()
-
-			// // Log the response
-			// respBody, err := io.ReadAll(resp.Body)
-			// if err != nil {
-			// 	Logln("BBMTLog", "fail to read response: ", err)
-			// 	return fmt.Errorf("fail to read response: %w", err)
-			// }
-			// Logln("BBMTLog", "message sent, status:", resp.Status)
-
-			// // Check for non-200 status codes
-			// if resp.StatusCode != http.StatusOK {
-			// 	Logln("BBMTLog", "message sent, response body:", string(respBody)[:min(80, len(string(respBody)))]+"...")
-			// 	return fmt.Errorf("fail to send message: %s", resp.Status)
-			// }
+		protoMessage.Recipients = make([]NostrPartyPubKeys, 0, len(to))
+		recipients, err := GetNostrPartyPubKeys(to)
+		if err != nil {
+			return fmt.Errorf("failed to get nostr party pub keys: %w", err)
 		}
+		for peer, pubKey := range recipients {
+			if peer == to {
+				protoMessage.Recipients = append(protoMessage.Recipients, NostrPartyPubKeys{
+					Peer:   peer,
+					PubKey: pubKey,
+				})
+			}
+		}
+
+		nostrSend(m.SessionID, from, protoMessage, "", "", "")
+		// if !isMaster(parties, from) {
+
+		// 	//time.Sleep(3 * time.Second)
+		// 	//if not master, then pause a few seconds
+		// 	//nostrSend(m.SessionID, from, ProtoMessage, "handshake", "", "", "")
+		// 	//nostrHandshake(m.SessionID, from)
+
+		// } else if isMaster(parties, from) {
+
+		// }
 	} else if m.Net_Type != "nostr" {
 
 		// Prepare the HTTP request
@@ -917,7 +907,9 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					isApplyingMessages = false
 					continue
 				}
-
+				if key == "peer2" {
+					fmt.Printf("protoMessage: %v\n", protoMessage)
+				}
 				if isMaster(strings.Join(protoMessage.Participants, ","), rawMsg.From) {
 					//resp, err = http.Get(server + "/message/" + session + "/" + key)
 
