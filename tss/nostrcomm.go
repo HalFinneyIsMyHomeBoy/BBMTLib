@@ -336,7 +336,7 @@ func startNostrKeysignSession(sessionID string, participants []string, localPart
 			} else {
 				fmt.Printf("\n [%s] Keysign Result %s\n", localParty, result)
 			}
-			select {}
+			//select {}
 			// startKeysignMessage := ProtoMessage{
 			// 	SessionID:       sessionID,
 			// 	Type:            "start_keysign",
@@ -582,14 +582,14 @@ func validateKeys(privateKey, publicKey string) error {
 // NOSTR Callback
 func NostrListen(localParty string) {
 	// Add recovery from panics
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("Recovered from panic in NostrListen: %v", r)
-			// Restart the listener after a delay
-			time.Sleep(5 * time.Second)
-			go NostrListen(localParty)
-		}
-	}()
+	// defer func() {
+	// 	if r := recover(); r != nil {
+	// 		log.Printf("Recovered from panic in NostrListen: %v", r)
+	// 		// Restart the listener after a delay
+	// 		time.Sleep(5 * time.Second)
+	// 		go NostrListen(localParty)
+	// 	}
+	// }()
 
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
@@ -609,98 +609,93 @@ func NostrListen(localParty string) {
 	}
 
 	// Main connection loop with retry
+
+	globalCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var relayErr error
+	globalRelay, relayErr = nostr.RelayConnect(globalCtx, nostrRelay)
+	if relayErr != nil {
+		log.Printf("Error connecting to relay: %v\n", relayErr)
+		return
+	}
+	defer globalRelay.Close()
+
+	cutoffTime := time.Now().Add(-15 * time.Second)
+	since := nostr.Timestamp(cutoffTime.Unix())
+
+	filters := nostr.Filters{
+		{
+			Kinds: []int{nostr.KindEncryptedDirectMessage},
+			Tags:  nostr.TagMap{"p": []string{keyShare.LocalNostrPubKey}},
+			Since: &since,
+		},
+	}
+
+	sub, err := globalRelay.Subscribe(globalCtx, filters)
+	if err != nil {
+		log.Printf("Error subscribing to events: %v\n", err)
+		return
+	}
+	fmt.Printf("%s subscribed to nostr\n", localParty)
+	// Event processing loop
 	for {
-		log.Printf("Starting Nostr listener for %s\n", localParty)
-
-		globalCtx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		var relayErr error
-		globalRelay, relayErr = nostr.RelayConnect(globalCtx, nostrRelay)
-		if relayErr != nil {
-			log.Printf("Error connecting to relay: %v\n", relayErr)
-			time.Sleep(5 * time.Second) // Wait before retrying
-			continue
-		}
-		defer globalRelay.Close()
-
-		cutoffTime := time.Now().Add(-15 * time.Second)
-		since := nostr.Timestamp(cutoffTime.Unix())
-
-		filters := nostr.Filters{
-			{
-				Kinds: []int{nostr.KindEncryptedDirectMessage},
-				Tags:  nostr.TagMap{"p": []string{keyShare.LocalNostrPubKey}},
-				Since: &since,
-			},
-		}
-
-		sub, err := globalRelay.Subscribe(globalCtx, filters)
-		if err != nil {
-			log.Printf("Error subscribing to events: %v\n", err)
-			time.Sleep(5 * time.Second) // Wait before retrying
-			continue
-		}
-		log.Printf("%s successfully subscribed to nostr\n", localParty)
-
-		// Event processing loop
-		for {
-			select {
-			case event := <-sub.Events:
-				sharedSecret, err := nip04.ComputeSharedSecret(event.PubKey, keyShare.LocalNostrPrivKey)
-				if err != nil {
-					log.Printf("Error computing shared secret: %v\n", err)
-					continue
-				}
-
-				decryptedMessage, err := nip04.Decrypt(event.Content, sharedSecret)
-				if err != nil {
-					log.Printf("Error decrypting message: %v\n", err)
-					continue
-				}
-
-				var protoMessage ProtoMessage
-				if err := json.Unmarshal([]byte(decryptedMessage), &protoMessage); err != nil {
-					log.Printf("Error parsing decrypted message: %v\n", err)
-					continue
-				}
-
-				if protoMessage.Type == "init_handshake" && protoMessage.From != localParty { //only non-masters should run this
-					AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
-					continue
-				}
-
-				if protoMessage.Type == "ack_handshake" && protoMessage.From != localParty {
-					if protoMessage.Master.MasterPeer == localParty { //Only master should run this
-						collectAckHandshake(protoMessage.SessionID, localParty, protoMessage)
-						continue
-					}
-				}
-
-				if protoMessage.Type == "start_keysign" && protoMessage.From != localParty { //non-masters should run this
-					Logf("start_keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-					startNostrKeysignSession(protoMessage.SessionID, protoMessage.Participants, localParty)
-					//startKeysignMaster(protoMessage.SessionID, protoMessage.Participants, localParty)
-
-					continue
-				}
-
-				if protoMessage.Type == "keysign" {
-					Logf("keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-					nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
-					continue
-				}
-
-			case <-globalCtx.Done():
-				log.Printf("Context cancelled, reconnecting...")
-				return
-
-			case <-sub.EndOfStoredEvents:
-				// Continue listening for new events
+		select {
+		case event := <-sub.Events:
+			sharedSecret, err := nip04.ComputeSharedSecret(event.PubKey, keyShare.LocalNostrPrivKey)
+			if err != nil {
+				log.Printf("Error computing shared secret: %v\n", err)
 				continue
 			}
+
+			decryptedMessage, err := nip04.Decrypt(event.Content, sharedSecret)
+			if err != nil {
+				log.Printf("Error decrypting message: %v\n", err)
+				continue
+			}
+
+			var protoMessage ProtoMessage
+			if err := json.Unmarshal([]byte(decryptedMessage), &protoMessage); err != nil {
+				log.Printf("Error parsing decrypted message: %v\n", err)
+				continue
+			}
+
+			if protoMessage.Type == "init_handshake" && protoMessage.From != localParty { //only non-masters should run this
+				AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
+				//continue
+			}
+
+			if protoMessage.Type == "ack_handshake" && protoMessage.From != localParty {
+				if protoMessage.Master.MasterPeer == localParty { //Only master should run this
+					collectAckHandshake(protoMessage.SessionID, localParty, protoMessage)
+					//continue
+				}
+			}
+
+			if protoMessage.Type == "start_keysign" && protoMessage.From != localParty { //non-masters should run this
+				Logf("start_keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+				startNostrKeysignSession(protoMessage.SessionID, protoMessage.Participants, localParty)
+				//startKeysignMaster(protoMessage.SessionID, protoMessage.Participants, localParty)
+
+				//continue
+			}
+
+			if protoMessage.Type == "keysign" {
+				Logf("keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+				nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
+				//continue
+			}
+
+		case <-globalCtx.Done():
+			log.Printf("Context cancelled, reconnecting...")
+			return
+
+		case <-sub.EndOfStoredEvents:
+			// Continue listening for new events
+			continue
 		}
 	}
+
 }
 
 func nostrSend(sessionID, key string, message ProtoMessage, fromParty, toParty, parties string) {

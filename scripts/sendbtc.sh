@@ -26,26 +26,20 @@ PUBLIC_KEY2=$(echo "$KEYPAIR2" | jq -r '.publicKey')
 # Generate random session ID and chain code
 SESSION_ID=$("$BUILD_DIR/$BIN_NAME" random)
 MESSAGE=$("$BUILD_DIR/$BIN_NAME" random)
-SESSION_KEY=$("$BUILD_DIR/$BIN_NAME" random)
 
 # Server and party details
 PORT=55055
 HOST="127.0.0.1"
 SERVER="http://$HOST:$PORT"
-USENOSTR="false"
-NOSTRRELAY="ws://bbw-nostr.xyz"
-NET_TYPE=""
 
 PARTY1="peer1"
 PARTY2="peer2"
-PARTY3="peer3"
-PARTIES="$PARTY1,$PARTY2,$PARTY3"  # Participants
+PARTIES="$PARTY1,$PARTY2"  # Participants
 
 echo "Generated Parameters:"
 
 echo "PARTY1: $PARTY1"
 echo "PARTY2: $PARTY2"
-echo "PARTY3: $PARTY3"
 
 echo "KEYPAIR1: $KEYPAIR1"
 echo "KEYPAIR2: $KEYPAIR2"
@@ -59,10 +53,11 @@ echo "PUBLIC_KEY2: $PUBLIC_KEY2"
 echo "SESSION ID: $SESSION_ID"
 echo "MESSAGE: $MESSAGE"
 
+USENOSTR="true"
+
 # load keyshares
 KEYSHARE1=$(cat "$PARTY1".ks)
 KEYSHARE2=$(cat "$PARTY2".ks)
-KEYSHARE3=$(cat "$PARTY3".ks)
 
 # Optional: Add error checking
 if [ -z "$KEYSHARE1" ] || [ -z "$KEYSHARE2" ]; then
@@ -71,37 +66,33 @@ if [ -z "$KEYSHARE1" ] || [ -z "$KEYSHARE2" ]; then
     exit 1
 fi
 
-if [ "$USENOSTR" = "true" ]; then
-    echo "Starting Nostr Relay..."
-    NET_TYPE="nostr"
-else
-    echo "Starting Standard LAN Relay..."
-    NET_TYPE=""
-    "$BUILD_DIR/$BIN_NAME" relay "$PORT" "$NET_TYPE" & PID0=$!
-fi
-
+# Start Relay in the background and track its PID
+echo "Starting Relay..."
+"$BUILD_DIR/$BIN_NAME" relay "$PORT" &
+PID0=$!
 
 DERIVATION_PATH="m/44'/0'/0'/0/0"
+RECEIVER_ADDRESS="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
+AMOUNT_SATOSHI=1000
+ESTIMATED_FEE=100
+NET_TYPE=""
+NEW_SESSION="true"
 
 sleep 1
-#"$BUILD_DIR/$BIN_NAME" test "$PARTY1" & PID1=$!
-# Start keysign for both parties
-echo "Starting keysign for PARTY1..."
-"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "$NET_TYPE" &
+
+# Start mpcsendbtc for both parties
+echo "Starting mpcsendbtc for PARTY1..."
+"$BUILD_DIR/$BIN_NAME" originalsendbtc "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$RECEIVER_ADDRESS" "$AMOUNT_SATOSHI" "$ESTIMATED_FEE" "$NET_TYPE" "true" &
 PID1=$!
 
-echo "Starting keysign for PARTY2..."
-"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "$NET_TYPE" &
-PID2=$!
+ echo "Starting mpcsendbtc for PARTY2..."
+ "$BUILD_DIR/$BIN_NAME" originalsendbtc "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$RECEIVER_ADDRESS" "$AMOUNT_SATOSHI" "$ESTIMATED_FEE" "$NET_TYPE" "false" &
+ PID2=$!
 
-echo "Starting keysign for PARTY3..."
-"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY3" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE3" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "$NET_TYPE" &
-PID3=$!
+# Handle cleanup on exit
+trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2; exit" SIGINT SIGTERM
 
-# Handle cleanup on exit/ 2 out of 3 
-trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3; exit" SIGINT SIGTERM
-
-echo "keysign processes running. Press Ctrl+C to stop."
+echo "mpcsendbtc processes running. Press Ctrl+C to stop."
 
 # Keep the script alive
 wait

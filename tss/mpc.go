@@ -333,7 +333,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	status.SeqNo++
 	status.Index++
 	setStatus(session, status)
-	fmt.Printf("session before messenger: %v\n", session)
+
 	Logln("BBMTLog", "inbound messenger up...")
 	messenger := &MessengerImp{
 		Server:     server,
@@ -350,7 +350,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	status.Step++
 	status.Info = "local state loaded"
 	setStatus(session, status)
-	fmt.Printf("session before NewService: %v\n", session)
+
 	Logln("BBMTLog", "preparing NewService...")
 	tssServerImp, err := NewService(messenger, localStateAccessor, false, "-")
 	if err != nil {
@@ -360,7 +360,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	Logln("BBMTLog", "downloadMessage active...")
-	fmt.Printf("session before downloadMessage: %v\n", session)
+
 	if key == "peer2" {
 		fmt.Printf("downloadMessage active for peer: %v\n", key)
 	}
@@ -991,6 +991,8 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					Logln("BBMTLog", "Already applied message:", message.SeqNo)
 					if type_net != "nostr" {
 						deleteMessage(server, session, key, message.Hash)
+					} else {
+						//nostrMessageCache.Delete(session)
 					}
 					continue
 				} else {
@@ -1039,6 +1041,8 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 
 				if type_net != "nostr" {
 					deleteMessage(server, session, key, message.Hash)
+				} else {
+					//nostrMessageCache.Delete(session)
 				}
 				//nostrMessageCache.Delete(session)
 				//nostrMessageCache.Delete(session)
