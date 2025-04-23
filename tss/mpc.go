@@ -826,7 +826,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 
 	defer wg.Done()
 	isApplyingMessages := false
-	until := time.Now().Add(time.Duration(msgFetchTimeout) * time.Second)
+	until := time.Now().Add(time.Duration(msgFetchTimeout) * time.Second * 2)
 	msgMap := make(map[string]bool)
 
 	for {
@@ -847,7 +847,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				continue
 			}
 			isApplyingMessages = true
-			Logln("BBMTLog", "Fetching messages...")
+			Logln("BBMTLog", "Fetching messages...", key)
 
 			// TODO: illustrative
 			var resp *http.Response
@@ -985,10 +985,10 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					continue
 				}
 
-				Logln("BBMTLog", "Checking message seqNo", message.SeqNo)
+				Logln("BBMTLog", "Checking message seqNo", message.SeqNo, key)
 				_, exists := msgMap[message.Hash]
 				if exists {
-					Logln("BBMTLog", "Already applied message:", message.SeqNo)
+					Logln("BBMTLog", "Already applied message:", message.SeqNo, key)
 					if type_net != "nostr" {
 						deleteMessage(server, session, key, message.Hash)
 					} else {

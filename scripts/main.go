@@ -354,7 +354,7 @@ func main() {
 		amountSatoshi := 1000
 		estimatedFee := 600
 		peer := "peer1"
-		net_type := ""
+		net_type := "nostr"
 
 		if net_type == "nostr" {
 			net_type = "nostr"

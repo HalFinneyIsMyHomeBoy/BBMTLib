@@ -683,7 +683,7 @@ func NostrListen(localParty string) {
 			if protoMessage.Type == "keysign" {
 				Logf("keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 				nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
-				//continue
+				continue
 			}
 
 		case <-globalCtx.Done():
