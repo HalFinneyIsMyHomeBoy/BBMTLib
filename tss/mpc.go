@@ -233,7 +233,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	endCh := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	Logln("BBMTLog", "downloadMessage active...")
+	Logln("BBMTLog", "downloadMessage active for :", key)
 	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg, net_type)
 	Logln("BBMTLog", "doing ECDSA keygen...")
 	_, err = tssServerImp.KeygenECDSA(&KeygenRequest{
@@ -280,12 +280,14 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 
 func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message, net_type string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
-	fmt.Printf("session at keysign: %v\n", session)
+	if key == "peer2" {
+		fmt.Printf("session at keysign: %v\n", session)
+	}
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
 	if len(sessionKey) == 0 && (len(encKey) == 0 || len(decKey) == 0) {
-		return "", fmt.Errorf("either a session key, either both enc/dec keys")
+		//return "", fmt.Errorf("either a session key, either both enc/dec keys")
 	}
 
 	if net_type == "nostr" {
@@ -359,7 +361,11 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	wg.Add(1)
 	Logln("BBMTLog", "downloadMessage active...")
 	fmt.Printf("session before downloadMessage: %v\n", session)
+	if key == "peer2" {
+		fmt.Printf("downloadMessage active for peer: %v\n", key)
+	}
 	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg, net_type)
+
 	Logln("BBMTLog", "start ECDSA keysign...")
 	resp, err := tssServerImp.KeysignECDSA(&KeysignRequest{
 		PubKey:               keyshare,
@@ -554,13 +560,13 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 	if m.Net_Type == "nostr" {
 
 		var protoMessage ProtoMessage
-		protoMessage.Type = ""
+		protoMessage.Type = "keysign"
 		protoMessage.SessionID = m.SessionID
 		protoMessage.From = from
 		protoMessage.To = to
 		protoMessage.RawMessage = string(requestBody)
-		protoMessage.SeqNo = strconv.Itoa(status.SeqNo)
 		protoMessage.Recipients = make([]NostrPartyPubKeys, 0, len(to))
+
 		recipients, err := GetNostrPartyPubKeys(to)
 		if err != nil {
 			return fmt.Errorf("failed to get nostr party pub keys: %w", err)
@@ -573,7 +579,12 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 				})
 			}
 		}
+		if from == "peer2" {
+			//Logf("sending message from %s to %s: %v", from, to, protoMessage)
+		}
 
+		//Logf("sending nostr message: %v", protoMessage)
+		//Logf("Current nostrSessions: %v", nostrSessionList)
 		nostrSend(m.SessionID, from, protoMessage, "", "", "")
 		// if !isMaster(parties, from) {
 
@@ -894,6 +905,9 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			}
 
 			if type_net == "nostr" {
+				if key == "peer2" {
+					Logf("downloading messages from nostr for session: %v", session)
+				}
 				protoMessage, err = nostrDownloadMessage(session, key)
 				if err != nil {
 					Logln("BBMTLog", "Error fetching messages from nostr:", err)
@@ -908,7 +922,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					continue
 				}
 				if key == "peer2" {
-					fmt.Printf("protoMessage: %v\n", protoMessage)
+					//fmt.Printf("protoMessage: %v\n", protoMessage)
 				}
 				if isMaster(strings.Join(protoMessage.Participants, ","), rawMsg.From) {
 					//resp, err = http.Get(server + "/message/" + session + "/" + key)
@@ -975,7 +989,9 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				_, exists := msgMap[message.Hash]
 				if exists {
 					Logln("BBMTLog", "Already applied message:", message.SeqNo)
-					deleteMessage(server, session, key, message.Hash)
+					if type_net != "nostr" {
+						deleteMessage(server, session, key, message.Hash)
+					}
 					continue
 				} else {
 					msgMap[message.Hash] = true
@@ -1021,7 +1037,9 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				// Delete applied message from the server
 				Logln("BBMTLog", "Deleting applied message:", message.Hash)
 
-				deleteMessage(server, session, key, message.Hash)
+				if type_net != "nostr" {
+					deleteMessage(server, session, key, message.Hash)
+				}
 				//nostrMessageCache.Delete(session)
 				//nostrMessageCache.Delete(session)
 			}

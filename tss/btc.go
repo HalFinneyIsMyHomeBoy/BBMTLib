@@ -398,11 +398,14 @@ func MpcSendBTC(
 				}
 				if newSession == "true" {
 					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					coordinateNostrHandshake(utxoSession, key, txRequest)
+					initiateNostrHandshake(utxoSession, key, txRequest)
+					time.Sleep(3 * time.Second)
+				} else if newSession == "false" {
+					utxoSession = utxoSession[:len(utxoSession)-1]
 				}
 
 				for _, item := range nostrSessionList {
-					if item.SessionID == utxoSession {
+					if item.SessionID == utxoSession && item.Status == "start_keysign" {
 						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 						if err != nil {
 							return "", fmt.Errorf("failed to sign transaction: signature is empty")
@@ -465,13 +468,15 @@ func MpcSendBTC(
 				}
 				if newSession == "true" {
 					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					coordinateNostrHandshake(utxoSession, key, txRequest)
+					initiateNostrHandshake(utxoSession, key, txRequest)
+					time.Sleep(3 * time.Second)
 				} else if newSession == "false" {
 					utxoSession = utxoSession[:len(utxoSession)-1]
 				}
 
 				for _, item := range nostrSessionList {
-					if item.SessionID == utxoSession {
+					if item.SessionID == utxoSession && item.Status == "start_keysign" {
+						Logf("joining keysign from peer: %v for session: %v", key, utxoSession)
 						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 						if err != nil {
 							return "", fmt.Errorf("failed to sign transaction: signature is empty")
