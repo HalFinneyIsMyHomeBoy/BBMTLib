@@ -39,15 +39,18 @@ type ProtoMessage struct {
 	FromNostrPubKey string              `json:"from_nostr_pubkey"`
 	SessionID       string              `json:"sessionID"`
 	RawMessage      string              `json:"raw_message"`
+	SeqNo           string              `json:"seq_no"`
 	From            string              `json:"from"`
 	To              string              `json:"to"`
 	TxRequest       TxRequest           `json:"tx_request"`
 	Master          Master              `json:"master"`
+	SessionKey      string              `json:"session_key"`
 }
 
 type NostrSession struct {
 	Status       string    `json:"status"`
 	SessionID    string    `json:"session_id"`
+	SessionKey   string    `json:"session_key"`
 	Participants []string  `json:"participants"`
 	Master       Master    `json:"master"`
 	TxRequest    TxRequest `json:"tx_request"`
@@ -225,6 +228,7 @@ func startKeysignMaster(sessionID string, participants []string, localParty stri
 
 			startKeysignProtoMessage := ProtoMessage{
 				SessionID:    sessionID,
+				SessionKey:   item.SessionKey,
 				Type:         "start_keysign",
 				From:         localParty,
 				Recipients:   recipients,
@@ -287,6 +291,7 @@ func initNostrKeysignSession(sessionID string, participants []string, localParty
 
 			startKeysignMessage := ProtoMessage{
 				SessionID:    sessionID,
+				SessionKey:   item.SessionKey,
 				Type:         "start_keysign",
 				From:         localParty,
 				Recipients:   recipients,
@@ -316,6 +321,7 @@ func startNostrKeysignSession(sessionID string, participants []string, localPart
 
 			nostrSessionList[i].Status = "start_keysign"
 			nostrSessionList[i].Participants = participants
+			sessionKey := nostrSessionList[i].SessionKey
 
 			keyshare, err := GetKeyShare(localParty)
 			if err != nil {
@@ -330,7 +336,7 @@ func startNostrKeysignSession(sessionID string, participants []string, localPart
 				return
 			}
 
-			result, err := MpcSendBTC("", localParty, strings.Join(item.Participants, ","), sessionID, "", "", "", string(keyshareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
+			result, err := MpcSendBTC("", localParty, strings.Join(item.Participants, ","), sessionID, sessionKey, "", "", string(keyshareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
 			if err != nil {
 				fmt.Printf("Go Error: %v\n", err)
 			} else {
@@ -377,7 +383,7 @@ func nostrSessionAlreadyExists(list []NostrSession, nostrSession NostrSession) b
 
 // }
 
-func initiateNostrHandshake(SessionID, key string, txRequest TxRequest) {
+func initiateNostrHandshake(SessionID, key string, sessionKey string, txRequest TxRequest) {
 
 	// Initialize retry counter and max retries
 	//maxRetries := 2
@@ -403,6 +409,7 @@ func initiateNostrHandshake(SessionID, key string, txRequest TxRequest) {
 
 	protoMessage := ProtoMessage{
 		SessionID:       SessionID,
+		SessionKey:      sessionKey,
 		Type:            "init_handshake",
 		From:            key,
 		FromNostrPubKey: keyShare.LocalNostrPubKey,
@@ -427,6 +434,7 @@ func initiateNostrHandshake(SessionID, key string, txRequest TxRequest) {
 		TxRequest:    protoMessage.TxRequest,
 		Master:       protoMessage.Master,
 		Status:       "pending",
+		SessionKey:   sessionKey,
 	}
 
 	if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
@@ -497,6 +505,7 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 		TxRequest:    protoMessage.TxRequest,
 		Master:       protoMessage.Master,
 		Status:       "pending",
+		SessionKey:   protoMessage.SessionKey,
 	}
 
 	if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
@@ -740,7 +749,7 @@ func nostrSend(sessionID, key string, message ProtoMessage, fromParty, toParty, 
 
 		event.Sign(keyShare.LocalNostrPrivKey)
 
-		ctx, cancel := context.WithTimeout(globalCtx, 60*time.Second)
+		ctx, cancel := context.WithTimeout(globalCtx, 600*time.Second)
 		defer cancel()
 
 		err = globalRelay.Publish(ctx, event)
@@ -753,7 +762,7 @@ func nostrSend(sessionID, key string, message ProtoMessage, fromParty, toParty, 
 }
 
 func nostrDownloadMessage(sessionID string, key string) (ProtoMessage, error) {
-
+	Logf("Downloading message for key: %s", key)
 	//sessionID = sessionID[:len(sessionID)-1]
 	msg, found := nostrMessageCache.Get(sessionID)
 

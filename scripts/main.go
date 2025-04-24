@@ -343,9 +343,9 @@ func main() {
 
 	if mode == "MPCSentBTC" {
 
-		parties := "peer1,peer2"  // All participating parties
-		session := randomSeed(64) // Generate random session ID
-		sessionKey := ""          // Random session key
+		parties := "peer1,peer2"     // All participating parties
+		session := randomSeed(64)    // Generate random session ID
+		sessionKey := randomSeed(64) // Random session key
 		// Split parties string into individual peers
 		peerList := strings.Split(parties, ",")
 		//keyshare := os.Args[8]
@@ -449,7 +449,7 @@ func main() {
 		}
 
 		//}(peer)
-		//select {}
+		select {}
 	}
 
 	if mode == "originalsendbtc" {
@@ -459,7 +459,7 @@ func main() {
 		parties := os.Args[5]
 		encKey := os.Args[6]
 		decKey := os.Args[7]
-		sessionKey := ""
+		sessionKey := randomSeed(64)
 		keyshare := os.Args[8]
 		derivePath := os.Args[9]
 		receiverAddress := os.Args[10]
@@ -477,6 +477,24 @@ func main() {
 		//peerNostrPubKey := os.Args[15]
 
 		// Decode base64 keyshare
+		//parties := "peer1,peer2"  // All participating parties
+		//session := randomSeed(64) // Generate random session ID
+		//sessionKey := ""          // Random session key
+		// Split parties string into individual peers
+		peerList := strings.Split(parties, ",")
+		if net_type == "nostr" {
+			net_type = "nostr"
+			for _, peer := range peerList {
+				// Activate nostr listener, which should be listening by default
+				go tss.NostrListen(peer)
+
+			}
+			time.Sleep(time.Second * 2)
+		} else {
+			go tss.RunRelay("55055")
+			time.Sleep(time.Second)
+		}
+
 		decodedKeyshare, err := base64.StdEncoding.DecodeString(keyshare)
 		if err != nil {
 			fmt.Printf("Failed to decode base64 keyshare: %v\n", err)

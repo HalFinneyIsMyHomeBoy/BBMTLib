@@ -566,7 +566,7 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 		protoMessage.To = to
 		protoMessage.RawMessage = string(requestBody)
 		protoMessage.Recipients = make([]NostrPartyPubKeys, 0, len(to))
-
+		protoMessage.SeqNo = strconv.Itoa(status.SeqNo)
 		recipients, err := GetNostrPartyPubKeys(to)
 		if err != nil {
 			return fmt.Errorf("failed to get nostr party pub keys: %w", err)
@@ -901,7 +901,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					isApplyingMessages = false
 					continue
 				}
-
+				//Logln("BBMTLog", "Messages:", messages)
 			}
 
 			if type_net == "nostr" {
@@ -921,51 +921,58 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					isApplyingMessages = false
 					continue
 				}
+				//Logln("BBMTLog", "protoMessage:", protoMessage)
 				if key == "peer2" {
 					//fmt.Printf("protoMessage: %v\n", protoMessage)
 				}
-				if isMaster(strings.Join(protoMessage.Participants, ","), rawMsg.From) {
-					//resp, err = http.Get(server + "/message/" + session + "/" + key)
+				// if isMaster(strings.Join(protoMessage.Participants, ","), rawMsg.From) {
+				// 	//resp, err = http.Get(server + "/message/" + session + "/" + key)
 
-					// if err != nil {
-					// 	Logln("BBMTLog", "Error fetching messages:", err)
-					// 	isApplyingMessages = false
-					// 	continue
-					// }
+				// 	// if err != nil {
+				// 	// 	Logln("BBMTLog", "Error fetching messages:", err)
+				// 	// 	isApplyingMessages = false
+				// 	// 	continue
+				// 	// }
 
-					// if resp.StatusCode == http.StatusNotFound {
-					// 	Logln("BBMTLog", "No messages found.")
-					// 	isApplyingMessages = false
-					// 	continue
-					// }
+				// 	// if resp.StatusCode == http.StatusNotFound {
+				// 	// 	Logln("BBMTLog", "No messages found.")
+				// 	// 	isApplyingMessages = false
+				// 	// 	continue
+				// 	// }
 
-					// if resp.StatusCode != http.StatusOK {
-					// 	Logln("BBMTLog", "Failed to get data from server:", resp.Status)
-					// 	isApplyingMessages = false
-					// 	continue
-					// }
+				// 	// if resp.StatusCode != http.StatusOK {
+				// 	// 	Logln("BBMTLog", "Failed to get data from server:", resp.Status)
+				// 	// 	isApplyingMessages = false
+				// 	// 	continue
+				// 	// }
 
-					// // Read the response body
-					// bodyBytes, err := io.ReadAll(resp.Body)
-					// if err != nil {
-					// 	Logln("BBMTLog", "Failed to read response body:", err)
-					// 	isApplyingMessages = false
-					// 	continue
-					// }
-					// if err := json.Unmarshal(bodyBytes, &messages); err != nil {
-					// 	Logln("BBMTLog", "Failed to decode messages:", err)
-					// 	//TODO: this is where the problem is. Need to find out why the body is not being unmarshalled
-					// 	//Logln("BBMTLog", "Body:", string(bodyBytes))
-					// 	isApplyingMessages = false
-					// 	continue
-					// }
-					// resp.Body.Close()
-					//messages = append(messages, rawMsg)
-				}
+				// 	// // Read the response body
+				// 	// bodyBytes, err := io.ReadAll(resp.Body)
+				// 	// if err != nil {
+				// 	// 	Logln("BBMTLog", "Failed to read response body:", err)
+				// 	// 	isApplyingMessages = false
+				// 	// 	continue
+				// 	// }
+				// 	// if err := json.Unmarshal(bodyBytes, &messages); err != nil {
+				// 	// 	Logln("BBMTLog", "Failed to decode messages:", err)
+				// 	// 	//TODO: this is where the problem is. Need to find out why the body is not being unmarshalled
+				// 	// 	//Logln("BBMTLog", "Body:", string(bodyBytes))
+				// 	// 	isApplyingMessages = false
+				// 	// 	continue
+				// 	// }
+				// 	// resp.Body.Close()
+				// 	//messages = append(messages, rawMsg)
+				// }
 
 				messages = append(messages, rawMsg)
-			}
 
+			}
+			// jsonBytes, err := json.MarshalIndent(messages, "", "  ")
+			// if err != nil {
+			// 	Logln("BBMTLog", "Error marshaling JSON:", err)
+			// 	return
+			// }
+			// Logln("BBMTLog", "Messages:", string(jsonBytes))
 			// Sort messages by sequence number
 			sort.SliceStable(messages, func(i, j int) bool {
 				seqNoI, errI := strconv.Atoi(messages[i].SeqNo)
@@ -992,7 +999,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					if type_net != "nostr" {
 						deleteMessage(server, session, key, message.Hash)
 					} else {
-						//nostrMessageCache.Delete(session)
+						nostrMessageCache.Delete(session)
 					}
 					continue
 				} else {
@@ -1042,7 +1049,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				if type_net != "nostr" {
 					deleteMessage(server, session, key, message.Hash)
 				} else {
-					//nostrMessageCache.Delete(session)
+					nostrMessageCache.Delete(session)
 				}
 				//nostrMessageCache.Delete(session)
 				//nostrMessageCache.Delete(session)

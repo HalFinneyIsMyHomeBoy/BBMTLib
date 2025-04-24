@@ -14,14 +14,14 @@ echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go
 
 # Generate key pairs
-KEYPAIR1=$("$BUILD_DIR/$BIN_NAME" keypair)
-KEYPAIR2=$("$BUILD_DIR/$BIN_NAME" keypair)
+#KEYPAIR1=$("$BUILD_DIR/$BIN_NAME" keypair)
+#KEYPAIR2=$("$BUILD_DIR/$BIN_NAME" keypair)
 
-PRIVATE_KEY1=$(echo "$KEYPAIR1" | jq -r '.privateKey')
-PRIVATE_KEY2=$(echo "$KEYPAIR2" | jq -r '.privateKey')
+#PRIVATE_KEY1=$(echo "$KEYPAIR1" | jq -r '.privateKey')
+#PRIVATE_KEY2=$(echo "$KEYPAIR2" | jq -r '.privateKey')
 
-PUBLIC_KEY1=$(echo "$KEYPAIR1" | jq -r '.publicKey')
-PUBLIC_KEY2=$(echo "$KEYPAIR2" | jq -r '.publicKey')
+#PUBLIC_KEY1=$(echo "$KEYPAIR1" | jq -r '.publicKey')
+#PUBLIC_KEY2=$(echo "$KEYPAIR2" | jq -r '.publicKey')
 
 # Generate random session ID and chain code
 SESSION_ID=$("$BUILD_DIR/$BIN_NAME" random)
@@ -41,14 +41,6 @@ echo "Generated Parameters:"
 echo "PARTY1: $PARTY1"
 echo "PARTY2: $PARTY2"
 
-echo "KEYPAIR1: $KEYPAIR1"
-echo "KEYPAIR2: $KEYPAIR2"
-
-echo "PRIVATE_KEY1: $PRIVATE_KEY1"
-echo "PRIVATE_KEY2: $PRIVATE_KEY2"
-
-echo "PUBLIC_KEY1: $PUBLIC_KEY1"
-echo "PUBLIC_KEY2: $PUBLIC_KEY2"
 
 echo "SESSION ID: $SESSION_ID"
 echo "MESSAGE: $MESSAGE"
@@ -75,7 +67,7 @@ DERIVATION_PATH="m/44'/0'/0'/0/0"
 RECEIVER_ADDRESS="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
 AMOUNT_SATOSHI=1000
 ESTIMATED_FEE=100
-NET_TYPE=""
+NET_TYPE="nostr"
 NEW_SESSION="true"
 
 sleep 1
@@ -85,9 +77,9 @@ echo "Starting mpcsendbtc for PARTY1..."
 "$BUILD_DIR/$BIN_NAME" originalsendbtc "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$RECEIVER_ADDRESS" "$AMOUNT_SATOSHI" "$ESTIMATED_FEE" "$NET_TYPE" "true" &
 PID1=$!
 
- echo "Starting mpcsendbtc for PARTY2..."
- "$BUILD_DIR/$BIN_NAME" originalsendbtc "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$RECEIVER_ADDRESS" "$AMOUNT_SATOSHI" "$ESTIMATED_FEE" "$NET_TYPE" "false" &
- PID2=$!
+ #echo "Starting mpcsendbtc for PARTY2..."
+ #"$BUILD_DIR/$BIN_NAME" originalsendbtc "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$RECEIVER_ADDRESS" "$AMOUNT_SATOSHI" "$ESTIMATED_FEE" "$NET_TYPE" "false" &
+# PID2=$!
 
 # Handle cleanup on exit
 trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2; exit" SIGINT SIGTERM

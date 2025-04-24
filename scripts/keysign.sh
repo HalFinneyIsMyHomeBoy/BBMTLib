@@ -32,14 +32,14 @@ SESSION_KEY=$("$BUILD_DIR/$BIN_NAME" random)
 PORT=55055
 HOST="127.0.0.1"
 SERVER="http://$HOST:$PORT"
-USENOSTR="false"
+USENOSTR="true"
 NOSTRRELAY="ws://bbw-nostr.xyz"
-NET_TYPE=""
+NET_TYPE="nostr"
 
 PARTY1="peer1"
 PARTY2="peer2"
 PARTY3="peer3"
-PARTIES="$PARTY1,$PARTY2,$PARTY3"  # Participants
+PARTIES="$PARTY1,$PARTY2"  # Participants
 
 echo "Generated Parameters:"
 
@@ -94,9 +94,9 @@ echo "Starting keysign for PARTY2..."
 "$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "$NET_TYPE" &
 PID2=$!
 
-echo "Starting keysign for PARTY3..."
-"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY3" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE3" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "$NET_TYPE" &
-PID3=$!
+#echo "Starting keysign for PARTY3..."
+#"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY3" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE3" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "$NET_TYPE" &
+#PID3=$!
 
 # Handle cleanup on exit/ 2 out of 3 
 trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3; exit" SIGINT SIGTERM

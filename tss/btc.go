@@ -398,7 +398,7 @@ func MpcSendBTC(
 				}
 				if newSession == "true" {
 					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					initiateNostrHandshake(utxoSession, key, txRequest)
+					initiateNostrHandshake(utxoSession, key, sessionKey, txRequest)
 					time.Sleep(3 * time.Second)
 				} else if newSession == "false" {
 					utxoSession = utxoSession[:len(utxoSession)-1]
@@ -468,7 +468,7 @@ func MpcSendBTC(
 				}
 				if newSession == "true" {
 					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					initiateNostrHandshake(utxoSession, key, txRequest)
+					initiateNostrHandshake(utxoSession, key, sessionKey, txRequest)
 					time.Sleep(3 * time.Second)
 				} else if newSession == "false" {
 					utxoSession = utxoSession[:len(utxoSession)-1]
