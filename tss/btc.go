@@ -467,12 +467,13 @@ func MpcSendBTC(
 					DerivePath:      derivePath,
 				}
 				if newSession == "true" {
-					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
+					fmt.Printf("running initiateNostrHandshake for session : %v\n", utxoSession)
 					initiateNostrHandshake(utxoSession, key, sessionKey, txRequest)
-					time.Sleep(3 * time.Second)
-				} else if newSession == "false" {
-					utxoSession = utxoSession[:len(utxoSession)-1]
+					time.Sleep(1 * time.Second)
 				}
+				// } else if newSession == "false" {
+				// 	utxoSession = utxoSession[:len(utxoSession)-1]
+				// }
 
 				for _, item := range nostrSessionList {
 					if item.SessionID == utxoSession && item.Status == "start_keysign" {
