@@ -33,12 +33,13 @@ type NostrPartyPubKeys struct {
 }
 
 type ProtoMessage struct {
-	Type            string              `json:"type"`
+	FunctionType    string              `json:"function_type"`
+	MessageType     string              `json:"message_type"`
 	Participants    []string            `json:"participants"`
 	Recipients      []NostrPartyPubKeys `json:"recipients"`
 	FromNostrPubKey string              `json:"from_nostr_pubkey"`
 	SessionID       string              `json:"sessionID"`
-	RawMessage      string              `json:"raw_message"`
+	RawMessage      []byte              `json:"raw_message"`
 	SeqNo           string              `json:"seq_no"`
 	From            string              `json:"from"`
 	To              string              `json:"to"`
@@ -61,14 +62,14 @@ type Master struct {
 	MasterPubKey string `json:"master_pubkey"`
 }
 
-type RawMessage struct {
-	SessionID string   `json:"session_id,omitempty"`
-	From      string   `json:"from,omitempty"`
-	To        []string `json:"to,omitempty"`
-	Body      string   `json:"body,omitempty"`
-	SeqNo     string   `json:"sequence_no,omitempty"`
-	Hash      string   `json:"hash,omitempty"`
-}
+// type RawMessage struct {
+// 	SessionID string   `json:"session_id,omitempty"`
+// 	From      string   `json:"from,omitempty"`
+// 	To        []string `json:"to,omitempty"`
+// 	Body      string   `json:"body,omitempty"`
+// 	SeqNo     string   `json:"sequence_no,omitempty"`
+// 	Hash      string   `json:"hash,omitempty"`
+// }
 
 type NostrStatus struct {
 	SessionID string `json:"session_id,omitempty"`
@@ -282,29 +283,30 @@ func NostrListen(localParty string) {
 				continue
 			}
 
-			if protoMessage.Type == "init_handshake" && protoMessage.From != localParty { //only non-masters should run this
+			if protoMessage.FunctionType == "init_handshake" && protoMessage.From != localParty { //only non-masters should run this
 				AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
 				//continue
 			}
 
-			if protoMessage.Type == "ack_handshake" && protoMessage.From != localParty {
+			if protoMessage.FunctionType == "ack_handshake" && protoMessage.From != localParty {
 				if protoMessage.Master.MasterPeer == localParty { //Only master should run this
 					collectAckHandshake(protoMessage.SessionID, localParty, protoMessage)
 					//continue
 				}
 			}
 
-			if protoMessage.Type == "start_keysign" && protoMessage.From != localParty { //non-masters should run this
+			if protoMessage.FunctionType == "start_keysign" && protoMessage.From != localParty { //non-masters should run this
 				Logf("start_keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-				startNostrKeysignSession(protoMessage.SessionID, protoMessage.Participants, localParty)
+				startPartyNostrMPCsendBTC(protoMessage.SessionID, protoMessage.Participants, localParty)
 				//startKeysignMaster(protoMessage.SessionID, protoMessage.Participants, localParty)
 
 				//continue
 			}
 
-			if protoMessage.Type == "keysign" {
+			if protoMessage.FunctionType == "keysign" {
 				Logf("keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-				nostrMessageCache.Set(protoMessage.SessionID, protoMessage, cache.DefaultExpiration)
+				key := protoMessage.MessageType + "-" + protoMessage.SessionID
+				nostrSetData(key, protoMessage)
 				continue
 			}
 
@@ -320,7 +322,7 @@ func NostrListen(localParty string) {
 
 }
 
-func initiateNostrHandshake(SessionID, key string, sessionKey string, txRequest TxRequest) {
+func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txRequest TxRequest) {
 
 	// Initialize retry counter and max retries
 	//maxRetries := 2
@@ -338,7 +340,7 @@ func initiateNostrHandshake(SessionID, key string, sessionKey string, txRequest 
 	// 	}
 	// }
 
-	keyShare, err := GetKeyShare(key)
+	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
 		log.Printf("Error getting key share: %v\n", err)
 		return
@@ -347,11 +349,10 @@ func initiateNostrHandshake(SessionID, key string, sessionKey string, txRequest 
 	protoMessage := ProtoMessage{
 		SessionID:       SessionID,
 		SessionKey:      sessionKey,
-		Type:            "init_handshake",
-		From:            key,
+		FunctionType:    "init_handshake",
+		From:            localParty,
 		FromNostrPubKey: keyShare.LocalNostrPubKey,
 		Recipients:      make([]NostrPartyPubKeys, 0, len(keyShare.NostrPartyPubKeys)),
-		RawMessage:      "",
 		TxRequest:       txRequest,
 		Master:          Master{MasterPeer: keyShare.LocalPartyKey, MasterPubKey: keyShare.LocalNostrPubKey},
 	}
@@ -367,7 +368,7 @@ func initiateNostrHandshake(SessionID, key string, sessionKey string, txRequest 
 
 	nostrSession := NostrSession{
 		SessionID:    SessionID,
-		Participants: []string{key},
+		Participants: []string{localParty},
 		TxRequest:    protoMessage.TxRequest,
 		Master:       protoMessage.Master,
 		Status:       "pending",
@@ -379,7 +380,7 @@ func initiateNostrHandshake(SessionID, key string, sessionKey string, txRequest 
 	}
 
 	//==============================SEND INIT_HANDSHAKE TO ALL NOSTRPUBKEYS========================
-	nostrSend(SessionID, key, protoMessage, "", "", "")
+	nostrSend(SessionID, localParty, protoMessage, "", "", "")
 	time.Sleep(time.Second * 1)
 	//==============================ASSUME WE HAVE ALL ACK_HANDSHAKES==============================
 
@@ -399,7 +400,7 @@ func initiateNostrHandshake(SessionID, key string, sessionKey string, txRequest 
 					Logf("We have 2/3 of participants approved , sending (start_keysign) for session: %s", SessionID)
 					sessionReady = true
 					//=================send start_keysign to all participants=====================
-					startKeysignMaster(SessionID, item.Participants, key)
+					startKeysignMaster(SessionID, item.Participants, localParty)
 					//initNostrKeysignSession(SessionID, item.Participants, key)
 				} else {
 					Logf("We do not have 2/3 of participants approved yet for session: %s", SessionID)
@@ -419,7 +420,7 @@ func initiateNostrHandshake(SessionID, key string, sessionKey string, txRequest 
 	}
 
 }
-func collectAckHandshake(sessionID, key string, protoMessage ProtoMessage) {
+func collectAckHandshake(sessionID, localParty string, protoMessage ProtoMessage) {
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID && item.TxRequest == protoMessage.TxRequest {
 			if !contains(item.Participants, protoMessage.From) {
@@ -431,16 +432,16 @@ func collectAckHandshake(sessionID, key string, protoMessage ProtoMessage) {
 	}
 }
 
-func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
+func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 	// send handshake to master
-	keyShare, err := GetKeyShare(key)
+	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
 		log.Printf("Error getting key share: %v\n", err)
 		return
 	}
 
 	Logf("init handshake message received from %s\n", protoMessage.From)
-	Logf("sending ack handshake message to %s\n", key)
+	Logf("sending ack handshake message to %s\n", localParty)
 	//TODO: UI update - ask user to approve TX
 	//if approved == true, send ack
 	//If approved, then status="pending"
@@ -449,7 +450,7 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 	//===================USER APPROVED TX======================
 	nostrSession := NostrSession{
 		SessionID:    session,
-		Participants: []string{key},
+		Participants: []string{localParty},
 		TxRequest:    protoMessage.TxRequest,
 		Master:       protoMessage.Master,
 		Status:       "pending",
@@ -462,17 +463,16 @@ func AckNostrHandshake(session, key string, protoMessage ProtoMessage) {
 
 	ackProtoMessage := ProtoMessage{
 		SessionID:       session,
-		Type:            "ack_handshake",
-		From:            key,
+		FunctionType:    "ack_handshake",
+		From:            localParty,
 		FromNostrPubKey: keyShare.LocalNostrPubKey,
 		Recipients:      []NostrPartyPubKeys{{Peer: protoMessage.Master.MasterPeer, PubKey: protoMessage.Master.MasterPubKey}},
-		Participants:    []string{key},
-		RawMessage:      "",
+		Participants:    []string{localParty},
 		TxRequest:       protoMessage.TxRequest,
 		Master:          Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
 	}
 
-	nostrSend(session, key, ackProtoMessage, "", "", "")
+	nostrSend(session, localParty, ackProtoMessage, "", "", "")
 
 	// for _, peer := range protoMessage.Recipients {
 	// 	if pubKey, ok := keyShare.NostrPartyPubKeys[peer.Peer]; ok {
@@ -513,11 +513,10 @@ func startKeysignMaster(sessionID string, participants []string, localParty stri
 			startKeysignProtoMessage := ProtoMessage{
 				SessionID:    sessionID,
 				SessionKey:   item.SessionKey,
-				Type:         "start_keysign",
+				FunctionType: "start_keysign",
 				From:         localParty,
 				Recipients:   recipients,
 				Participants: participants,
-				RawMessage:   "",
 				TxRequest:    item.TxRequest,
 				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
 			}
@@ -586,7 +585,7 @@ func startKeysignMaster(sessionID string, participants []string, localParty stri
 
 // }
 
-func startNostrKeysignSession(sessionID string, participants []string, localParty string) {
+func startPartyNostrMPCsendBTC(sessionID string, participants []string, localParty string) {
 
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID {
@@ -594,6 +593,7 @@ func startNostrKeysignSession(sessionID string, participants []string, localPart
 			nostrSessionList[i].Status = "start_keysign"
 			nostrSessionList[i].Participants = participants
 			sessionKey := nostrSessionList[i].SessionKey
+			//sessionID = nostrSessionList[i].SessionID
 
 			keyshare, err := GetKeyShare(localParty)
 			if err != nil {
@@ -607,8 +607,14 @@ func startNostrKeysignSession(sessionID string, participants []string, localPart
 				Logf("Error marshaling keyshare: %v", err)
 				return
 			}
+			//sessionID = sessionID[:len(sessionID)-1]
 
-			result, err := MpcSendBTC("", localParty, strings.Join(item.Participants, ","), sessionID, sessionKey, "", "", string(keyshareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
+			//==remove this
+			var test = nostrSessionList[i]
+			fmt.Printf("test: %v\n", test)
+			//==remove this
+			peers := strings.Join(item.Participants, ",")
+			result, err := MpcSendBTC("", localParty, peers, sessionID, sessionKey, "", "", string(keyshareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
 			if err != nil {
 				fmt.Printf("Go Error: %v\n", err)
 			} else {
@@ -633,7 +639,7 @@ func startNostrKeysignSession(sessionID string, participants []string, localPart
 
 func containsProtoMessage(list []ProtoMessage, msg ProtoMessage) bool {
 	for _, element := range list {
-		if element.Type == msg.Type &&
+		if element.FunctionType == msg.FunctionType &&
 			element.SessionID == msg.SessionID &&
 			element.From == msg.From {
 			return true
@@ -761,34 +767,44 @@ func nostrSend(sessionID, key string, message ProtoMessage, fromParty, toParty, 
 	}
 }
 
-func nostrDownloadMessage(sessionID string, key string) (ProtoMessage, error) {
-	Logf("Downloading message for key: %s", key)
-	//sessionID = sessionID[:len(sessionID)-1]
-	msg, found := nostrMessageCache.Get(sessionID)
-
-	if !found {
-		return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
-	}
-	protoMsg := msg.(ProtoMessage)
-	//if protoMsg.To == key {
-	return protoMsg, nil
-	//}
-	//return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
-	// protoMsg := msg.(ProtoMessage)
-	// var rawMsg RawMessage
-	// if err := json.Unmarshal([]byte(protoMsg.RawMessage), &rawMsg); err != nil {
-	// 	return ProtoMessage{}, fmt.Errorf("failed to parse raw message: %w", err)
-	// }
-	// if rawMsg.To[0] == key {
-	// 	// Unmarshal the protoMsg into a ProtoMessage struct
-	// 	var protoMessage ProtoMessage
-	// 	if err := json.Unmarshal([]byte(protoMsg.RawMessage), &protoMessage); err != nil {
-	// 		return ProtoMessage{}, fmt.Errorf("failed to unmarshal proto message: %w", err)
-	// 	}
-	// 	return protoMessage, nil
-	// }
-	// return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
+func nostrGetData(key string) (interface{}, bool) {
+	//time.Sleep(2 * time.Second)
+	return nostrMessageCache.Get(key)
 }
+
+func nostrSetData(key string, value interface{}) {
+	//time.Sleep(3 * time.Second)
+	nostrMessageCache.Set(key, value, cache.DefaultExpiration)
+}
+
+// func nostrDownloadMessage(sessionID string, key string) (ProtoMessage, error) {
+// 	Logf("Downloading message for key: %s", key)
+// 	//sessionID = sessionID[:len(sessionID)-1]
+// 	msg, found := nostrMessageCache.Get(sessionID)
+
+// 	if !found {
+// 		return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
+// 	}
+// 	protoMsg := msg.(ProtoMessage)
+// 	//if protoMsg.To == key {
+// 	return protoMsg, nil
+// 	//}
+// 	//return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
+// 	// protoMsg := msg.(ProtoMessage)
+// 	// var rawMsg RawMessage
+// 	// if err := json.Unmarshal([]byte(protoMsg.RawMessage), &rawMsg); err != nil {
+// 	// 	return ProtoMessage{}, fmt.Errorf("failed to parse raw message: %w", err)
+// 	// }
+// 	// if rawMsg.To[0] == key {
+// 	// 	// Unmarshal the protoMsg into a ProtoMessage struct
+// 	// 	var protoMessage ProtoMessage
+// 	// 	if err := json.Unmarshal([]byte(protoMsg.RawMessage), &protoMessage); err != nil {
+// 	// 		return ProtoMessage{}, fmt.Errorf("failed to unmarshal proto message: %w", err)
+// 	// 	}
+// 	// 	return protoMessage, nil
+// 	// }
+// 	// return ProtoMessage{}, fmt.Errorf("message not found for session %s", sessionID)
+// }
 
 // Default
 // - All parties start nostrListen

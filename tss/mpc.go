@@ -287,7 +287,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
 	if len(sessionKey) == 0 && (len(encKey) == 0 || len(decKey) == 0) {
-		//return "", fmt.Errorf("either a session key, either both enc/dec keys")
+		return "", fmt.Errorf("either a session key, either both enc/dec keys")
 	}
 
 	if net_type == "nostr" {
@@ -560,11 +560,12 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 	if m.Net_Type == "nostr" {
 
 		var protoMessage ProtoMessage
-		protoMessage.Type = "keysign"
+		protoMessage.MessageType = "message"
+		protoMessage.FunctionType = "keysign"
 		protoMessage.SessionID = m.SessionID
 		protoMessage.From = from
 		protoMessage.To = to
-		protoMessage.RawMessage = string(requestBody)
+		protoMessage.RawMessage = requestBody
 		protoMessage.Recipients = make([]NostrPartyPubKeys, 0, len(to))
 		protoMessage.SeqNo = strconv.Itoa(status.SeqNo)
 		recipients, err := GetNostrPartyPubKeys(to)
@@ -826,7 +827,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 
 	defer wg.Done()
 	isApplyingMessages := false
-	until := time.Now().Add(time.Duration(msgFetchTimeout) * time.Second * 2)
+	until := time.Now().Add(time.Duration(msgFetchTimeout) * time.Second)
 	msgMap := make(map[string]bool)
 
 	for {
@@ -852,7 +853,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			// TODO: illustrative
 			var resp *http.Response
 			var err error
-			var protoMessage ProtoMessage
+			//var protoMessage ProtoMessage
 			//var protores string
 			var messages []struct {
 				SessionID string   `json:"session_id,omitempty"`
@@ -905,66 +906,46 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			}
 
 			if type_net == "nostr" {
-				if key == "peer2" {
-					Logf("downloading messages from nostr for session: %v", session)
+				if key == "peer1" {
+					//Logf("BBMTLog: nostrGetData: %v", nostrGetData(key))
 				}
-				protoMessage, err = nostrDownloadMessage(session, key)
-				if err != nil {
-					Logln("BBMTLog", "Error fetching messages from nostr:", err)
+				//key = "message-" + session
+				msg, found := nostrGetData("message-" + session)
+				if !found {
+					Logln("BBMTLog", "No message found for session:", session)
+					isApplyingMessages = false
+					continue
+				}
+				protoMessage, ok := msg.(ProtoMessage)
+				if !ok {
+					Logln("BBMTLog", "Invalid message type for session:", session)
 					isApplyingMessages = false
 					continue
 				}
 
-				var rawMsg RawMessage
-				if err := json.Unmarshal([]byte(protoMessage.RawMessage), &rawMsg); err != nil {
+				var message struct {
+					SessionID string   `json:"session_id,omitempty"`
+					From      string   `json:"from,omitempty"`
+					To        []string `json:"to,omitempty"`
+					Body      string   `json:"body,omitempty"`
+					SeqNo     string   `json:"sequence_no,omitempty"`
+					Hash      string   `json:"hash,omitempty"`
+				}
+				if err := json.Unmarshal(protoMessage.RawMessage, &message); err != nil {
 					Logln("BBMTLog", "Failed to parse RawMessage:", err)
 					isApplyingMessages = false
 					continue
 				}
-				//Logln("BBMTLog", "protoMessage:", protoMessage)
-				if key == "peer2" {
-					//fmt.Printf("protoMessage: %v\n", protoMessage)
-				}
-				// if isMaster(strings.Join(protoMessage.Participants, ","), rawMsg.From) {
-				// 	//resp, err = http.Get(server + "/message/" + session + "/" + key)
+				messages = []struct {
+					SessionID string   `json:"session_id,omitempty"`
+					From      string   `json:"from,omitempty"`
+					To        []string `json:"to,omitempty"`
+					Body      string   `json:"body,omitempty"`
+					SeqNo     string   `json:"sequence_no,omitempty"`
+					Hash      string   `json:"hash,omitempty"`
+				}{message}
 
-				// 	// if err != nil {
-				// 	// 	Logln("BBMTLog", "Error fetching messages:", err)
-				// 	// 	isApplyingMessages = false
-				// 	// 	continue
-				// 	// }
-
-				// 	// if resp.StatusCode == http.StatusNotFound {
-				// 	// 	Logln("BBMTLog", "No messages found.")
-				// 	// 	isApplyingMessages = false
-				// 	// 	continue
-				// 	// }
-
-				// 	// if resp.StatusCode != http.StatusOK {
-				// 	// 	Logln("BBMTLog", "Failed to get data from server:", resp.Status)
-				// 	// 	isApplyingMessages = false
-				// 	// 	continue
-				// 	// }
-
-				// 	// // Read the response body
-				// 	// bodyBytes, err := io.ReadAll(resp.Body)
-				// 	// if err != nil {
-				// 	// 	Logln("BBMTLog", "Failed to read response body:", err)
-				// 	// 	isApplyingMessages = false
-				// 	// 	continue
-				// 	// }
-				// 	// if err := json.Unmarshal(bodyBytes, &messages); err != nil {
-				// 	// 	Logln("BBMTLog", "Failed to decode messages:", err)
-				// 	// 	//TODO: this is where the problem is. Need to find out why the body is not being unmarshalled
-				// 	// 	//Logln("BBMTLog", "Body:", string(bodyBytes))
-				// 	// 	isApplyingMessages = false
-				// 	// 	continue
-				// 	// }
-				// 	// resp.Body.Close()
-				// 	//messages = append(messages, rawMsg)
-				// }
-
-				messages = append(messages, rawMsg)
+				//messages = append(messages, rawMsg)
 
 			}
 			// jsonBytes, err := json.MarshalIndent(messages, "", "  ")
@@ -999,7 +980,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					if type_net != "nostr" {
 						deleteMessage(server, session, key, message.Hash)
 					} else {
-						nostrMessageCache.Delete(session)
+						//nostrMessageCache.Delete(session)
 					}
 					continue
 				} else {
@@ -1049,7 +1030,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				if type_net != "nostr" {
 					deleteMessage(server, session, key, message.Hash)
 				} else {
-					nostrMessageCache.Delete(session)
+					//nostrMessageCache.Delete(session)
 				}
 				//nostrMessageCache.Delete(session)
 				//nostrMessageCache.Delete(session)
