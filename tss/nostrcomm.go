@@ -25,11 +25,15 @@ var (
 	relay                  *nostr.Relay
 	globalCtx              context.Context
 	nostrRelay             string = "ws://bbw-nostr.xyz"
-	KeysignApprovalTimeout        = 5 * time.Second
+	KeysignApprovalTimeout        = 3 * time.Second
 	totalSentMessages      []ProtoMessage
 	totalReceivedMessages  []ProtoMessage
-	relayMutex             sync.Mutex
 	nostrMutex             sync.Mutex
+	sessionMutex           sync.Mutex // For nostrSessionList
+	handshakeMutex         sync.Mutex // For nostrHandShakeList
+	contextMutex           sync.Mutex // For globalCtx
+	nostrSendMutex         sync.Mutex // For nostrSend
+	nostrDownloadMutex     sync.Mutex // For nostrDownload
 	//nostrSessionList       map[string]bool
 )
 
@@ -210,15 +214,11 @@ func setNPubs() {
 }
 
 func NostrListen(localParty string) {
-	// Add recovery from panics
-	// defer func() {
-	// 	if r := recover(); r != nil {
-	// 		log.Printf("Recovered from panic in NostrListen: %v", r)
-	// 		// Restart the listener after a delay
-	// 		time.Sleep(5 * time.Second)
-	// 		go NostrListen(localParty)
-	// 	}
-	// }()
+	contextMutex.Lock()
+	if globalCtx == nil {
+		globalCtx, _ = context.WithCancel(context.Background())
+	}
+	contextMutex.Unlock()
 
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
@@ -250,7 +250,7 @@ func NostrListen(localParty string) {
 	}
 	defer relay.Close()
 
-	cutoffTime := time.Now().Add(-60 * time.Second)
+	cutoffTime := time.Now().Add(-10 * time.Second)
 	since := nostr.Timestamp(cutoffTime.Unix())
 
 	filters := nostr.Filters{
@@ -290,23 +290,23 @@ func NostrListen(localParty string) {
 			}
 
 			if protoMessage.FunctionType == "init_handshake" && protoMessage.From != localParty { //only non-masters should run this
-				AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
-				continue
+				go AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
+				//continue
 			}
 
 			if protoMessage.FunctionType == "ack_handshake" && protoMessage.From != localParty {
 				if protoMessage.Master.MasterPeer == localParty { //Only master should run this
 					collectAckHandshake(protoMessage.SessionID, localParty, protoMessage)
-					continue
+					//continue
 				}
 			}
 
 			if protoMessage.FunctionType == "start_keysign" && protoMessage.From != localParty { //non-masters should run this
 				Logf("start_keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-				startPartyNostrMPCsendBTC(protoMessage.SessionID, protoMessage.Participants, localParty)
+				go startPartyNostrMPCsendBTC(protoMessage.SessionID, protoMessage.Participants, localParty)
 				//startKeysignMaster(protoMessage.SessionID, protoMessage.Participants, localParty)
 
-				continue
+				//continue
 			}
 
 			if protoMessage.FunctionType == "keysign" && protoMessage.From != localParty {
@@ -314,7 +314,7 @@ func NostrListen(localParty string) {
 				key := protoMessage.MessageType + "-" + protoMessage.SessionID
 				nostrSetData(key, protoMessage)
 				addReceivedMessage(protoMessage)
-				continue
+				//continue
 			}
 
 		case <-globalCtx.Done():
@@ -330,6 +330,8 @@ func NostrListen(localParty string) {
 }
 
 func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txRequest TxRequest) (bool, error) {
+	// sessionMutex.Lock()
+	// defer sessionMutex.Unlock()
 
 	// Initialize retry counter and max retries
 	//maxRetries := 2
@@ -391,7 +393,7 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 
 	//==============================SEND INIT_HANDSHAKE TO ALL NOSTRPUBKEYS========================
 	nostrSend(SessionID, localParty, protoMessage, "", "", "")
-	time.Sleep(time.Second * 2)
+	//time.Sleep(time.Second * 2)
 	//==============================ASSUME WE HAVE ALL ACK_HANDSHAKES==============================
 
 	Logf("total nostrSessionList: %v", nostrSessionList)
@@ -433,6 +435,9 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 }
 
 func collectAckHandshake(sessionID, localParty string, protoMessage ProtoMessage) {
+	// sessionMutex.Lock()
+	// defer sessionMutex.Unlock()
+
 	Logf("collectAckHandshake running")
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID && item.TxRequest == protoMessage.TxRequest {
@@ -490,7 +495,7 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 	}
 
 	nostrSend(session, localParty, ackProtoMessage, "", "", "")
-	time.Sleep(time.Second * 2)
+	//time.Sleep(time.Second * 2)
 	// for _, peer := range protoMessage.Recipients {
 	// 	if pubKey, ok := keyShare.NostrPartyPubKeys[peer.Peer]; ok {
 	// 		protoMessage.Recipients = append(protoMessage.Recipients, NostrPartyPubKeys{Peer: peer.Peer, PubKey: pubKey})
@@ -504,6 +509,8 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 }
 
 func startKeysignMaster(sessionID string, participants []string, localParty string) {
+	// sessionMutex.Lock()
+	// defer sessionMutex.Unlock()
 
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
@@ -554,7 +561,7 @@ func startKeysignMaster(sessionID string, participants []string, localParty stri
 			}
 
 			nostrSend(sessionID, localParty, startKeysignProtoMessage, "", "", "")
-			time.Sleep(time.Second * 2)
+			//time.Sleep(time.Second * 2)
 		}
 	}
 
@@ -620,6 +627,8 @@ func startKeysignMaster(sessionID string, participants []string, localParty stri
 // }
 
 func startPartyNostrMPCsendBTC(sessionID string, participants []string, localParty string) {
+	// sessionMutex.Lock()
+	// defer sessionMutex.Unlock()
 
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID {
@@ -674,6 +683,9 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 }
 
 func containsProtoMessage(list []ProtoMessage, msg ProtoMessage) bool {
+	// handshakeMutex.Lock()
+	// defer handshakeMutex.Unlock()
+
 	for _, element := range list {
 		if element.FunctionType == msg.FunctionType &&
 			element.SessionID == msg.SessionID &&
@@ -685,6 +697,9 @@ func containsProtoMessage(list []ProtoMessage, msg ProtoMessage) bool {
 }
 
 func nostrSessionAlreadyExists(list []NostrSession, nostrSession NostrSession) bool {
+	// sessionMutex.Lock()
+	// defer sessionMutex.Unlock()
+
 	for _, element := range list {
 		if element.SessionID == nostrSession.SessionID {
 			return true
@@ -758,7 +773,8 @@ func nostrSend(sessionID, from string, protoMessage ProtoMessage, messageType, f
 	// 		return fmt.Errorf("failed to connect to relay: %w", err)
 	// 	}
 	// }
-
+	// nostrSendMutex.Lock()
+	// defer nostrSendMutex.Unlock()
 	// Initialize context if nil
 	if globalCtx == nil {
 		globalCtx = context.Background()
@@ -779,9 +795,10 @@ func nostrSend(sessionID, from string, protoMessage ProtoMessage, messageType, f
 		fmt.Printf("init_handshake from %s\n", protoMessage.From)
 	}
 
-	nostrMutex.Lock()
-	totalSentMessages = append(totalSentMessages, protoMessage)
-	nostrMutex.Unlock()
+	// nostrMutex.Lock()
+	// totalSentMessages = append(totalSentMessages, protoMessage)
+	// nostrMutex.Unlock()
+
 	for _, recipient := range protoMessage.Recipients {
 		sharedSecret, err := nip04.ComputeSharedSecret(recipient.PubKey, keyShare.LocalNostrPrivKey)
 		if err != nil {
@@ -818,12 +835,14 @@ func nostrSend(sessionID, from string, protoMessage ProtoMessage, messageType, f
 }
 
 func nostrGetData(key string) (interface{}, bool) {
-	//time.Sleep(2 * time.Second)
+	// nostrMutex.Lock()
+	// defer nostrMutex.Unlock()
 	return nostrMessageCache.Get(key)
 }
 
 func nostrSetData(key string, value interface{}) {
-	//time.Sleep(3 * time.Second)
+	// nostrMutex.Lock()
+	// defer nostrMutex.Unlock()
 	nostrMessageCache.Set(key, value, cache.DefaultExpiration)
 }
 
@@ -923,38 +942,38 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func getRelay() (*nostr.Relay, error) {
-	relayMutex.Lock()
-	defer relayMutex.Unlock()
+// func getRelay() (*nostr.Relay, error) {
+// 	relayMutex.Lock()
+// 	defer relayMutex.Unlock()
 
-	if relay == nil {
-		var err error
-		relay, err = nostr.RelayConnect(context.Background(), "wss://relay.damus.io")
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to relay: %w", err)
-		}
-	}
-	return relay, nil
-}
+// 	if relay == nil {
+// 		var err error
+// 		relay, err = nostr.RelayConnect(context.Background(), "wss://relay.damus.io")
+// 		if err != nil {
+// 			return nil, fmt.Errorf("failed to connect to relay: %w", err)
+// 		}
+// 	}
+// 	return relay, nil
+// }
 
 // When adding to received messages
 func addReceivedMessage(msg ProtoMessage) {
-	nostrMutex.Lock()
-	defer nostrMutex.Unlock()
+	// nostrMutex.Lock()
+	// defer nostrMutex.Unlock()
 	totalReceivedMessages = append(totalReceivedMessages, msg)
 }
 
 // When adding to sent messages
 func addSentMessage(msg ProtoMessage) {
-	nostrMutex.Lock()
-	defer nostrMutex.Unlock()
+	// nostrMutex.Lock()
+	// defer nostrMutex.Unlock()
 	totalSentMessages = append(totalSentMessages, msg)
 }
 
 // When reading the counts
 func getMessageCounts() (received, sent int) {
-	nostrMutex.Lock()
-	defer nostrMutex.Unlock()
+	// nostrMutex.Lock()
+	// defer nostrMutex.Unlock()
 	return len(totalReceivedMessages), len(totalSentMessages)
 }
 

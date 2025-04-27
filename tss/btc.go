@@ -396,7 +396,7 @@ func MpcSendBTC(
 					BtcPub:          publicKey,
 					DerivePath:      derivePath,
 				}
-				if newSession == "true" {
+				if newSession == "true" { //This is the master starting the session
 					fmt.Printf("Master is coordinating nostr session : %v\n", session)
 					ok, err := initiateNostrHandshake(session, key, sessionKey, txRequest)
 					if err != nil {
@@ -412,7 +412,18 @@ func MpcSendBTC(
 								if err != nil {
 									return "", fmt.Errorf("failed to sign transaction: signature is empty")
 								}
-								time.Sleep(2 * time.Second)
+								time.Sleep(1 * time.Second)
+							}
+						}
+					}
+				}
+
+				if newSession == "false" {
+					for _, item := range nostrSessionList {
+						if item.SessionID == session && item.Status == "start_keysign" {
+							sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
+							if err != nil {
+								return "", fmt.Errorf("failed to sign transaction: signature is empty")
 							}
 						}
 					}
@@ -487,7 +498,7 @@ func MpcSendBTC(
 								if err != nil {
 									return "", fmt.Errorf("failed to sign transaction: signature is empty")
 								}
-								time.Sleep(2 * time.Second)
+								time.Sleep(1 * time.Second)
 							}
 						}
 					}

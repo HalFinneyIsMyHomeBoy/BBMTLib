@@ -558,6 +558,10 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 	Logln("BBMTLog", "sending message...")
 
 	if m.Net_Type == "nostr" {
+		// Create a new mutex for nostr operations to prevent deadlocks
+		// var nostrMutex sync.Mutex
+		// nostrMutex.Lock()
+		// defer nostrMutex.Unlock()
 
 		var protoMessage ProtoMessage
 		protoMessage.MessageType = "message"
@@ -584,20 +588,16 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 			//Logf("sending message from %s to %s: %v", from, to, protoMessage)
 		}
 
-		//Logf("sending nostr message: %v", protoMessage)
-		//Logf("Current nostrSessions: %v", nostrSessionList)
-		nostrSend(m.SessionID, from, protoMessage, "", "", "")
-		time.Sleep(2 * time.Second)
-		// if !isMaster(parties, from) {
+		// Release the main mutex temporarily during nostrSend to prevent deadlocks
+		nostrMutex.Lock()
+		err = nostrSend(m.SessionID, from, protoMessage, "", "", "")
+		time.Sleep(time.Second * 1)
+		nostrMutex.Unlock()
+		if err != nil {
+			return fmt.Errorf("failed to send nostr message: %w", err)
+		}
 
-		// 	//time.Sleep(3 * time.Second)
-		// 	//if not master, then pause a few seconds
-		// 	//nostrSend(m.SessionID, from, ProtoMessage, "handshake", "", "", "")
-		// 	//nostrHandshake(m.SessionID, from)
-
-		// } else if isMaster(parties, from) {
-
-		// }
+		//time.Sleep(5 * time.Second)
 	} else if m.Net_Type != "nostr" {
 
 		// Prepare the HTTP request
@@ -923,7 +923,11 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				}
 
 				//key = "message-" + session
+				//nostrDownloadMutex.Lock()
+				//defer nostrMutex.Unlock()
 				msg, found := nostrGetData("message-" + session)
+
+				//nostrDownloadMutex.Unlock()
 				if !found {
 					Logln("BBMTLog", "No message found for session:", session)
 					isApplyingMessages = false
