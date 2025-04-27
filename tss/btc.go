@@ -397,22 +397,27 @@ func MpcSendBTC(
 					DerivePath:      derivePath,
 				}
 				if newSession == "true" {
-					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					initiateNostrHandshake(utxoSession, key, sessionKey, txRequest)
-					time.Sleep(3 * time.Second)
-				} else if newSession == "false" {
-					utxoSession = utxoSession[:len(utxoSession)-1]
-				}
-
-				for _, item := range nostrSessionList {
-					if item.SessionID == utxoSession && item.Status == "start_keysign" {
-						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-						if err != nil {
-							return "", fmt.Errorf("failed to sign transaction: signature is empty")
+					fmt.Printf("Master is coordinating nostr session : %v\n", session)
+					ok, err := initiateNostrHandshake(session, key, sessionKey, txRequest)
+					if err != nil {
+						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
+					}
+					if !ok {
+						return "", fmt.Errorf("failed to initiate nostr handshake")
+					}
+					if ok {
+						for _, item := range nostrSessionList {
+							for item.Status != "start_keygen" {
+								sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
+								if err != nil {
+									return "", fmt.Errorf("failed to sign transaction: signature is empty")
+								}
+								time.Sleep(2 * time.Second)
+							}
 						}
-
 					}
 				}
+
 			} else {
 				sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 				if err != nil {
@@ -466,31 +471,49 @@ func MpcSendBTC(
 					BtcPub:          publicKey,
 					DerivePath:      derivePath,
 				}
-				if newSession == "true" {
+				if newSession == "true" { //This is the master starting the session
 					fmt.Printf("Master is coordinating nostr session : %v\n", session)
-					initiateNostrHandshake(session, key, sessionKey, txRequest)
-					time.Sleep(3 * time.Second)
-					for _, item := range nostrSessionList {
-						if item.Status == "start_keysign" {
-							sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-							if err != nil {
-								return "", fmt.Errorf("failed to sign transaction: signature is empty")
-							}
-
-						}
+					ok, err := initiateNostrHandshake(session, key, sessionKey, txRequest)
+					if err != nil {
+						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
 					}
-				} else if newSession == "false" {
-
-					for _, item := range nostrSessionList {
-						if item.Status == "start_keysign" {
-							sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-							if err != nil {
-								return "", fmt.Errorf("failed to sign transaction: signature is empty")
+					if !ok {
+						return "", fmt.Errorf("failed to initiate nostr handshake")
+					}
+					if ok {
+						for _, item := range nostrSessionList {
+							for item.Status != "start_keygen" {
+								sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
+								if err != nil {
+									return "", fmt.Errorf("failed to sign transaction: signature is empty")
+								}
+								time.Sleep(2 * time.Second)
 							}
-
 						}
 					}
 				}
+
+				if newSession == "false" {
+					for _, item := range nostrSessionList {
+						if item.SessionID == session && item.Status == "start_keysign" {
+							sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
+							if err != nil {
+								return "", fmt.Errorf("failed to sign transaction: signature is empty")
+							}
+						}
+					}
+				}
+
+				// 	for _, item := range nostrSessionList {
+				// 		if item.Status == "start_keysign" {
+				// 			sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
+				// 			if err != nil {
+				// 				return "", fmt.Errorf("failed to sign transaction: signature is empty")
+				// 			}
+
+				// 		}
+				// 	}
+				// }
 
 				// for _, item := range nostrSessionList {
 				// 	if item.SessionID == sessionValue && item.Status == "start_keysign" {

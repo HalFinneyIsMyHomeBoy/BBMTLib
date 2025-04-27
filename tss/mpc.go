@@ -587,6 +587,7 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 		//Logf("sending nostr message: %v", protoMessage)
 		//Logf("Current nostrSessions: %v", nostrSessionList)
 		nostrSend(m.SessionID, from, protoMessage, "", "", "")
+		time.Sleep(2 * time.Second)
 		// if !isMaster(parties, from) {
 
 		// 	//time.Sleep(3 * time.Second)
@@ -908,7 +909,19 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			if type_net == "nostr" {
 				if key == "peer1" {
 					//Logf("BBMTLog: nostrGetData: %v", nostrGetData(key))
+					fmt.Println("totalReceivedMessages", len(totalReceivedMessages))
+					fmt.Println("totalSentMessages", len(totalSentMessages))
+					//nostrsessions := nostrSessionList
+					//fmt.Println("nostrsessions", nostrsessions)
 				}
+				if key == "peer2" {
+
+					fmt.Println("totalReceivedMessages", len(totalReceivedMessages))
+					fmt.Println("totalSentMessages", len(totalSentMessages))
+					//nostrsessions := nostrSessionList
+					//fmt.Println("nostrsessions", nostrsessions)
+				}
+
 				//key = "message-" + session
 				msg, found := nostrGetData("message-" + session)
 				if !found {

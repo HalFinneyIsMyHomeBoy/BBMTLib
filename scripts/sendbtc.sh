@@ -35,7 +35,7 @@ SERVER="http://$HOST:$PORT"
 PARTY1="peer1"
 PARTY2="peer2"
 PARTIES="$PARTY1,$PARTY2"  # Participants
-
+echo "test"
 echo "Generated Parameters:"
 
 echo "PARTY1: $PARTY1"
@@ -60,8 +60,8 @@ fi
 
 # Start Relay in the background and track its PID
 echo "Starting Relay..."
-"$BUILD_DIR/$BIN_NAME" relay "$PORT" &
-PID0=$!
+#"$BUILD_DIR/$BIN_NAME" relay "$PORT" &
+#PID0=$!
 
 DERIVATION_PATH="m/44'/0'/0'/0/0"
 RECEIVER_ADDRESS="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
@@ -73,13 +73,11 @@ NEW_SESSION="true"
 sleep 1
 
 # Start mpcsendbtc for both parties
-echo "Starting mpcsendbtc for PARTY1..."
-"$BUILD_DIR/$BIN_NAME" originalsendbtc "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$RECEIVER_ADDRESS" "$AMOUNT_SATOSHI" "$ESTIMATED_FEE" "$NET_TYPE" "true" &
+echo "Starting MPCSentBTCMaster for PARTY1..."
+"$BUILD_DIR/$BIN_NAME" MPCSentBTCMaster "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$RECEIVER_ADDRESS" "$AMOUNT_SATOSHI" "$ESTIMATED_FEE" "$NET_TYPE" "true" &
 PID1=$!
 
- #echo "Starting mpcsendbtc for PARTY2..."
- #"$BUILD_DIR/$BIN_NAME" originalsendbtc "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$RECEIVER_ADDRESS" "$AMOUNT_SATOSHI" "$ESTIMATED_FEE" "$NET_TYPE" "false" &
-# PID2=$!
+
 
 # Handle cleanup on exit
 trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2; exit" SIGINT SIGTERM
