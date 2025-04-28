@@ -407,7 +407,7 @@ func MpcSendBTC(
 					}
 					if ok {
 						for _, item := range nostrSessionList {
-							for item.Status != "start_keygen" {
+							if item.Status == "start_keysign" && item.SessionID == session {
 								sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 								if err != nil {
 									return "", fmt.Errorf("failed to sign transaction: signature is empty")
@@ -493,7 +493,7 @@ func MpcSendBTC(
 					}
 					if ok {
 						for _, item := range nostrSessionList {
-							for item.Status != "start_keygen" {
+							if item.Status == "start_keysign" && item.SessionID == session {
 								sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 								if err != nil {
 									return "", fmt.Errorf("failed to sign transaction: signature is empty")

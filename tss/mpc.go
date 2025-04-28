@@ -391,19 +391,38 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	setStatus(session, status)
 
 	time.Sleep(time.Second)
-	if err := endSession(server, session); err != nil {
-		close(endCh)
-		return "", fmt.Errorf("fail to end session: %w", err)
+
+	if net_type != "nostr" {
+		if err := endSession(server, session); err != nil {
+			close(endCh)
+			return "", fmt.Errorf("fail to end session: %w", err)
+		}
 	}
+
+	if net_type == "nostr" {
+		nostrDeleteSession(session)
+	}
+
 	status.Step++
 	status.Info = "session ended"
 	setStatus(session, status)
 
 	time.Sleep(time.Second)
-	err = flagPartyKeysignComplete(server, session, message, string(sigStr))
-	if err != nil {
-		Logln("BBMTLog", "Warning: flagPartyKeysignComplete", "error", err)
+
+	if net_type != "nostr" {
+		err = flagPartyKeysignComplete(server, session, message, string(sigStr))
+		if err != nil {
+			Logln("BBMTLog", "Warning: flagPartyKeysignComplete", "error", err)
+		}
 	}
+
+	if net_type == "nostr" {
+		err = nostrFlagPartyKeysignComplete(session, message, string(sigStr))
+		if err != nil {
+			Logln("BBMTLog", "Warning: nostrFlagPartyKeysignComplete", "error", err)
+		}
+	}
+
 	status.Step++
 	status.Info = "local party complete"
 	status.Done = true
@@ -907,20 +926,6 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			}
 
 			if type_net == "nostr" {
-				if key == "peer1" {
-					//Logf("BBMTLog: nostrGetData: %v", nostrGetData(key))
-					fmt.Println("totalReceivedMessages", len(totalReceivedMessages))
-					fmt.Println("totalSentMessages", len(totalSentMessages))
-					//nostrsessions := nostrSessionList
-					//fmt.Println("nostrsessions", nostrsessions)
-				}
-				if key == "peer2" {
-
-					fmt.Println("totalReceivedMessages", len(totalReceivedMessages))
-					fmt.Println("totalSentMessages", len(totalSentMessages))
-					//nostrsessions := nostrSessionList
-					//fmt.Println("nostrsessions", nostrsessions)
-				}
 
 				//key = "message-" + session
 				//nostrDownloadMutex.Lock()

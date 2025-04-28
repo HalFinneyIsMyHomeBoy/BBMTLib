@@ -27,7 +27,6 @@ var (
 	nostrRelay             string = "ws://bbw-nostr.xyz"
 	KeysignApprovalTimeout        = 3 * time.Second
 	totalSentMessages      []ProtoMessage
-	totalReceivedMessages  []ProtoMessage
 	nostrMutex             sync.Mutex
 	sessionMutex           sync.Mutex // For nostrSessionList
 	handshakeMutex         sync.Mutex // For nostrHandShakeList
@@ -313,7 +312,6 @@ func NostrListen(localParty string) {
 				Logf("keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 				key := protoMessage.MessageType + "-" + protoMessage.SessionID
 				nostrSetData(key, protoMessage)
-				addReceivedMessage(protoMessage)
 				//continue
 			}
 
@@ -544,21 +542,6 @@ func startKeysignMaster(sessionID string, participants []string, localParty stri
 				TxRequest:    item.TxRequest,
 				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
 			}
-			if localParty == "peer1" {
-				//Logf("BBMTLog: nostrGetData: %v", nostrGetData(key))
-				received, sent := getMessageCounts()
-				fmt.Println("totalReceivedMessages", received)
-				fmt.Println("totalSentMessages", sent)
-				//nostrsessions := nostrSessionList
-				//fmt.Println("nostrsessions", nostrsessions)
-			}
-			if localParty == "peer2" {
-				received, sent := getMessageCounts()
-				fmt.Println("totalReceivedMessages", received)
-				fmt.Println("totalSentMessages", sent)
-				//nostrsessions := nostrSessionList
-				//fmt.Println("nostrsessions", nostrsessions)
-			}
 
 			nostrSend(sessionID, localParty, startKeysignProtoMessage, "", "", "")
 			//time.Sleep(time.Second * 2)
@@ -680,6 +663,41 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 		// nostrSend(sessionID, localParty, startKeysignMessage, "", "", "")
 	}
 
+}
+
+func nostrFlagPartyKeysignComplete(sessionID, message, body string) error {
+
+	sessionID = sessionID[:len(sessionID)-1]
+	for i := len(nostrSessionList) - 1; i >= 0; i-- {
+		if nostrSessionList[i].SessionID == sessionID {
+			nostrSessionList[i].Status = "keysign_complete"
+		}
+	}
+	Logf("Nostr Keysign Complete: %s", sessionID)
+	// Example operation to mark local party keysign complete (you can change it to suit your logic)
+	keysignCompleteKey := "keysign-complete-" + sessionID
+	nostrSetData(keysignCompleteKey, map[string]interface{}{
+		"sessionID": sessionID,
+		"messageID": message,
+		"body":      body,
+	})
+	return nil
+}
+
+func nostrDeleteSession(sessionID string) {
+
+	sessionID = sessionID[:len(sessionID)-1]
+	// Remove session from nostrSessions where sessionID matches
+	for i := len(nostrSessionList) - 1; i >= 0; i-- {
+		if nostrSessionList[i].SessionID == sessionID {
+			nostrSessionList = append(nostrSessionList[:i], nostrSessionList[i+1:]...)
+			//nostrSessionList[i] = NostrSession{}
+			//nostrSessionList = append(nostrSessionList[:i], nostrSessionList[i+1:]...)
+		}
+	}
+	Logf("Nostr Session Deleted: %s", sessionID)
+
+	Logf("Session %s deleted", sessionID)
 }
 
 func containsProtoMessage(list []ProtoMessage, msg ProtoMessage) bool {
@@ -955,27 +973,6 @@ func contains(slice []string, item string) bool {
 // 	}
 // 	return relay, nil
 // }
-
-// When adding to received messages
-func addReceivedMessage(msg ProtoMessage) {
-	// nostrMutex.Lock()
-	// defer nostrMutex.Unlock()
-	totalReceivedMessages = append(totalReceivedMessages, msg)
-}
-
-// When adding to sent messages
-func addSentMessage(msg ProtoMessage) {
-	// nostrMutex.Lock()
-	// defer nostrMutex.Unlock()
-	totalSentMessages = append(totalSentMessages, msg)
-}
-
-// When reading the counts
-func getMessageCounts() (received, sent int) {
-	// nostrMutex.Lock()
-	// defer nostrMutex.Unlock()
-	return len(totalReceivedMessages), len(totalSentMessages)
-}
 
 // When accessing session list
 // func addSession(sessionID string) {
