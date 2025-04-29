@@ -33,6 +33,7 @@ var (
 	contextMutex           sync.Mutex // For globalCtx
 	nostrSendMutex         sync.Mutex // For nostrSend
 	nostrDownloadMutex     sync.Mutex // For nostrDownload
+
 	//nostrSessionList       map[string]bool
 )
 
@@ -213,11 +214,13 @@ func setNPubs() {
 }
 
 func NostrListen(localParty string) {
-	contextMutex.Lock()
+
+	//contextMutex.Lock()
+
 	if globalCtx == nil {
 		globalCtx, _ = context.WithCancel(context.Background())
 	}
-	contextMutex.Unlock()
+	//contextMutex.Unlock()
 
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
@@ -270,6 +273,7 @@ func NostrListen(localParty string) {
 	for {
 		select {
 		case event := <-sub.Events:
+
 			sharedSecret, err := nip04.ComputeSharedSecret(event.PubKey, keyShare.LocalNostrPrivKey)
 			if err != nil {
 				log.Printf("Error computing shared secret: %v\n", err)
@@ -311,7 +315,9 @@ func NostrListen(localParty string) {
 			if protoMessage.FunctionType == "keysign" && protoMessage.From != localParty {
 				Logf("keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 				key := protoMessage.MessageType + "-" + protoMessage.SessionID
+				nostrMutex.Lock()
 				nostrSetData(key, protoMessage)
+				nostrMutex.Unlock()
 				//continue
 			}
 
@@ -346,7 +352,8 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 	// 		//if session already exits, then skip everything and return session?
 	// 	}
 	// }
-
+	//nostrMutex.Lock()
+	//defer nostrMutex.Unlock()
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
 		log.Printf("Error getting key share: %v\n", err)
@@ -435,6 +442,8 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 func collectAckHandshake(sessionID, localParty string, protoMessage ProtoMessage) {
 	// sessionMutex.Lock()
 	// defer sessionMutex.Unlock()
+	//nostrMutex.Lock()
+	//defer nostrMutex.Unlock()
 
 	Logf("collectAckHandshake running")
 	for i, item := range nostrSessionList {
@@ -450,6 +459,8 @@ func collectAckHandshake(sessionID, localParty string, protoMessage ProtoMessage
 
 func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 	// send handshake to master
+	//nostrMutex.Lock()
+	//defer nostrMutex.Unlock()
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
 		log.Printf("Error getting key share: %v\n", err)
@@ -509,6 +520,8 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 func startKeysignMaster(sessionID string, participants []string, localParty string) {
 	// sessionMutex.Lock()
 	// defer sessionMutex.Unlock()
+	//nostrMutex.Lock()
+	//defer nostrMutex.Unlock()
 
 	keyShare, err := GetKeyShare(localParty)
 	if err != nil {
@@ -613,6 +626,9 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 	// sessionMutex.Lock()
 	// defer sessionMutex.Unlock()
 
+	//nostrMutex.Lock()
+	//defer nostrMutex.Unlock()
+
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID {
 
@@ -666,6 +682,9 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 }
 
 func nostrFlagPartyKeysignComplete(sessionID, message, body string) error {
+
+	//nostrMutex.Lock()
+	//defer nostrMutex.Unlock()
 
 	sessionID = sessionID[:len(sessionID)-1]
 	for i := len(nostrSessionList) - 1; i >= 0; i-- {
@@ -794,6 +813,9 @@ func nostrSend(sessionID, from string, protoMessage ProtoMessage, messageType, f
 	// nostrSendMutex.Lock()
 	// defer nostrSendMutex.Unlock()
 	// Initialize context if nil
+	//nostrMutex.Lock()
+	//defer nostrMutex.Unlock()
+
 	if globalCtx == nil {
 		globalCtx = context.Background()
 	}
@@ -844,6 +866,7 @@ func nostrSend(sessionID, from string, protoMessage ProtoMessage, messageType, f
 		defer cancel()
 
 		err = relay.Publish(ctx, event)
+		time.Sleep(time.Millisecond * 400)
 		if err != nil {
 			log.Printf("Error publishing event: %v\n", err)
 			return err
@@ -853,14 +876,14 @@ func nostrSend(sessionID, from string, protoMessage ProtoMessage, messageType, f
 }
 
 func nostrGetData(key string) (interface{}, bool) {
-	// nostrMutex.Lock()
-	// defer nostrMutex.Unlock()
+	//nostrMutex.Lock()
+	//defer nostrMutex.Unlock()
 	return nostrMessageCache.Get(key)
 }
 
 func nostrSetData(key string, value interface{}) {
-	// nostrMutex.Lock()
-	// defer nostrMutex.Unlock()
+	//nostrMutex.Lock()
+	//defer nostrMutex.Unlock()
 	nostrMessageCache.Set(key, value, cache.DefaultExpiration)
 }
 

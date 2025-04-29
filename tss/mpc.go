@@ -53,6 +53,8 @@ var (
 	msgFetchTimeout  = 700 //TODO: change back to 70 after testing
 )
 
+var nostrMsgMutex sync.Mutex
+
 func SessionState(session string) string {
 	status, exists := statusMap[session]
 	if !exists {
@@ -608,10 +610,10 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 		}
 
 		// Release the main mutex temporarily during nostrSend to prevent deadlocks
-		nostrMutex.Lock()
+		//nostrMutex.Lock()
 		err = nostrSend(m.SessionID, from, protoMessage, "", "", "")
-		time.Sleep(time.Second * 1)
-		nostrMutex.Unlock()
+		//time.Sleep(time.mi)
+		//nostrMutex.Unlock()
 		if err != nil {
 			return fmt.Errorf("failed to send nostr message: %w", err)
 		}
@@ -844,11 +846,13 @@ func flagPartyComplete(serverURL, session, localPartyID string) error {
 }
 
 func downloadMessage(server, session, sessionKey, key string, tssServerImp ServiceImpl, endCh chan struct{}, wg *sync.WaitGroup, type_net string) {
-
 	defer wg.Done()
 	isApplyingMessages := false
-	until := time.Now().Add(time.Duration(msgFetchTimeout) * time.Second)
+	until := time.Now().Add(time.Duration(msgFetchTimeout) * time.Millisecond * 50)
 	msgMap := make(map[string]bool)
+
+	// Create a mutex for protecting nostr message operations
+	var nostrMsgMutex sync.Mutex
 
 	for {
 		select {
@@ -856,7 +860,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			Logln("BBMTLog", "Received signal to end downloadMessage. Stopping...")
 			return
 
-		case <-time.After(time.Second):
+		case <-time.After(time.Millisecond * 50):
 			if time.Since(until) > 0 {
 				Logln("BBMTLog", "Received timeout to end downloadMessage. Stopping...")
 				return
@@ -864,11 +868,11 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 
 			// Prevent multiple fetch and apply processes at once
 			if isApplyingMessages {
-				Logln("BBMTLog", "Already applying messages, skipping fetch.")
+				//Logln("BBMTLog", "Already applying messages, skipping fetch.")
 				continue
 			}
 			isApplyingMessages = true
-			Logln("BBMTLog", "Fetching messages...", key)
+			//Logln("BBMTLog", "Fetching messages...", key)
 
 			// TODO: illustrative
 			var resp *http.Response
@@ -883,6 +887,55 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				SeqNo     string   `json:"sequence_no,omitempty"`
 				Hash      string   `json:"hash,omitempty"`
 			}
+
+			if type_net == "nostr" {
+				// Protect nostr message operations with mutex
+				nostrMsgMutex.Lock()
+				msg, found := nostrGetData("message-" + session)
+				nostrMsgMutex.Unlock()
+
+				if !found {
+					Logln("BBMTLog", "No message found for session:", session)
+					isApplyingMessages = false
+					continue
+				}
+
+				protoMessage, ok := msg.(ProtoMessage)
+				if !ok {
+					Logln("BBMTLog", "Invalid message type for session:", session)
+					isApplyingMessages = false
+					continue
+				}
+
+				var message struct {
+					SessionID string   `json:"session_id,omitempty"`
+					From      string   `json:"from,omitempty"`
+					To        []string `json:"to,omitempty"`
+					Body      string   `json:"body,omitempty"`
+					SeqNo     string   `json:"sequence_no,omitempty"`
+					Hash      string   `json:"hash,omitempty"`
+				}
+
+				// Protect message parsing with mutex
+				nostrMsgMutex.Lock()
+				if err := json.Unmarshal(protoMessage.RawMessage, &message); err != nil {
+					nostrMsgMutex.Unlock()
+					Logln("BBMTLog", "Failed to parse RawMessage:", err)
+					isApplyingMessages = false
+					continue
+				}
+				nostrMsgMutex.Unlock()
+
+				messages = []struct {
+					SessionID string   `json:"session_id,omitempty"`
+					From      string   `json:"from,omitempty"`
+					To        []string `json:"to,omitempty"`
+					Body      string   `json:"body,omitempty"`
+					SeqNo     string   `json:"sequence_no,omitempty"`
+					Hash      string   `json:"hash,omitempty"`
+				}{message}
+			}
+
 			if type_net != "nostr" {
 
 				//Fetch messages from the server ( master device localnet relay )
@@ -925,57 +978,6 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				//Logln("BBMTLog", "Messages:", messages)
 			}
 
-			if type_net == "nostr" {
-
-				//key = "message-" + session
-				//nostrDownloadMutex.Lock()
-				//defer nostrMutex.Unlock()
-				msg, found := nostrGetData("message-" + session)
-
-				//nostrDownloadMutex.Unlock()
-				if !found {
-					Logln("BBMTLog", "No message found for session:", session)
-					isApplyingMessages = false
-					continue
-				}
-				protoMessage, ok := msg.(ProtoMessage)
-				if !ok {
-					Logln("BBMTLog", "Invalid message type for session:", session)
-					isApplyingMessages = false
-					continue
-				}
-
-				var message struct {
-					SessionID string   `json:"session_id,omitempty"`
-					From      string   `json:"from,omitempty"`
-					To        []string `json:"to,omitempty"`
-					Body      string   `json:"body,omitempty"`
-					SeqNo     string   `json:"sequence_no,omitempty"`
-					Hash      string   `json:"hash,omitempty"`
-				}
-				if err := json.Unmarshal(protoMessage.RawMessage, &message); err != nil {
-					Logln("BBMTLog", "Failed to parse RawMessage:", err)
-					isApplyingMessages = false
-					continue
-				}
-				messages = []struct {
-					SessionID string   `json:"session_id,omitempty"`
-					From      string   `json:"from,omitempty"`
-					To        []string `json:"to,omitempty"`
-					Body      string   `json:"body,omitempty"`
-					SeqNo     string   `json:"sequence_no,omitempty"`
-					Hash      string   `json:"hash,omitempty"`
-				}{message}
-
-				//messages = append(messages, rawMsg)
-
-			}
-			// jsonBytes, err := json.MarshalIndent(messages, "", "  ")
-			// if err != nil {
-			// 	Logln("BBMTLog", "Error marshaling JSON:", err)
-			// 	return
-			// }
-			// Logln("BBMTLog", "Messages:", string(jsonBytes))
 			// Sort messages by sequence number
 			sort.SliceStable(messages, func(i, j int) bool {
 				seqNoI, errI := strconv.Atoi(messages[i].SeqNo)
@@ -991,18 +993,18 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			// Process messages sequentially
 			for _, message := range messages {
 				if message.From == key {
-					Logln("BBMTLog", "Skipping message from self...")
+					//Logln("BBMTLog", "Skipping message from self...")
 					continue
 				}
 
-				Logln("BBMTLog", "Checking message seqNo", message.SeqNo, key)
+				//Logln("BBMTLog", "Checking message seqNo", message.SeqNo, key)
 				_, exists := msgMap[message.Hash]
 				if exists {
-					Logln("BBMTLog", "Already applied message:", message.SeqNo, key)
+					//Logln("BBMTLog", "Already applied message:", message.SeqNo, key)
 					if type_net != "nostr" {
 						deleteMessage(server, session, key, message.Hash)
 					} else {
-						//nostrMessageCache.Delete(session)
+						nostrMessageCache.Delete(session)
 					}
 					continue
 				} else {
@@ -1052,7 +1054,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				if type_net != "nostr" {
 					deleteMessage(server, session, key, message.Hash)
 				} else {
-					//nostrMessageCache.Delete(session)
+					nostrMessageCache.Delete(session)
 				}
 				//nostrMessageCache.Delete(session)
 				//nostrMessageCache.Delete(session)
