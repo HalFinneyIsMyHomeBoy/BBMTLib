@@ -13,15 +13,6 @@ mkdir -p "$BUILD_DIR"
 echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go
 
-# Generate key pairs
-#KEYPAIR1=$("$BUILD_DIR/$BIN_NAME" keypair)
-#KEYPAIR2=$("$BUILD_DIR/$BIN_NAME" keypair)
-
-#PRIVATE_KEY1=$(echo "$KEYPAIR1" | jq -r '.privateKey')
-#PRIVATE_KEY2=$(echo "$KEYPAIR2" | jq -r '.privateKey')
-
-#PUBLIC_KEY1=$(echo "$KEYPAIR1" | jq -r '.publicKey')
-#PUBLIC_KEY2=$(echo "$KEYPAIR2" | jq -r '.publicKey')
 
 # Generate random session ID and chain code
 SESSION_ID=$("$BUILD_DIR/$BIN_NAME" random)
@@ -33,13 +24,18 @@ HOST="127.0.0.1"
 SERVER="http://$HOST:$PORT"
 
 PARTY2="peer2"
+PARTY3="peer3"
 
- echo "Starting running peer..."
+ echo "Start listening on peer 2..."
  "$BUILD_DIR/$BIN_NAME" MPCSentBTCPeer "$PARTY2" &
 PID1=$!
 
+echo "Start listening on peer 3..."
+"$BUILD_DIR/$BIN_NAME" MPCSentBTCPeer "$PARTY3" &    
+PID2=$!
+
 # Handle cleanup on exit
-trap "echo 'Stopping processes...'; kill $PID1; exit" SIGINT SIGTERM
+trap "echo 'Stopping processes...'; kill $PID1; kill $PID2; exit" SIGINT SIGTERM
 
 echo "running peer processes running. Press Ctrl+C to stop."
 

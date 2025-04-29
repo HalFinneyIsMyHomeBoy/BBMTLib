@@ -24,12 +24,10 @@ var (
 	relay                  *nostr.Relay
 	globalCtx              context.Context
 	nostrRelay             string = "ws://bbw-nostr.xyz"
-	KeysignApprovalTimeout        = 3 * time.Second
+	KeysignApprovalTimeout        = 2 * time.Second
 	totalSentMessages      []ProtoMessage
 	nostrMutex             sync.Mutex
 	sessionMutex           sync.Mutex
-	handshakeMutex         sync.Mutex
-	contextMutex           sync.Mutex
 	nostrSendMutex         sync.Mutex
 	nostrDownloadMutex     sync.Mutex
 )
@@ -121,35 +119,6 @@ func GetNostrPartyPubKeys(party string) (map[string]string, error) {
 		return nil, err
 	}
 	return keyShare.NostrPartyPubKeys, nil
-}
-
-func GetMaster(currentParties string, localParty string) (string, string) {
-	keyShare, err := GetKeyShare(localParty)
-	if err != nil {
-		log.Printf("Error getting key share: %v\n", err)
-		return "", ""
-	}
-
-	var masterPeer string
-	var masterPubKey string
-	parties := strings.Split(currentParties, ",")
-	for _, peer := range parties {
-		if pubKey, ok := keyShare.NostrPartyPubKeys[peer]; ok {
-			if pubKey > masterPubKey {
-				masterPubKey = pubKey
-				masterPeer = peer
-			}
-		}
-	}
-	return masterPeer, masterPubKey
-}
-
-func isMaster(currentParties string, localParty string) bool {
-	masterPeer, _ := GetMaster(currentParties, localParty)
-	if masterPeer == localParty {
-		return true
-	}
-	return false
 }
 
 func NostrListen(localParty string) {
@@ -297,8 +266,6 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 		}
 	}
 
-	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
-
 	nostrSession := NostrSession{
 		SessionID:    SessionID,
 		Participants: []string{localParty},
@@ -312,10 +279,11 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 		nostrSessionList = append(nostrSessionList, nostrSession)
 	}
 
-	//==============================SEND INIT_HANDSHAKE TO NOSTRPUBKEYS OF ALL PARTIES========================
+	//==============================SEND (INIT_HANDSHAKE) TO ALL PARTIES========================
+	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
 	nostrSend(SessionID, localParty, protoMessage, "", "", "")
+	//==============================COLLECT ACK_HANDSHAKES==============================
 
-	//==============================COLLECT HANDSHAKES==============================
 	retryCount := 0
 	maxRetries := 300
 	sessionReady := false
@@ -329,9 +297,8 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 				if participationRatio >= 0.66 {
 					Logf("We have 2/3 of participants approved , sending (start_keysign) for session: %s", SessionID)
 					sessionReady = true
-					//=================send start_keysign to all participants=====================
+					//=================(ack_handshakes) recieved, send (start_keysign) to all participants=====================
 					startKeysignMaster(SessionID, item.Participants, localParty)
-					//initNostrKeysignSession(SessionID, item.Participants, key)
 					return sessionReady, nil
 				} else {
 					Logf("We do not have 2/3 of participants approved yet for session: %s", SessionID)
@@ -354,13 +321,12 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 
 func collectAckHandshake(sessionID, localParty string, protoMessage ProtoMessage) {
 
-	Logf("collectAckHandshake running")
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID && item.TxRequest == protoMessage.TxRequest {
 			if !contains(item.Participants, protoMessage.From) {
 				item.Participants = append(item.Participants, protoMessage.From)
 				nostrSessionList[i] = item
-				Logf("collected ack handshake from %s for session: %s", protoMessage.From, sessionID)
+				Logf("Collected (ack_handshake) from %s for session: %s", protoMessage.From, sessionID)
 			}
 		}
 	}
@@ -375,8 +341,8 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		return
 	}
 
-	Logf("init handshake message received from %s\n", protoMessage.From)
-	Logf("sending ack handshake message to %s\n", localParty)
+	Logf("(init_handshake) message received from %s\n", protoMessage.From)
+	Logf("sending (ack_handshake) message to %s\n", protoMessage.From)
 	//============== UI - ask user to approve TX==================
 	//TODO
 	//if approved, send ack, and set status="pending"
@@ -392,7 +358,7 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 	}
 	if !contains(nostrSession.Participants, protoMessage.From) {
 		nostrSession.Participants = append(nostrSession.Participants, protoMessage.From)
-		Logf("collected ack handshake from %s for session: %s", protoMessage.From, session)
+		Logf("Collected ack handshake from %s for session: %s", protoMessage.From, session)
 	}
 
 	if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
@@ -565,9 +531,6 @@ func nostrSend(sessionID, from string, protoMessage ProtoMessage, messageType, f
 		log.Printf("Error marshalling protoMessage: %v\n", err)
 		return err
 	}
-	if protoMessage.FunctionType == "init_handshake" && protoMessage.From == "peer2" {
-		fmt.Printf("init_handshake from %s\n", protoMessage.From)
-	}
 
 	for _, recipient := range protoMessage.Recipients {
 		sharedSecret, err := nip04.ComputeSharedSecret(recipient.PubKey, keyShare.LocalNostrPrivKey)
@@ -596,7 +559,8 @@ func nostrSend(sessionID, from string, protoMessage ProtoMessage, messageType, f
 		defer cancel()
 
 		err = relay.Publish(ctx, event)
-		time.Sleep(time.Millisecond * 400)
+		time.Sleep(time.Millisecond * 250)
+
 		if err != nil {
 			log.Printf("Error publishing event: %v\n", err)
 			return err
@@ -606,14 +570,10 @@ func nostrSend(sessionID, from string, protoMessage ProtoMessage, messageType, f
 }
 
 func nostrGetData(key string) (interface{}, bool) {
-	//nostrMutex.Lock()
-	//defer nostrMutex.Unlock()
 	return nostrMessageCache.Get(key)
 }
 
 func nostrSetData(key string, value interface{}) {
-	//nostrMutex.Lock()
-	//defer nostrMutex.Unlock()
 	nostrMessageCache.Set(key, value, cache.DefaultExpiration)
 }
 

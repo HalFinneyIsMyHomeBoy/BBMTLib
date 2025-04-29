@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,37 +22,6 @@ func randomSeed(length int) string {
 	}
 	return string(result)
 }
-
-// func getKeyShare(party string) (tss.LocalState, error) {
-
-// 	data, err := os.ReadFile(party + ".ks")
-// 	if err != nil {
-// 		fmt.Printf("Go Error: %v\n", err)
-// 	}
-
-// 	// Decode base64
-// 	decodedData, err := base64.StdEncoding.DecodeString(string(data))
-// 	if err != nil {
-// 		fmt.Printf("Go Error: %v\n", err)
-// 	}
-
-// 	// Parse JSON into LocalState
-// 	var keyShare tss.LocalState
-// 	if err := json.Unmarshal(decodedData, &keyShare); err != nil {
-// 		fmt.Printf("Go Error: %v\n", err)
-// 	}
-
-// 	// var masterPeer string
-// 	// var maxKey string
-// 	// for peer, key := range localState.NostrPartyPubKeys {
-// 	// 	if key > maxKey { // Direct string comparison
-// 	// 		maxKey = key
-// 	// 		masterPeer = peer
-// 	// 	}
-// 	// }
-// 	// fmt.Printf("Master host of the party is : %s: %s\n", masterPeer, maxKey)
-// 	return keyShare, nil
-// }
 
 func main() {
 
@@ -81,14 +49,6 @@ func main() {
 
 	if mode == "relay" {
 		port := os.Args[2]
-		//useNostr, err := strconv.ParseBool(os.Args[3])
-		// if err != nil {
-		// 	fmt.Printf("Go Error: %v\n", err)
-		// }
-		//net_type := os.Args[3]
-		// nostrRelay := os.Args[4]
-		// nostrPubKey := os.Args[5]
-		// nostrPrivKey := os.Args[6]
 		defer tss.StopRelay()
 		tss.RunRelay(port)
 		select {}
@@ -103,19 +63,7 @@ func main() {
 		parties := os.Args[6]
 		encKey := os.Args[7]
 		decKey := os.Args[8]
-
 		sessionKey := os.Args[9]
-
-		//ol(os.Args[10])
-		// var net_type string
-
-		// if useNostr {
-		// 	net_type = "nostr"
-		// } else {
-		// 	net_type = ""
-		// }
-
-		//nostrRelay := os.Args[11]
 		nostrPubKey := os.Args[12]
 		nostrPrivKey := os.Args[13]
 		nostrPartyPubKeys := os.Args[14]
@@ -153,7 +101,6 @@ func main() {
 			localState.LocalNostrPubKey = nostrPubKey
 			localState.LocalNostrPrivKey = nostrPrivKey
 			localState.NostrPartyPubKeys = nostrPartyPubKeysMap.NostrPubKeys
-			//var peer1 = localState.NostrPartyPubKeys["peer1"]
 
 			// Marshal the updated LocalState
 			updatedKeyshare, err := json.Marshal(localState)
@@ -255,7 +202,6 @@ func main() {
 		session := randomSeed(64)    // Generate random session ID
 		message := randomSeed(64)    // Random message to sign
 		sessionKey := randomSeed(64) // Random session key
-		// Split parties string into individual peers
 		peerList := strings.Split(parties, ",")
 		net_type := ""
 
@@ -265,12 +211,9 @@ func main() {
 			go tss.RunRelay("55055")
 			time.Sleep(time.Second)
 		}
-		// Loop through each peer
 
 		for _, peer := range peerList {
-			masterPeer, masterPubKey := tss.GetMaster(strings.Join(peerList, ","), peer)
-			fmt.Printf("Master peer: %s\n", masterPeer)
-			fmt.Printf("Master pubkey: %s\n", masterPubKey)
+
 			fmt.Printf("Processing peer: %s\n", peer)
 
 			// Read and decode keyshare file for this peer
@@ -327,7 +270,6 @@ func main() {
 			messageHashBytes := []byte(messageHash)
 			messageHashBase64 := base64.StdEncoding.EncodeToString(messageHashBytes)
 
-			//go func(peer string) {
 			go func() {
 				keysign, err := tss.JoinKeysign(server, party, parties, session, sessionKey, encKey, decKey, string(keyshare), derivePath, messageHashBase64, net_type)
 				if err != nil {
@@ -336,20 +278,19 @@ func main() {
 					fmt.Printf("\n [%s] Keysign Result %s\n", party, keysign)
 				}
 			}()
-			//}(peer)
 		}
 		select {}
 	}
 
 	if mode == "MPCSentBTCMaster" {
 
+		//This is to be called by the party initiating the session to send BTC
+		//The party to initiate this is the master by default for the session.
+
 		fmt.Println("MPCSentBTC called")
 		parties := "peer1,peer2,peer3" // All participating parties
 		session := randomSeed(64)      // Generate random session ID
 		sessionKey := randomSeed(64)   // Random session key
-		// Split parties string into individual peers
-		//peerList := strings.Split(parties, ",")
-		//keyshare := os.Args[8]
 		derivePath := "m/44'/0'/0'/0/0"
 		receiverAddress := "mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
 		amountSatoshi := 1000
@@ -359,21 +300,13 @@ func main() {
 
 		if net_type == "nostr" {
 			net_type = "nostr"
-			//for _, peer := range peerList {
-			// Activate nostr listener, which should be listening by default
 			go tss.NostrListen(peer)
-			//select {}
-			//}
 			time.Sleep(time.Second * 2)
 		} else {
 			go tss.RunRelay("55055")
 			time.Sleep(time.Second)
 		}
-		// Loop through each peer
 
-		// masterPeer, masterPubKey := tss.GetMaster(strings.Join(peerList, ","), peer)
-		// fmt.Printf("Master peer: %s\n", masterPeer)
-		// fmt.Printf("Master pubkey: %s\n", masterPubKey)
 		fmt.Printf("Processing peer: %s\n", peer)
 		keyshareFile := peer + ".ks"
 
@@ -437,11 +370,6 @@ func main() {
 			decKey = ""
 		}
 
-		// message hash, base64 encoded
-		// messageHash, _ := tss.Sha256(message)
-		// messageHashBytes := []byte(messageHash)
-		// messageHashBase64 := base64.StdEncoding.EncodeToString(messageHashBytes)
-
 		result, err := tss.MpcSendBTC(server, peer, parties, session, sessionKey, encKey, decKey, string(keyshare), derivePath, btcPub, senderAddress, receiverAddress, int64(amountSatoshi), int64(estimatedFee), net_type, "true")
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
@@ -449,220 +377,22 @@ func main() {
 			fmt.Printf("\n [%s] Keysign Result %s\n", peer, result)
 		}
 
-		//}(peer)
-		//select {}
 	}
 
 	if mode == "MPCSentBTCPeer" {
-
+		//Used for testing nostr MPCsendBTC
+		//This is to be run first by each party. Each party should be listening for nostr messages by default.
 		fmt.Println("MPCPeer called")
 		party := os.Args[2]
-		//parties := "peer1,peer2"     // All participating parties
-		//session := randomSeed(64)    // Generate random session ID
-		//sessionKey := randomSeed(64) // Random session key
-		// Split parties string into individual peers
-		//peerList := strings.Split(parties, ",")
-		//keyshare := os.Args[8]
-		// derivePath := "m/44'/0'/0'/0/0"
-		// receiverAddress := "mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
-		// amountSatoshi := 1000
-		// estimatedFee := 600
-		//peer := "peer2"
 		net_type := "nostr"
 
 		if net_type == "nostr" {
 			net_type = "nostr"
-			//for _, peer := range peerList {
-			// Activate nostr listener, which should be listening by default
 			tss.NostrListen(party)
 			select {}
-			//}
-			//time.Sleep(time.Second * 2)
 		} else {
 			go tss.RunRelay("55055")
 			time.Sleep(time.Second)
-		}
-		// Loop through each peer
-
-		// // masterPeer, masterPubKey := tss.GetMaster(strings.Join(peerList, ","), peer)
-		// // fmt.Printf("Master peer: %s\n", masterPeer)
-		// // fmt.Printf("Master pubkey: %s\n", masterPubKey)
-		// fmt.Printf("Processing peer: %s\n", peer)
-		// keyshareFile := peer + ".ks"
-
-		// // Read and decode keyshare file for this peer
-		// keyshare, err := os.ReadFile(keyshareFile)
-		// if err != nil {
-		// 	fmt.Printf("Error reading keyshare file for %s: %v\n", peer, err)
-		// 	return
-		// }
-		// decodedKeyshare, err := base64.StdEncoding.DecodeString(string(keyshare))
-		// if err != nil {
-		// 	fmt.Printf("Failed to decode base64 keyshare: %v\n", err)
-		// 	return
-		// }
-
-		// // Get the public key and chain code from keyshare
-		// var localState tss.LocalState
-		// if err := json.Unmarshal(decodedKeyshare, &localState); err != nil {
-		// 	fmt.Printf("Failed to parse keyshare: %v\n", err)
-		// 	return
-		// }
-
-		// // Get the derived public key using chain code from keyshare
-		// btcPub, err := tss.GetDerivedPubKey(localState.PubKey, localState.ChainCodeHex, derivePath, false)
-		// if err != nil {
-		// 	fmt.Printf("Failed to get derived public key: %v\n", err)
-		// 	return
-		// }
-
-		// // Get the sender address
-		// senderAddress, err := tss.ConvertPubKeyToBTCAddress(btcPub, "testnet3")
-		// if err != nil {
-		// 	fmt.Printf("Failed to get sender address: %v\n", err)
-		// 	return
-		// }
-
-		// fmt.Printf("Successfully processed keyshare for %s\n", peer)
-
-		// fmt.Println("Testing...")
-		// // prepare args
-		// server := "http://127.0.0.1:55055" // Default relay server
-
-		// // Generate keypair for encryption/decryption
-		// keypair, err := tss.GenerateKeyPair()
-		// if err != nil {
-		// 	fmt.Printf("Error generating keypair: %v\n", err)
-		// 	return
-		// }
-		// var keypairMap map[string]string
-		// if err := json.Unmarshal([]byte(keypair), &keypairMap); err != nil {
-		// 	fmt.Printf("Error parsing keypair: %v\n", err)
-		// 	return
-		// }
-		// encKey := keypairMap["PublicKey"]  // Public key for encryption
-		// decKey := keypairMap["PrivateKey"] // Private key for decryption
-
-		// derivePath = "m/44'/0'/0'/0/0" // Standard BTC derivation path
-
-		// if len(sessionKey) > 0 {
-		// 	encKey = ""
-		// 	decKey = ""
-		// }
-
-		// // message hash, base64 encoded
-		// // messageHash, _ := tss.Sha256(message)
-		// // messageHashBytes := []byte(messageHash)
-		// // messageHashBase64 := base64.StdEncoding.EncodeToString(messageHashBytes)
-
-		// result, err := tss.MpcSendBTC(server, peer, parties, session, sessionKey, encKey, decKey, string(keyshare), derivePath, btcPub, senderAddress, receiverAddress, int64(amountSatoshi), int64(estimatedFee), net_type, "true")
-		// if err != nil {
-		// 	fmt.Printf("Go Error: %v\n", err)
-		// } else {
-		// 	fmt.Printf("\n [%s] Keysign Result %s\n", peer, result)
-		// }
-
-		//}(peer)
-		//select {}
-	}
-
-	if mode == "originalsendbtc" {
-		fmt.Println("originalsendbtc called")
-		server := os.Args[2]
-		session := os.Args[3]
-		party := os.Args[4]
-		parties := os.Args[5]
-		encKey := os.Args[6]
-		decKey := os.Args[7]
-		sessionKey := randomSeed(64)
-		keyshare := os.Args[8]
-		derivePath := os.Args[9]
-		receiverAddress := os.Args[10]
-		amountSatoshi := os.Args[11]
-		estimatedFee := os.Args[12]
-		net_type := os.Args[13]
-		newSession := os.Args[14]
-		// useNostr, err := strconv.ParseBool(os.Args[13])
-		// if err != nil {
-		// 	fmt.Printf("Failed to parse useNostr flag: %v\n", err)
-		// 	return
-		// }
-		//nostrPubKey := os.Args[13]
-		//nostrPrivKey := os.Args[14]
-		//peerNostrPubKey := os.Args[15]
-
-		// Decode base64 keyshare
-		//parties := "peer1,peer2"  // All participating parties
-		//session := randomSeed(64) // Generate random session ID
-		//sessionKey := ""          // Random session key
-		// Split parties string into individual peers
-		peerList := strings.Split(parties, ",")
-		if net_type == "nostr" {
-			net_type = "nostr"
-			for _, peer := range peerList {
-				// Activate nostr listener, which should be listening by default
-				go tss.NostrListen(peer)
-
-			}
-			time.Sleep(time.Second * 2)
-		} else {
-			go tss.RunRelay("55055")
-			time.Sleep(time.Second)
-		}
-
-		decodedKeyshare, err := base64.StdEncoding.DecodeString(keyshare)
-		if err != nil {
-			fmt.Printf("Failed to decode base64 keyshare: %v\n", err)
-			return
-		}
-
-		// Get the public key and chain code from keyshare
-		var localState tss.LocalState
-		if err := json.Unmarshal(decodedKeyshare, &localState); err != nil {
-			fmt.Printf("Failed to parse keyshare: %v\n", err)
-			return
-		}
-
-		// Get the derived public key using chain code from keyshare
-		btcPub, err := tss.GetDerivedPubKey(localState.PubKey, localState.ChainCodeHex, derivePath, false)
-		if err != nil {
-			fmt.Printf("Failed to get derived public key: %v\n", err)
-			return
-		}
-
-		// Get the sender address
-		senderAddress, err := tss.ConvertPubKeyToBTCAddress(btcPub, "testnet3")
-		if err != nil {
-			fmt.Printf("Failed to get sender address: %v\n", err)
-			return
-		}
-
-		amount, err := strconv.ParseInt(amountSatoshi, 10, 64)
-		if err != nil {
-			fmt.Printf("Failed to parse amount: %v\n", err)
-			return
-		}
-		fee, err := strconv.ParseInt(estimatedFee, 10, 64)
-		if err != nil {
-			fmt.Printf("Failed to parse fee: %v\n", err)
-			return
-		}
-
-		if len(sessionKey) > 0 {
-			encKey = ""
-			decKey = ""
-		}
-
-		result, err := tss.MpcSendBTC(
-			server, party, parties, session, sessionKey, encKey, decKey, keyshare, derivePath,
-			btcPub, senderAddress, receiverAddress, amount, fee, net_type, newSession,
-		)
-		time.Sleep(time.Second)
-
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		} else {
-			fmt.Printf("\n [%s] MPCSendBTC Result %s\n", party, result)
 		}
 	}
 

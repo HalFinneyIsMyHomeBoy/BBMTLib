@@ -594,9 +594,9 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 		}
 
 		// Release the main mutex temporarily during nostrSend to prevent deadlocks
-		nostrMutex.Lock()
+		//nostrMutex.Lock()
 		err = nostrSend(m.SessionID, from, protoMessage, "", "", "")
-		nostrMutex.Unlock()
+		//nostrMutex.Unlock()
 
 		if err != nil {
 			return fmt.Errorf("failed to send nostr message: %w", err)
