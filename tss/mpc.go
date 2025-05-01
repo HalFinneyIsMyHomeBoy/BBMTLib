@@ -49,8 +49,8 @@ var (
 	decryptionKey    = ""
 	localStateMemory = ""
 	keyGenTimeout    = 60
-	keySignTimeout   = 600 //TODO: change back to 60 after testing
-	msgFetchTimeout  = 700 //TODO: change back to 70 after testing
+	keySignTimeout   = 60
+	msgFetchTimeout  = 70
 )
 
 var nostrMsgMutex sync.Mutex
@@ -389,10 +389,6 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		}
 	}
 
-	if net_type == "nostr" {
-		nostrDeleteSession(session)
-	}
-
 	status.Step++
 	status.Info = "session ended"
 	setStatus(session, status)
@@ -593,10 +589,7 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 			}
 		}
 
-		// Release the main mutex temporarily during nostrSend to prevent deadlocks
-		//nostrMutex.Lock()
-		err = nostrSend(m.SessionID, from, protoMessage, "", "", "")
-		//nostrMutex.Unlock()
+		err = nostrSend(from, protoMessage)
 
 		if err != nil {
 			return fmt.Errorf("failed to send nostr message: %w", err)
@@ -830,7 +823,7 @@ func flagPartyComplete(serverURL, session, localPartyID string) error {
 func downloadMessage(server, session, sessionKey, key string, tssServerImp ServiceImpl, endCh chan struct{}, wg *sync.WaitGroup, type_net string) {
 	defer wg.Done()
 	isApplyingMessages := false
-	until := time.Now().Add(time.Duration(msgFetchTimeout) * time.Millisecond * 50)
+	until := time.Now().Add(time.Duration(msgFetchTimeout) * time.Second)
 	msgMap := make(map[string]bool)
 
 	// Create a mutex for protecting nostr message operations
@@ -842,7 +835,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			Logln("BBMTLog", "Received signal to end downloadMessage. Stopping...")
 			return
 
-		case <-time.After(time.Millisecond * 50):
+		case <-time.After(time.Second):
 			if time.Since(until) > 0 {
 				Logln("BBMTLog", "Received timeout to end downloadMessage. Stopping...")
 				return
@@ -979,8 +972,6 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					Logln("BBMTLog", "Already applied message:", message.SeqNo, key)
 					if type_net != "nostr" {
 						deleteMessage(server, session, key, message.Hash)
-					} else {
-						nostrMessageCache.Delete(session)
 					}
 					continue
 				} else {
@@ -1029,8 +1020,6 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 
 				if type_net != "nostr" {
 					deleteMessage(server, session, key, message.Hash)
-				} else {
-					nostrMessageCache.Delete(session)
 				}
 
 			}

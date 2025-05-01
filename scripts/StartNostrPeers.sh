@@ -14,18 +14,9 @@ echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go
 
 
-# Generate random session ID and chain code
-SESSION_ID=$("$BUILD_DIR/$BIN_NAME" random)
-MESSAGE=$("$BUILD_DIR/$BIN_NAME" random)
-
-# Server and party details
-PORT=55055
-HOST="127.0.0.1"
-SERVER="http://$HOST:$PORT"
-
 PARTY2="peer2"
 PARTY3="peer3"
-
+PARTY4="peer4"
  echo "Start listening on peer 2..."
  "$BUILD_DIR/$BIN_NAME" MPCSentBTCPeer "$PARTY2" &
 PID1=$!
@@ -34,8 +25,12 @@ echo "Start listening on peer 3..."
 "$BUILD_DIR/$BIN_NAME" MPCSentBTCPeer "$PARTY3" &    
 PID2=$!
 
+echo "Start listening on peer 4..." 
+"$BUILD_DIR/$BIN_NAME" MPCSentBTCPeer "$PARTY4" &
+PID3=$!
+
 # Handle cleanup on exit
-trap "echo 'Stopping processes...'; kill $PID1; kill $PID2; exit" SIGINT SIGTERM
+trap "echo 'Stopping processes...'; kill $PID1; kill $PID2; kill $PID3; exit" SIGINT SIGTERM
 
 echo "running peer processes running. Press Ctrl+C to stop."
 
