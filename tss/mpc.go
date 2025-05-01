@@ -871,7 +871,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			if type_net == "nostr" {
 
 				nostrMsgMutex.Lock()
-				msg, found := nostrGetData("message-" + session)
+				msgs, found := nostrGetData("message-" + session)
 				nostrMsgMutex.Unlock()
 
 				if !found {
@@ -880,36 +880,39 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					continue
 				}
 
-				protoMessage, ok := msg.(ProtoMessage)
+				protoMessages, ok := msgs.([]*ProtoMessage)
 				if !ok {
 					Logln("BBMTLog", "Invalid message type for session:", session)
 					isApplyingMessages = false
 					continue
 				}
 
-				var message struct {
+				messages = make([]struct {
 					SessionID string   `json:"session_id,omitempty"`
 					From      string   `json:"from,omitempty"`
 					To        []string `json:"to,omitempty"`
 					Body      string   `json:"body,omitempty"`
 					SeqNo     string   `json:"sequence_no,omitempty"`
 					Hash      string   `json:"hash,omitempty"`
-				}
+				}, 0, len(protoMessages))
 
-				if err := json.Unmarshal(protoMessage.RawMessage, &message); err != nil {
-					Logln("BBMTLog", "Failed to parse RawMessage:", err)
-					isApplyingMessages = false
-					continue
-				}
+				for _, protoMsg := range protoMessages {
+					var message struct {
+						SessionID string   `json:"session_id,omitempty"`
+						From      string   `json:"from,omitempty"`
+						To        []string `json:"to,omitempty"`
+						Body      string   `json:"body,omitempty"`
+						SeqNo     string   `json:"sequence_no,omitempty"`
+						Hash      string   `json:"hash,omitempty"`
+					}
 
-				messages = []struct {
-					SessionID string   `json:"session_id,omitempty"`
-					From      string   `json:"from,omitempty"`
-					To        []string `json:"to,omitempty"`
-					Body      string   `json:"body,omitempty"`
-					SeqNo     string   `json:"sequence_no,omitempty"`
-					Hash      string   `json:"hash,omitempty"`
-				}{message}
+					if err := json.Unmarshal(protoMsg.RawMessage, &message); err != nil {
+						Logln("BBMTLog", "Failed to parse RawMessage:", err)
+						continue
+					}
+
+					messages = append(messages, message)
+				}
 			}
 
 			if type_net != "nostr" {

@@ -573,6 +573,23 @@ func nostrGetData(key string) (interface{}, bool) {
 	return nostrMessageCache.Get(key)
 }
 
+func nostrAppendUniqueMessage(key string, newMsg *ProtoMessage) {
+	value, found := nostrGetData(key)
+	var msgs []*ProtoMessage
+	if found {
+		msgs = value.([]*ProtoMessage)
+		// Check if message with same SeqNo already exists
+		for _, msg := range msgs {
+			if msg.SeqNo == newMsg.SeqNo {
+				return // Duplicate found, skip
+			}
+		}
+	}
+	// Append and store
+	msgs = append(msgs, newMsg)
+	nostrSetData(key, msgs)
+}
+
 func nostrSetData(key string, value interface{}) {
 	nostrMessageCache.Set(key, value, cache.DefaultExpiration)
 }
