@@ -18,18 +18,19 @@ import (
 
 // Global variables
 var (
-	nostrSessionList       []NostrSession
-	nostrHandShakeList     []ProtoMessage
-	nostrMessageCache      = cache.New(5*time.Minute, 10*time.Minute)
-	relay                  *nostr.Relay
-	globalCtx              context.Context
-	nostrRelay             string = "ws://bbw-nostr.xyz"
-	KeysignApprovalTimeout        = 2 * time.Second
-	totalSentMessages      []ProtoMessage
-	nostrMutex             sync.Mutex
-	sessionMutex           sync.Mutex
-	nostrSendMutex         sync.Mutex
-	nostrDownloadMutex     sync.Mutex
+	nostrSessionList          []NostrSession
+	nostrHandShakeList        []ProtoMessage
+	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
+	relay                     *nostr.Relay
+	globalCtx                 context.Context
+	nostrRelay                string = "ws://bbw-nostr.xyz"
+	KeysignApprovalTimeout           = 4 * time.Second
+	KeysignApprovalMaxRetries        = 14
+	totalSentMessages         []ProtoMessage
+	nostrMutex                sync.Mutex
+	sessionMutex              sync.Mutex
+	nostrSendMutex            sync.Mutex
+	nostrDownloadMutex        sync.Mutex
 )
 
 type NostrPartyPubKeys struct {
@@ -197,25 +198,29 @@ func NostrListen(localParty string) {
 				continue
 			}
 
+			if protoMessage.From == localParty {
+				break
+			}
+
 			//only non-masters should run this
-			if protoMessage.FunctionType == "init_handshake" && protoMessage.From != localParty {
+			if protoMessage.FunctionType == "init_handshake" {
 				go AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
 			}
 
 			//Only master should run this
-			if protoMessage.FunctionType == "ack_handshake" && protoMessage.From != localParty {
+			if protoMessage.FunctionType == "ack_handshake" {
 				if protoMessage.Master.MasterPeer == localParty {
-					collectAckHandshake(protoMessage.SessionID, protoMessage)
+					collectAckHandshake(localParty, protoMessage.SessionID, protoMessage)
 				}
 			}
 
 			//non-masters should run this
-			if protoMessage.FunctionType == "start_keysign" && protoMessage.From != localParty {
+			if protoMessage.FunctionType == "start_keysign" {
 				Logf("start_keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 				go startPartyNostrMPCsendBTC(protoMessage.SessionID, protoMessage.Participants, localParty)
 			}
 
-			if protoMessage.FunctionType == "keysign" && protoMessage.From != localParty {
+			if protoMessage.FunctionType == "keysign" {
 				Logf("keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 				key := protoMessage.MessageType + "-" + protoMessage.SessionID
 				nostrMutex.Lock()
@@ -282,26 +287,41 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 	nostrSend(localParty, protoMessage)
 	//==============================COLLECT ACK_HANDSHAKES==============================
 
+	partyCount := len(keyShare.NostrPartyPubKeys)
 	retryCount := 0
-	maxRetries := 300
+	maxRetries := KeysignApprovalMaxRetries
 	sessionReady := false
-	for retryCount < maxRetries {
+	for retryCount <= maxRetries {
 		for _, item := range nostrSessionList {
 			if item.SessionID == SessionID {
 
-				partyCount := len(keyShare.NostrPartyPubKeys)
 				participantCount := len(item.Participants)
-				participationRatio := float64(participantCount) / float64(partyCount)
-				if participationRatio >= 0.66 {
-					Logf("We have 2/3 of participants approved , sending (start_keysign) for session: %s", SessionID)
-					sessionReady = true
-					//=================(ack_handshakes) recieved, send (start_keysign) to all participants=====================
-					startKeysignMaster(SessionID, item.Participants, localParty)
+				//participationRatio := float64(participantCount) / float64(partyCount)
+				if participantCount == partyCount {
+					//if participationRatio >= 0.66 {
+					Logf("All participants have approved, sending (start_keysign) for session: %s", SessionID)
+					if item.Status == "pending" {
+						sessionReady = true
+						startKeysignMaster(SessionID, item.Participants, localParty)
+					} else {
+						return false, fmt.Errorf("session not ready")
+					}
 					return sessionReady, nil
 				} else {
-					Logf("We do not have 2/3 of participants approved yet for session: %s", SessionID)
-					Logf("Waiting before retrying")
-					time.Sleep(KeysignApprovalTimeout)
+					if retryCount >= maxRetries {
+						participationRatio := float64(participantCount) / float64(partyCount)
+						if participationRatio >= 0.66 {
+							Logf("We have 2/3 of participants approved, sending (start_keysign) for session: %s", SessionID)
+							sessionReady = true
+							startKeysignMaster(SessionID, item.Participants, localParty)
+						} else {
+							Logf("Max retries reached, giving up on session: %s", SessionID)
+							return false, fmt.Errorf("max retries reached")
+						}
+					} else {
+						Logf("Waiting before retrying")
+						time.Sleep(KeysignApprovalTimeout)
+					}
 				}
 			}
 		}
@@ -309,22 +329,25 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 			break
 		}
 		retryCount++
-		if retryCount >= maxRetries {
-			Logf("Max retries reached, giving up on session: %s", SessionID)
-			return false, fmt.Errorf("max retries reached")
-		}
 	}
 	return sessionReady, nil
 }
 
-func collectAckHandshake(sessionID string, protoMessage ProtoMessage) {
+func collectAckHandshake(localParty, sessionID string, protoMessage ProtoMessage) {
+
+	keyShare, err := GetKeyShare(localParty)
+	if err != nil {
+		log.Printf("Error getting key share: %v\n", err)
+		return
+	}
 
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID && item.TxRequest == protoMessage.TxRequest {
 			if !contains(item.Participants, protoMessage.From) {
 				item.Participants = append(item.Participants, protoMessage.From)
 				nostrSessionList[i] = item
-				Logf("Collected (ack_handshake) from %s for session: %s", protoMessage.From, sessionID)
+				Logf("%s has approved session: %s", protoMessage.From, sessionID)
+				Logf("%v out of %v participants have approved", int(len(item.Participants)), int(len(keyShare.NostrPartyPubKeys)))
 			}
 		}
 	}
@@ -453,22 +476,17 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 	}
 }
 
-func nostrFlagPartyKeysignComplete(sessionID, message, body string) error {
-	sessionID = sessionID[:len(sessionID)-1]
+func nostrFlagPartyKeysignComplete(sessionID string) error {
 	for i := len(nostrSessionList) - 1; i >= 0; i-- {
 		if nostrSessionList[i].SessionID == sessionID {
 			nostrSessionList[i].Status = "keysign_complete"
 		}
 	}
 	Logf("Nostr Keysign Complete: %s", sessionID)
-	nostrDeleteSession(sessionID)
 	return nil
 }
 
 func nostrDeleteSession(sessionID string) {
-
-	sessionID = sessionID[:len(sessionID)-1]
-	// Remove session from nostrSessions where sessionID matches
 	for i := len(nostrSessionList) - 1; i >= 0; i-- {
 		if nostrSessionList[i].SessionID == sessionID {
 			nostrSessionList = append(nostrSessionList[:i], nostrSessionList[i+1:]...)

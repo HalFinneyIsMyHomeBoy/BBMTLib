@@ -397,7 +397,7 @@ func MpcSendBTC(
 				}
 
 				if newSession == "true" { //This is the master starting the session
-					fmt.Printf("Master is coordinating nostr session : %v\n", session)
+					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
 					ok, err := initiateNostrHandshake(session, key, sessionKey, txRequest)
 					if err != nil {
 						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
@@ -471,7 +471,7 @@ func MpcSendBTC(
 				}
 
 				if newSession == "true" { //This is the master starting the session
-					fmt.Printf("Master is coordinating nostr session : %v\n", session)
+					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
 					ok, err := initiateNostrHandshake(session, key, sessionKey, txRequest)
 					if err != nil {
 						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
@@ -550,6 +550,10 @@ func MpcSendBTC(
 		Logf("Script validation succeeded for input %d", i)
 	}
 
+	if net_type == "nostr" {
+		nostrDeleteSession(session)
+	}
+
 	// Serialize and broadcast
 	mpcHook("serializing tx", session, utxoSession, utxoIndex, utxoCount, false)
 	var signedTx bytes.Buffer
@@ -560,7 +564,7 @@ func MpcSendBTC(
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
 	Logln("Raw Transaction:", rawTx)
-
+	select {}
 	txid, err := PostTx(rawTx)
 	if err != nil {
 		Logf("Error broadcasting transaction: %v", err)

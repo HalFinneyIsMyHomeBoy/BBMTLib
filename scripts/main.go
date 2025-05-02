@@ -291,21 +291,16 @@ func main() {
 
 	}
 
-	if mode == "MPCSentBTCPeer" {
+	if mode == "ListenNostrMessages" {
 		//Used for testing nostr MPCsendBTC
-		//This is to be run first by each party. Each party should be listening for nostr messages by default.
-		fmt.Println("MPCPeer called")
+		//This is to be run first by each party.
+		fmt.Println("ListenNostrMessages called")
 		party := os.Args[2]
 		net_type := "nostr"
 
 		if net_type == "nostr" {
-			net_type = "nostr"
 			tss.NostrListen(party)
 			select {}
-		} else {
-			go tss.RunRelay("55055")
-			time.Sleep(time.Second)
 		}
 	}
-
 }

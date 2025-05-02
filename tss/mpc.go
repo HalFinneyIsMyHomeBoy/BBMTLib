@@ -403,7 +403,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	}
 
 	if net_type == "nostr" {
-		err = nostrFlagPartyKeysignComplete(session, message, string(sigStr))
+		err = nostrFlagPartyKeysignComplete(session)
 		if err != nil {
 			Logln("BBMTLog", "Warning: nostrFlagPartyKeysignComplete", "error", err)
 		}
