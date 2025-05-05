@@ -178,7 +178,6 @@ func postMessage(w http.ResponseWriter, r *http.Request) {
 	setData(key, messages)
 
 	w.WriteHeader(http.StatusOK)
-	//Logf("Message added to session %s: %+v", sessionID, msg) TODO: uncomment this after testing
 }
 
 func getMessage(w http.ResponseWriter, r *http.Request) {

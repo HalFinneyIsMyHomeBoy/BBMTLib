@@ -198,28 +198,29 @@ func NostrListen(localParty string) {
 				continue
 			}
 
-			if protoMessage.From == localParty {
+			if protoMessage.From == localParty { //ignore messages from self
 				break
 			}
 
-			//only non-masters should run this
+			//Master initiates the session by sending handshake to all parties
 			if protoMessage.FunctionType == "init_handshake" {
 				go AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
 			}
 
-			//Only master should run this
+			//If a party approves, they will respond to the master with an ack
 			if protoMessage.FunctionType == "ack_handshake" {
 				if protoMessage.Master.MasterPeer == localParty {
 					collectAckHandshake(localParty, protoMessage.SessionID, protoMessage)
 				}
 			}
 
-			//non-masters should run this
+			//Once master has recieved enough parties acks. Master will tell other parties to "start_keysign" for the session
 			if protoMessage.FunctionType == "start_keysign" {
 				Logf("start_keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 				go startPartyNostrMPCsendBTC(protoMessage.SessionID, protoMessage.Participants, localParty)
 			}
 
+			//Gather all messages for an ongoing keysign for a session
 			if protoMessage.FunctionType == "keysign" {
 				Logf("keysign recieved from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 				key := protoMessage.MessageType + "-" + protoMessage.SessionID
@@ -296,9 +297,7 @@ func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txR
 			if item.SessionID == SessionID {
 
 				participantCount := len(item.Participants)
-				//participationRatio := float64(participantCount) / float64(partyCount)
 				if participantCount == partyCount {
-					//if participationRatio >= 0.66 {
 					Logf("All participants have approved, sending (start_keysign) for session: %s", SessionID)
 					if item.Status == "pending" {
 						sessionReady = true
