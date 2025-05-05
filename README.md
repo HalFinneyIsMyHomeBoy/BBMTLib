@@ -41,7 +41,12 @@ gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBM
 
 - All Nostr messages are encrypted using the NIP-04 standard for this design.
 
-- It is recommended to self host a Nostr Relay or chose a Relay with a high rate limit. (Average of 30 nostr messages are sent/recieved within 20 seconds, for each UTXO)
+- It is recommended to self host a Nostr Relay
+(https://github.com/scsibug/nostr-rs-relay)
+
+- If self-hosted nostr relay is not possible, choose a Relay with a high rate limit. https://nostr.info/relays/
+
+- (Average of 30 nostr messages are sent/recieved within 20 seconds, for each UTXO)
 
 - Wallet User(s) should mutually share Nostr Pubkeys and Nostr Relay URL for later communication protocol over NOSTR to create a multiparty wallet. 
 
