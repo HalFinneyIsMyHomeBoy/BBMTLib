@@ -37,8 +37,17 @@ gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBM
 ```
 
 
-## MPC Transaction Over Nostr Diagram
-![TX Over Nostr Diagram](TX_Over_Nostr_Diagram.png)
+## MPC TSS Transaction Over Nostr Diagram
+
+- All Nostr messages are encrypted using the NIP-04 standard for this design.
+
+- It is recommended to self host a Nostr Relay or chose a Relay with a high rate limit. (Average of 30 nostr messages are sent/recieved within 20 seconds, for each UTXO)
+
+- Wallet User(s) should mutually share Nostr Pubkeys and Nostr Relay URL for later communication protocol over NOSTR to create a multiparty wallet. 
+
+- It's recommended that sharing the Nostr Pubkeys should be done privately in person or via external messaging (Signal, ProtonMail, ect)
+
+![Nostr Diagram](Nostr_Diagram.png)
 
 
 ## License  
