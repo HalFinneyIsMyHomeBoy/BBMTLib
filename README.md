@@ -37,6 +37,10 @@ gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBM
 ```
 
 
+## MPC Transaction Over Nostr Diagram
+![TX Over Nostr Diagram](TX_Over_Nostr_Diagram.png)
+
+
 ## License  
 This project is licensed under the **Apache-2.0 License**. See [LICENSE](LICENSE) for details.  
 
