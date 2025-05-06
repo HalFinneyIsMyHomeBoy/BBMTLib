@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -586,6 +588,168 @@ func nostrSetData(key string, newMsg *ProtoMessage) {
 
 	msgs = append(msgs, newMsg)
 	nostrMessageCache.Set(key, msgs, cache.DefaultExpiration)
+}
+
+func nostrDownloadMessage(server, session, sessionKey, key string, tssServerImp ServiceImpl, endCh chan struct{}, wg *sync.WaitGroup, type_net string) {
+	defer wg.Done()
+	isApplyingMessages := false
+	//until := time.Now().Add(time.Duration(msgFetchTimeout) * time.Second)
+	msgMap := make(map[string]bool)
+
+	// Create a mutex for protecting nostr message operations
+	var nostrMsgMutex sync.Mutex
+
+	for {
+		select {
+		case <-endCh:
+			//Logln("BBMTLog", "Received signal to end downloadMessage. Stopping...")
+			return
+		default:
+			if isApplyingMessages {
+				//Logln("BBMTLog", "Already applying messages, skipping fetch.")
+				continue
+			}
+
+			isApplyingMessages = true
+			//Logln("BBMTLog", "Fetching messages...", key)
+
+			var err error
+
+			var messages []struct {
+				SessionID string   `json:"session_id,omitempty"`
+				From      string   `json:"from,omitempty"`
+				To        []string `json:"to,omitempty"`
+				Body      string   `json:"body,omitempty"`
+				SeqNo     string   `json:"sequence_no,omitempty"`
+				Hash      string   `json:"hash,omitempty"`
+			}
+
+			if type_net == "nostr" {
+
+				nostrMsgMutex.Lock()
+				msgs, found := nostrGetData("message-" + session)
+				nostrMsgMutex.Unlock()
+
+				if !found {
+					//Logln("BBMTLog", "No message found for session:", session)
+					isApplyingMessages = false
+					continue
+				}
+
+				protoMessages, ok := msgs.([]*ProtoMessage)
+				if !ok {
+					//Logln("BBMTLog", "Invalid message type for session:", session)
+					isApplyingMessages = false
+					continue
+				}
+
+				messages = make([]struct {
+					SessionID string   `json:"session_id,omitempty"`
+					From      string   `json:"from,omitempty"`
+					To        []string `json:"to,omitempty"`
+					Body      string   `json:"body,omitempty"`
+					SeqNo     string   `json:"sequence_no,omitempty"`
+					Hash      string   `json:"hash,omitempty"`
+				}, 0, len(protoMessages))
+
+				for _, protoMsg := range protoMessages {
+					var message struct {
+						SessionID string   `json:"session_id,omitempty"`
+						From      string   `json:"from,omitempty"`
+						To        []string `json:"to,omitempty"`
+						Body      string   `json:"body,omitempty"`
+						SeqNo     string   `json:"sequence_no,omitempty"`
+						Hash      string   `json:"hash,omitempty"`
+					}
+
+					if err := json.Unmarshal(protoMsg.RawMessage, &message); err != nil {
+						Logln("BBMTLog", "Failed to parse RawMessage:", err)
+						continue
+					}
+
+					messages = append(messages, message)
+				}
+			}
+
+			// Sort messages by sequence number
+			sort.SliceStable(messages, func(i, j int) bool {
+				seqNoI, errI := strconv.Atoi(messages[i].SeqNo)
+				seqNoJ, errJ := strconv.Atoi(messages[j].SeqNo)
+
+				if errI != nil || errJ != nil {
+					Logln("BBMTLog", "Error converting SeqNo to int:", errI, errJ)
+					return false
+				}
+				return seqNoI < seqNoJ
+			})
+
+			// Process messages sequentially
+			for _, message := range messages {
+				if message.From == key {
+					//Logln("BBMTLog", "Skipping message from self...")
+					continue
+				}
+
+				//Logln("BBMTLog", "Checking message seqNo", message.SeqNo, key)
+				_, exists := msgMap[message.Hash]
+				if exists {
+					//Logln("BBMTLog", "Already applied message:", message.SeqNo, key)
+					if type_net != "nostr" {
+						deleteMessage(server, session, key, message.Hash)
+					}
+					continue
+				} else {
+					msgMap[message.Hash] = true
+				}
+
+				status := getStatus(session)
+
+				// Only process messages that match the expected seqNo
+				//Logln("BBMTLog", "Applying message:", message.SeqNo)
+
+				status.Step++
+				status.Index++
+				status.Info = fmt.Sprintf("Received Message %s", message.SeqNo)
+				setIndex(session, status.Info, status.Step, status.Index)
+
+				// Decrypt message if necessary
+				body := message.Body
+				if len(sessionKey) > 0 {
+					body, err = AesDecrypt(message.Body, sessionKey)
+					if err != nil {
+						Logln("BBMTLog", "Failed to decrypt message:", err)
+						continue
+					}
+				} else if len(decryptionKey) > 0 {
+					body, err = EciesDecrypt(message.Body, decryptionKey)
+					if err != nil {
+						Logln("BBMTLog", "Failed to decrypt ECIES message:", err)
+						continue
+					}
+				}
+
+				Logln("BBMTLog", "Applying message body:", body[:min(50, len(body))])
+				if err := tssServerImp.ApplyData(body); err != nil {
+					Logln("BBMTLog", "Failed to apply message data:", err)
+				}
+
+				// Mark message as applied
+				Logln("BBMTLog", "Message applied:", message.SeqNo)
+				status.Step++
+				status.Info = fmt.Sprintf("Applied Message %d", status.Index)
+				setStep(session, status.Info, status.Step)
+
+				// Delete applied message from the server
+				//Logln("BBMTLog", "Deleting applied message:", message.Hash)
+
+				if type_net != "nostr" {
+					deleteMessage(server, session, key, message.Hash)
+				}
+
+			}
+			isApplyingMessages = false
+		}
+	}
 }
 
 func contains(slice []string, item string) bool {
