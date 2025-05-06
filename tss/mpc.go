@@ -361,9 +361,9 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	Logln("BBMTLog", "downloadMessage active...")
 
 	if net_type == "nostr" {
-		go nostrDownloadMessage(session, sessionKey, key, *tssServerImp, endCh, wg)
+		go nostrDownloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg, net_type)
 	} else {
-		go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
+		go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg, net_type)
 	}
 
 	Logln("BBMTLog", "start ECDSA keysign...")
