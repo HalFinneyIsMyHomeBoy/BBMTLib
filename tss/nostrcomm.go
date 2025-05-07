@@ -25,9 +25,9 @@ var (
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
 	globalCtx                 context.Context
-	nostrRelay                string = "ws://bbw-nostr.xyz"
-	KeysignApprovalTimeout           = 4 * time.Second
-	KeysignApprovalMaxRetries        = 14
+	nostrRelayURL             string
+	KeysignApprovalTimeout    = 4 * time.Second
+	KeysignApprovalMaxRetries = 14
 	totalSentMessages         []ProtoMessage
 	nostrMutex                sync.Mutex
 	sessionMutex              sync.Mutex
@@ -124,7 +124,9 @@ func GetNostrPartyPubKeys(party string) (map[string]string, error) {
 	return keyShare.NostrPartyPubKeys, nil
 }
 
-func NostrListen(localParty string) {
+func NostrListen(localParty, nostrRelay string) {
+	nostrRelayURL = nostrRelay
+
 	if globalCtx == nil {
 		globalCtx, _ = context.WithCancel(context.Background())
 	}
