@@ -1,170 +1,281 @@
 package tss
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/hex"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"math/rand"
+	"time"
 
-	"crypto/sha256"
-
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
+	"github.com/nbd-wtf/go-nostr/nip44"
 )
 
-// NIP-17 encryption/decryption implementation
-// Based on draft specification: https://github.com/nostr-protocol/nips/pull/17
+const (
+	// Two days in seconds for randomizing created_at
+	TWO_DAYS = 2 * 24 * 60 * 60
+)
 
-// Encrypt encrypts a message using NIP-17
-func NIP17Encrypt(message string, recipientPubKey string, senderPrivKey string) (string, error) {
-	// Generate ephemeral key pair
-	ephemeralPrivKey := nostr.GeneratePrivateKey()
-	ephemeralPubKey, err := nostr.GetPublicKey(ephemeralPrivKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate ephemeral public key: %w", err)
-	}
-
-	// Compute shared secret using ephemeral private key and recipient's public key
-	sharedSecret, err := computeSharedSecret(ephemeralPrivKey, recipientPubKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to compute shared secret: %w", err)
-	}
-
-	// Generate random nonce (12 bytes for AES-GCM)
-	nonce := make([]byte, 12)
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("failed to generate nonce: %w", err)
-	}
-
-	// Create AES cipher
-	block, err := aes.NewCipher(sharedSecret)
-	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	// Create GCM mode
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	// Encrypt message
-	ciphertext := gcm.Seal(nil, nonce, []byte(message), nil)
-
-	// Combine nonce and ciphertext
-	combined := append(nonce, ciphertext...)
-
-	// Create NIP-17 message format
-	nip17Msg := map[string]string{
-		"ephemeral_pubkey": ephemeralPubKey,
-		"ciphertext":       base64.StdEncoding.EncodeToString(combined),
-	}
-
-	// Convert to JSON
-	nip17JSON, err := json.Marshal(nip17Msg)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal NIP-17 message: %w", err)
-	}
-
-	return string(nip17JSON), nil
+// Rumor represents a kind:14 rumor (unsigned chat message)
+type Rumor struct {
+	nostr.Event
+	ID string
 }
 
-// Decrypt decrypts a NIP-17 encrypted message
-func NIP17Decrypt(encryptedMessage string, recipientPrivKey string) (string, error) {
-	// Parse NIP-17 message
-	var nip17Msg map[string]string
-	if err := json.Unmarshal([]byte(encryptedMessage), &nip17Msg); err != nil {
-		return "", fmt.Errorf("failed to parse NIP-17 message: %w", err)
-	}
-
-	// Get ephemeral public key and ciphertext
-	ephemeralPubKey, ok := nip17Msg["ephemeral_pubkey"]
-	if !ok {
-		return "", fmt.Errorf("missing ephemeral public key")
-	}
-
-	ciphertext, ok := nip17Msg["ciphertext"]
-	if !ok {
-		return "", fmt.Errorf("missing ciphertext")
-	}
-
-	// Compute shared secret using recipient's private key and ephemeral public key
-	sharedSecret, err := computeSharedSecret(recipientPrivKey, ephemeralPubKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to compute shared secret: %w", err)
-	}
-
-	// Decode ciphertext
-	combined, err := base64.StdEncoding.DecodeString(ciphertext)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode ciphertext: %w", err)
-	}
-
-	// Extract nonce and ciphertext
-	if len(combined) < 12 {
-		return "", fmt.Errorf("invalid ciphertext length")
-	}
-	nonce := combined[:12]
-	ciphertextBytes := combined[12:]
-
-	// Create AES cipher
-	block, err := aes.NewCipher(sharedSecret)
-	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	// Create GCM mode
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	// Decrypt message
-	plaintext, err := gcm.Open(nil, nonce, ciphertextBytes, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to decrypt message: %w", err)
-	}
-
-	return string(plaintext), nil
+// Helper function to get current UNIX timestamp
+func now() nostr.Timestamp {
+	return nostr.Timestamp(time.Now().Unix())
 }
 
-// computeSharedSecret computes the shared secret using ECDH
-func computeSharedSecret(privateKey string, publicKey string) ([]byte, error) {
-	// Convert private key to bytes
-	privKeyBytes, err := hex.DecodeString(privateKey)
+// Helper function to get randomized timestamp (within past 2 days)
+func randomNow() nostr.Timestamp {
+	return now() - nostr.Timestamp(rand.Float64()*TWO_DAYS)
+}
+
+// CreateRumor creates a kind:14 rumor (unsigned chat message)
+func createRumor(content string, senderPubkey string, recipientPubkey string) Rumor {
+	rumor := Rumor{
+		Event: nostr.Event{
+			Kind:      14, // NIP-17 kind for chat messages
+			CreatedAt: now(),
+			PubKey:    senderPubkey,
+			Content:   content,
+			Tags:      nostr.Tags{{"p", recipientPubkey}},
+		},
+	}
+	// Calculate event ID
+	rumor.ID = rumor.Event.GetID()
+	return rumor
+}
+
+// CreateSeal encrypts the rumor into a kind:13 seal
+func createSeal(rumor Rumor, senderPrivkey string, recipientPubkey string) (*nostr.Event, error) {
+	// Serialize rumor to JSON
+	rumorJSON, err := json.Marshal(rumor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode private key: %w", err)
+		return nil, fmt.Errorf("failed to serialize rumor: %w", err)
 	}
 
-	// Convert public key to bytes
-	pubKeyBytes, err := hex.DecodeString(publicKey)
+	// Generate conversation key
+	conversationKey, err := nip44.GenerateConversationKey(recipientPubkey, senderPrivkey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode public key: %w", err)
+		return nil, fmt.Errorf("failed to generate conversation key: %w", err)
 	}
 
-	// Create private key
-	privKey, _ := btcec.PrivKeyFromBytes(privKeyBytes)
-
-	// For Nostr public keys (32 bytes), we need to convert to Bitcoin format (33 bytes)
-	// Add 0x02 prefix for compressed public key
-	compressedPubKey := make([]byte, 33)
-	compressedPubKey[0] = 0x02 // compressed format
-	copy(compressedPubKey[1:], pubKeyBytes)
-
-	// Parse public key
-	pubKey, err := btcec.ParsePubKey(compressedPubKey)
+	// Encrypt rumor using NIP-44
+	encryptedContent, err := nip44.Encrypt(string(rumorJSON), conversationKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %w", err)
+		return nil, fmt.Errorf("failed to encrypt rumor: %w", err)
 	}
 
-	// Compute shared secret using ECDH
-	sharedSecret := btcec.GenerateSharedSecret(privKey, pubKey)
+	// Create seal event (kind:13)
+	seal := &nostr.Event{
+		Kind:      13,
+		CreatedAt: randomNow(),
+		Content:   encryptedContent,
+		Tags:      nostr.Tags{},
+	}
+	// Sign the seal
+	if err := seal.Sign(senderPrivkey); err != nil {
+		return nil, fmt.Errorf("failed to sign seal: %w", err)
+	}
+	return seal, nil
+}
 
-	// Hash the shared secret using SHA-256
-	hash := sha256.Sum256(sharedSecret)
-	return hash[:], nil
+// CreateWrap creates a kind:1059 gift wrap for the seal
+func createWrap(seal *nostr.Event, recipientPubkey string) (*nostr.Event, error) {
+	// Generate a random private key for the gift wrap
+	randomKey := nostr.GeneratePrivateKey()
+	randomPubkey, err := nostr.GetPublicKey(randomKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate random pubkey: %w", err)
+	}
+
+	// Serialize seal to JSON
+	sealJSON, err := json.Marshal(seal)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize seal: %w", err)
+	}
+
+	// Generate conversation key
+	conversationKey, err := nip44.GenerateConversationKey(recipientPubkey, randomKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate conversation key: %w", err)
+	}
+
+	// Encrypt seal using NIP-44
+	encryptedContent, err := nip44.Encrypt(string(sealJSON), conversationKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt seal: %w", err)
+	}
+
+	// Create gift wrap event (kind:1059)
+	wrap := &nostr.Event{
+		Kind:      1059,
+		PubKey:    randomPubkey,
+		CreatedAt: randomNow(),
+		Content:   encryptedContent,
+		Tags:      nostr.Tags{{"p", recipientPubkey}},
+	}
+	// Sign the gift wrap
+	if err := wrap.Sign(randomKey); err != nil {
+		return nil, fmt.Errorf("failed to sign wrap: %w", err)
+	}
+	return wrap, nil
+}
+
+// SendMessage sends an encrypted NIP-17 message
+func SendMessage(senderNsec, recipientNpub, message, relayURL string) error {
+	// Decode sender's private key and recipient's public key
+	_, senderPrivkey, err := nip19.Decode(senderNsec)
+	if err != nil {
+		return fmt.Errorf("invalid sender nsec: %w", err)
+	}
+	senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
+	if err != nil {
+		return fmt.Errorf("failed to derive sender pubkey: %w", err)
+	}
+	_, recipientPubkey, err := nip19.Decode(recipientNpub)
+	if err != nil {
+		return fmt.Errorf("invalid recipient npub: %w", err)
+	}
+
+	// Create rumor
+	rumor := createRumor(message, senderPubkey, recipientPubkey.(string))
+
+	// Create seal for recipient
+	seal, err := createSeal(rumor, senderPrivkey.(string), recipientPubkey.(string))
+	if err != nil {
+		return fmt.Errorf("failed to create seal: %w", err)
+	}
+
+	// Create gift wrap for recipient
+	wrap, err := createWrap(seal, recipientPubkey.(string))
+	if err != nil {
+		return fmt.Errorf("failed to create wrap: %w", err)
+	}
+
+	// Connect to relay
+	ctx := context.Background()
+	relay, err := nostr.RelayConnect(ctx, relayURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to relay %s: %w", relayURL, err)
+	}
+	defer relay.Close()
+
+	// Publish gift wrap
+	if err := relay.Publish(ctx, *wrap); err != nil {
+		return fmt.Errorf("failed to publish gift wrap: %w", err)
+	}
+	fmt.Printf("Published gift wrap to %s\n", relayURL)
+	return nil
+}
+
+// ReceiveMessage listens for and decrypts NIP-17 messages
+func ReceiveMessage(recipientNsec, relayURL string) error {
+	// Decode recipient's private key
+	_, recipientPrivkey, err := nip19.Decode(recipientNsec)
+	if err != nil {
+		return fmt.Errorf("invalid recipient nsec: %w", err)
+	}
+	recipientPubkey, err := nostr.GetPublicKey(recipientPrivkey.(string))
+	if err != nil {
+		return fmt.Errorf("failed to derive recipient pubkey: %w", err)
+	}
+
+	// Connect to relay
+	ctx := context.Background()
+	relay, err := nostr.RelayConnect(ctx, relayURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to relay %s: %w", relayURL, err)
+	}
+	defer relay.Close()
+
+	// Subscribe to kind:1059 events addressed to the recipient
+	filters := []nostr.Filter{{
+		Kinds: []int{1059},
+		Tags:  map[string][]string{"p": {recipientPubkey}},
+	}}
+	sub, err := relay.Subscribe(ctx, filters)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe: %w", err)
+	}
+
+	// Listen for events
+	for ev := range sub.Events {
+		// Generate conversation key for gift wrap
+		conversationKey, err := nip44.GenerateConversationKey(ev.PubKey, recipientPrivkey.(string))
+		if err != nil {
+			fmt.Printf("Failed to generate conversation key: %v\n", err)
+			continue
+		}
+
+		// Decrypt gift wrap content (kind:1059)
+		sealJSON, err := nip44.Decrypt(ev.Content, conversationKey)
+		if err != nil {
+			fmt.Printf("Failed to decrypt gift wrap: %v\n", err)
+			continue
+		}
+
+		// Deserialize seal
+		var seal nostr.Event
+		if err := json.Unmarshal([]byte(sealJSON), &seal); err != nil {
+			fmt.Printf("Failed to deserialize seal: %v\n", err)
+			continue
+		}
+
+		// Generate conversation key for seal
+		sealConversationKey, err := nip44.GenerateConversationKey(seal.PubKey, recipientPrivkey.(string))
+		if err != nil {
+			fmt.Printf("Failed to generate seal conversation key: %v\n", err)
+			continue
+		}
+
+		// Decrypt seal content (kind:13)
+		rumorJSON, err := nip44.Decrypt(seal.Content, sealConversationKey)
+		if err != nil {
+			fmt.Printf("Failed to decrypt seal: %v\n", err)
+			continue
+		}
+
+		// Deserialize rumor
+		var rumor Rumor
+		if err := json.Unmarshal([]byte(rumorJSON), &rumor); err != nil {
+			fmt.Printf("Failed to deserialize rumor: %v\n", err)
+			continue
+		}
+
+		// Verify pubkey matches (prevent impersonation)
+		if rumor.PubKey != seal.PubKey {
+			fmt.Println("Warning: Pubkey mismatch, possible impersonation")
+			continue
+		}
+
+		fmt.Printf("Received message from %s: %s\n", rumor.PubKey, rumor.Content)
+	}
+	return nil
+}
+
+func main() {
+	// Example keys (replace with real keys)
+	senderNsec := "nsec1..."    // Sender's private key
+	recipientNpub := "npub1..." // Recipient's public key
+	relayURL := "wss://relay.damus.io"
+	message := "Hola, que tal?"
+
+	// Seed random for created_at randomization
+	rand.Seed(time.Now().UnixNano())
+
+	// Send a message
+	fmt.Println("Sending message...")
+	if err := SendMessage(senderNsec, recipientNpub, message, relayURL); err != nil {
+		fmt.Printf("Failed to send message: %v\n", err)
+	}
+
+	// Receive messages (run in a separate process or goroutine in practice)
+	fmt.Println("Listening for messages...")
+	if err := ReceiveMessage(senderNsec, relayURL); err != nil {
+		fmt.Printf("Failed to receive messages: %v\n", err)
+	}
 }
