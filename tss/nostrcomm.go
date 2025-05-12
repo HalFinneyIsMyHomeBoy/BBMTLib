@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
-	"github.com/nbd-wtf/go-nostr/nip04"
 	"github.com/patrickmn/go-cache"
 )
 
@@ -25,9 +24,9 @@ var (
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
 	globalCtx                 context.Context
-	nostrRelayURL             string
-	KeysignApprovalTimeout    = 4 * time.Second
-	KeysignApprovalMaxRetries = 14
+	nostrRelay                string = "ws://bbw-nostr.xyz"
+	KeysignApprovalTimeout           = 4 * time.Second
+	KeysignApprovalMaxRetries        = 14
 	totalSentMessages         []ProtoMessage
 	nostrMutex                sync.Mutex
 	sessionMutex              sync.Mutex
@@ -124,9 +123,7 @@ func GetNostrPartyPubKeys(party string) (map[string]string, error) {
 	return keyShare.NostrPartyPubKeys, nil
 }
 
-func NostrListen(localParty, nostrRelay string) {
-	nostrRelayURL = nostrRelay
-
+func NostrListen(localParty string) {
 	if globalCtx == nil {
 		globalCtx, _ = context.WithCancel(context.Background())
 	}
@@ -201,13 +198,8 @@ func NostrListen(localParty, nostrRelay string) {
 }
 
 func processNostrEvent(event *nostr.Event, keyShare LocalState, localParty string) error {
-	// Decrypt message
-	sharedSecret, err := nip04.ComputeSharedSecret(event.PubKey, keyShare.LocalNostrPrivKey)
-	if err != nil {
-		return fmt.Errorf("compute shared secret: %w", err)
-	}
-
-	decryptedMessage, err := nip04.Decrypt(event.Content, sharedSecret)
+	// Decrypt message using NIP-17
+	decryptedMessage, err := NIP17Decrypt(event.Content, keyShare.LocalNostrPrivKey)
 	if err != nil {
 		return fmt.Errorf("decrypt message: %w", err)
 	}
@@ -523,7 +515,6 @@ func validateKeys(privateKey, publicKey string) error {
 }
 
 func nostrSend(from string, protoMessage ProtoMessage) error {
-
 	if globalCtx == nil {
 		globalCtx = context.Background()
 	}
@@ -541,13 +532,8 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 	}
 
 	for _, recipient := range protoMessage.Recipients {
-		sharedSecret, err := nip04.ComputeSharedSecret(recipient.PubKey, keyShare.LocalNostrPrivKey)
-		if err != nil {
-			log.Printf("Error computing shared secret: %v\n", err)
-			return err
-		}
-
-		encryptedContent, err := nip04.Encrypt(string(protoMessageJSON), sharedSecret)
+		// Encrypt using NIP-17
+		encryptedContent, err := NIP17Encrypt(string(protoMessageJSON), recipient.PubKey, keyShare.LocalNostrPrivKey)
 		if err != nil {
 			log.Printf("Error encrypting message: %v\n", err)
 			return err
@@ -556,7 +542,7 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 		event := nostr.Event{
 			PubKey:    keyShare.LocalNostrPubKey,
 			CreatedAt: nostr.Now(),
-			Kind:      nostr.KindEncryptedDirectMessage,
+			Kind:      nostr.KindEncryptedDirectMessage, // Using same kind for now, will be updated when NIP-17 is finalized
 			Tags:      nostr.Tags{{"p", recipient.PubKey}},
 			Content:   encryptedContent,
 		}
@@ -567,7 +553,6 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 		defer cancel()
 
 		err = relay.Publish(ctx, event)
-
 		if err != nil {
 			log.Printf("Error publishing event: %v\n", err)
 			return err
