@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
-	"github.com/nbd-wtf/go-nostr"
 )
 
 func randomSeed(length int) string {
@@ -32,11 +31,14 @@ func main() {
 	}
 
 	if mode == "nostrKeypair" {
-		privKey := nostr.GeneratePrivateKey()
-		pubKey, _ := nostr.GetPublicKey(privKey)
+		nsec, npub, err := tss.GenerateNostrKeys()
+		if err != nil {
+			fmt.Printf("Failed to generate Nostr keys: %v\n", err)
+			return
+		}
 		keyPair := map[string]string{
-			"privateKey": privKey,
-			"publicKey":  pubKey,
+			"privateKey": nsec,
+			"publicKey":  npub,
 		}
 		keyPairJSON, _ := json.Marshal(keyPair)
 		fmt.Println(string(keyPairJSON))

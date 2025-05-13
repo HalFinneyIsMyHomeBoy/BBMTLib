@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"os"
 	"sort"
 	"strconv"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
+	"github.com/nbd-wtf/go-nostr/nip44"
 	"github.com/patrickmn/go-cache"
 )
 
@@ -93,6 +96,12 @@ type TxRequest struct {
 	BtcPub          string `json:"btc_pub"`
 }
 
+// Rumor represents a kind:14 rumor (unsigned chat message)
+type Rumor struct {
+	nostr.Event
+	ID string
+}
+
 func GetKeyShare(party string) (LocalState, error) {
 
 	data, err := os.ReadFile(party + ".ks")
@@ -134,10 +143,10 @@ func NostrListen(localParty string) {
 		return
 	}
 
-	if !nostr.IsValidPublicKey(keyShare.LocalNostrPubKey) || validateKeys(keyShare.LocalNostrPrivKey, keyShare.LocalNostrPubKey) != nil {
-		log.Printf("Invalid key format or validation failed\n")
-		return
-	}
+	// if !nostr.IsValidPublicKey(keyShare.LocalNostrPubKey) || validateKeys(keyShare.LocalNostrPrivKey, keyShare.LocalNostrPubKey) != nil {
+	// 	log.Printf("Invalid key format or validation failed\n")
+	// 	return
+	// }
 
 	retryInterval := 3 * time.Second
 
@@ -153,12 +162,21 @@ func NostrListen(localParty string) {
 			continue
 		}
 
-		// Subscribe to events
-		since := nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
-		filters := nostr.Filters{{
-			Kinds: []int{nostr.KindEncryptedDirectMessage},
-			Tags:  nostr.TagMap{"p": []string{keyShare.LocalNostrPubKey}},
-			Since: &since,
+		_, recipientPrivkey, err := nip19.Decode(keyShare.LocalNostrPubKey)
+		if err != nil {
+			log.Printf("Invalid recipient nsec: %v\n", err)
+			return
+		}
+		recipientPubkey, err := nostr.GetPublicKey(recipientPrivkey.(string))
+		if err != nil {
+			log.Printf("Failed to derive recipient pubkey: %v\n", err)
+			return
+		}
+
+		// Subscribe to kind:1059 events addressed to the recipient
+		filters := []nostr.Filter{{
+			Kinds: []int{1059},
+			Tags:  map[string][]string{"p": {recipientPubkey}},
 		}}
 
 		sub, err := relay.Subscribe(ctx, filters)
@@ -197,15 +215,140 @@ func NostrListen(localParty string) {
 	}
 }
 
+func ReceiveMessage(recipientNsec, relayURL string) error {
+	// Decode recipient's private key
+	_, recipientPrivkey, err := nip19.Decode(recipientNsec)
+	if err != nil {
+		return fmt.Errorf("invalid recipient nsec: %w", err)
+	}
+	recipientPubkey, err := nostr.GetPublicKey(recipientPrivkey.(string))
+	if err != nil {
+		return fmt.Errorf("failed to derive recipient pubkey: %w", err)
+	}
+
+	// Connect to relay
+	ctx := context.Background()
+	relay, err := nostr.RelayConnect(ctx, relayURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to relay %s: %w", relayURL, err)
+	}
+	defer relay.Close()
+
+	// Subscribe to kind:1059 events addressed to the recipient
+	filters := []nostr.Filter{{
+		Kinds: []int{1059},
+		Tags:  map[string][]string{"p": {recipientPubkey}},
+	}}
+	sub, err := relay.Subscribe(ctx, filters)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe: %w", err)
+	}
+
+	// Listen for events
+	for ev := range sub.Events {
+		// Generate conversation key for gift wrap
+		conversationKey, err := nip44.GenerateConversationKey(ev.PubKey, recipientPrivkey.(string))
+		if err != nil {
+			fmt.Printf("Failed to generate conversation key: %v\n", err)
+			continue
+		}
+
+		// Decrypt gift wrap content (kind:1059)
+		sealJSON, err := nip44.Decrypt(ev.Content, conversationKey)
+		if err != nil {
+			fmt.Printf("Failed to decrypt gift wrap: %v\n", err)
+			continue
+		}
+
+		// Deserialize seal
+		var seal nostr.Event
+		if err := json.Unmarshal([]byte(sealJSON), &seal); err != nil {
+			fmt.Printf("Failed to deserialize seal: %v\n", err)
+			continue
+		}
+
+		// Generate conversation key for seal
+		sealConversationKey, err := nip44.GenerateConversationKey(seal.PubKey, recipientPrivkey.(string))
+		if err != nil {
+			fmt.Printf("Failed to generate seal conversation key: %v\n", err)
+			continue
+		}
+
+		// Decrypt seal content (kind:13)
+		rumorJSON, err := nip44.Decrypt(seal.Content, sealConversationKey)
+		if err != nil {
+			fmt.Printf("Failed to decrypt seal: %v\n", err)
+			continue
+		}
+
+		// Deserialize rumor
+		var rumor Rumor
+		if err := json.Unmarshal([]byte(rumorJSON), &rumor); err != nil {
+			fmt.Printf("Failed to deserialize rumor: %v\n", err)
+			continue
+		}
+
+		// Verify pubkey matches (prevent impersonation)
+		if rumor.PubKey != seal.PubKey {
+			fmt.Println("Warning: Pubkey mismatch, possible impersonation")
+			continue
+		}
+
+		fmt.Printf("Received message from %s: %s\n", rumor.PubKey, rumor.Content)
+	}
+	return nil
+}
+
 func processNostrEvent(event *nostr.Event, keyShare LocalState, localParty string) error {
 	// Decrypt message using NIP-17
-	decryptedMessage, err := NIP17Decrypt(event.Content, keyShare.LocalNostrPrivKey)
+	// decryptedMessage, err := NIP17Decrypt(event.Content, keyShare.LocalNostrPrivKey)
+	// if err != nil {
+	// 	return fmt.Errorf("decrypt message: %w", err)
+	// }
+
+	// Generate conversation key for gift wrap
+	conversationKey, err := nip44.GenerateConversationKey(event.PubKey, keyShare.LocalNostrPrivKey)
 	if err != nil {
-		return fmt.Errorf("decrypt message: %w", err)
+		return fmt.Errorf("generate conversation key: %w", err)
+	}
+
+	// Decrypt gift wrap content (kind:1059)
+	sealJSON, err := nip44.Decrypt(event.Content, conversationKey)
+	if err != nil {
+		return fmt.Errorf("decrypt gift wrap: %w", err)
+	}
+
+	// Deserialize seal
+	var seal nostr.Event
+	if err := json.Unmarshal([]byte(sealJSON), &seal); err != nil {
+		return fmt.Errorf("deserialize seal: %w", err)
+	}
+
+	// Generate conversation key for seal
+	sealConversationKey, err := nip44.GenerateConversationKey(seal.PubKey, keyShare.LocalNostrPrivKey)
+	if err != nil {
+		return fmt.Errorf("generate seal conversation key: %w", err)
+	}
+
+	// Decrypt seal content (kind:13)
+	rumorJSON, err := nip44.Decrypt(seal.Content, sealConversationKey)
+	if err != nil {
+		return fmt.Errorf("decrypt seal: %w", err)
+	}
+
+	// Deserialize rumor
+	var rumor Rumor
+	if err := json.Unmarshal([]byte(rumorJSON), &rumor); err != nil {
+		return fmt.Errorf("deserialize rumor: %w", err)
+	}
+
+	// Verify pubkey matches (prevent impersonation)
+	if rumor.PubKey != seal.PubKey {
+		return fmt.Errorf("pubkey mismatch, possible impersonation")
 	}
 
 	var protoMessage ProtoMessage
-	if err := json.Unmarshal([]byte(decryptedMessage), &protoMessage); err != nil {
+	if err := json.Unmarshal([]byte(rumor.Content), &protoMessage); err != nil {
 		return fmt.Errorf("parse message: %w", err)
 	}
 
@@ -533,30 +676,45 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 
 	for _, recipient := range protoMessage.Recipients {
 		// Encrypt using NIP-17
-		encryptedContent, err := NIP17Encrypt(string(protoMessageJSON), recipient.PubKey, keyShare.LocalNostrPrivKey)
+		// Decode sender's private key and recipient's public key
+		_, senderPrivkey, err := nip19.Decode(keyShare.LocalNostrPrivKey)
 		if err != nil {
-			log.Printf("Error encrypting message: %v\n", err)
-			return err
+			return fmt.Errorf("invalid sender nsec: %w", err)
+		}
+		senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
+		if err != nil {
+			return fmt.Errorf("failed to derive sender pubkey: %w", err)
+		}
+		_, recipientPubkey, err := nip19.Decode(recipient.PubKey)
+		if err != nil {
+			return fmt.Errorf("invalid recipient npub: %w", err)
 		}
 
-		event := nostr.Event{
-			PubKey:    keyShare.LocalNostrPubKey,
-			CreatedAt: nostr.Now(),
-			Kind:      nostr.KindEncryptedDirectMessage, // Using same kind for now, will be updated when NIP-17 is finalized
-			Tags:      nostr.Tags{{"p", recipient.PubKey}},
-			Content:   encryptedContent,
+		// Create rumor
+		rumor := createRumor(string(protoMessageJSON), senderPubkey, recipientPubkey.(string))
+
+		// Create seal for recipient
+		seal, err := createSeal(rumor, senderPrivkey.(string), recipientPubkey.(string))
+		if err != nil {
+			return fmt.Errorf("failed to create seal: %w", err)
 		}
 
-		event.Sign(keyShare.LocalNostrPrivKey)
+		// Create gift wrap for recipient
+		wrap, err := createWrap(seal, recipientPubkey.(string))
+		if err != nil {
+			return fmt.Errorf("failed to create wrap: %w", err)
+		}
 
+		// Connect to relay
 		ctx, cancel := context.WithTimeout(globalCtx, 600*time.Second)
 		defer cancel()
 
-		err = relay.Publish(ctx, event)
-		if err != nil {
-			log.Printf("Error publishing event: %v\n", err)
-			return err
+		// Publish gift wrap
+		if err := relay.Publish(ctx, *wrap); err != nil {
+			return fmt.Errorf("failed to publish gift wrap: %w", err)
 		}
+		fmt.Printf("Published gift wrap to %s\n", nostrRelay)
+		//return nil
 	}
 	return nil
 }
@@ -726,6 +884,113 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 	}
 }
 
+// CreateWrap creates a kind:1059 gift wrap for the seal
+func createWrap(seal *nostr.Event, recipientPubkey string) (*nostr.Event, error) {
+	// Generate a random private key for the gift wrap
+	randomKey := nostr.GeneratePrivateKey()
+	randomPubkey, err := nostr.GetPublicKey(randomKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate random pubkey: %w", err)
+	}
+
+	// Serialize seal to JSON
+	sealJSON, err := json.Marshal(seal)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize seal: %w", err)
+	}
+
+	// Generate conversation key
+	conversationKey, err := nip44.GenerateConversationKey(recipientPubkey, randomKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate conversation key: %w", err)
+	}
+
+	// Encrypt seal using NIP-44
+	encryptedContent, err := nip44.Encrypt(string(sealJSON), conversationKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt seal: %w", err)
+	}
+
+	// Create gift wrap event (kind:1059)
+	wrap := &nostr.Event{
+		Kind:      1059,
+		PubKey:    randomPubkey,
+		CreatedAt: randomNow(),
+		Content:   encryptedContent,
+		Tags:      nostr.Tags{{"p", recipientPubkey}},
+	}
+	// Sign the gift wrap
+	if err := wrap.Sign(randomKey); err != nil {
+		return nil, fmt.Errorf("failed to sign wrap: %w", err)
+	}
+	return wrap, nil
+}
+
+// CreateRumor creates a kind:14 rumor (unsigned chat message)
+func createRumor(content string, senderPubkey string, recipientPubkey string) Rumor {
+	rumor := Rumor{
+		Event: nostr.Event{
+			Kind:      14, // NIP-17 kind for chat messages
+			CreatedAt: now(),
+			PubKey:    senderPubkey,
+			Content:   content,
+			Tags:      nostr.Tags{{"p", recipientPubkey}},
+		},
+	}
+	// Calculate event ID
+	rumor.ID = rumor.Event.GetID()
+	return rumor
+}
+
+// CreateSeal encrypts the rumor into a kind:13 seal
+func createSeal(rumor Rumor, senderPrivkey string, recipientPubkey string) (*nostr.Event, error) {
+	// Serialize rumor to JSON
+	rumorJSON, err := json.Marshal(rumor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize rumor: %w", err)
+	}
+
+	// Generate conversation key
+	conversationKey, err := nip44.GenerateConversationKey(recipientPubkey, senderPrivkey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate conversation key: %w", err)
+	}
+
+	// Encrypt rumor using NIP-44
+	encryptedContent, err := nip44.Encrypt(string(rumorJSON), conversationKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt rumor: %w", err)
+	}
+
+	// Create seal event (kind:13)
+	seal := &nostr.Event{
+		Kind:      13,
+		CreatedAt: randomNow(),
+		Content:   encryptedContent,
+		Tags:      nostr.Tags{},
+	}
+	// Sign the seal
+	if err := seal.Sign(senderPrivkey); err != nil {
+		return nil, fmt.Errorf("failed to sign seal: %w", err)
+	}
+	return seal, nil
+}
+
+// Helper function to get current UNIX timestamp
+func now() nostr.Timestamp {
+	return nostr.Timestamp(time.Now().Unix())
+}
+
+// Helper function to get randomized timestamp (within past 2 days)
+func randomNow() nostr.Timestamp {
+	return now() - nostr.Timestamp(rand.Float64()*TWO_DAYS)
+}
+
+const (
+	// Two days in seconds for randomizing created_at
+	TWO_DAYS = 2 * 24 * 60 * 60
+)
+
 func contains(slice []string, item string) bool {
 	for _, s := range slice {
 		if s == item {
@@ -733,4 +998,30 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// GenerateNostrKeys generates a new nsec (private key) and npub (public key) pair
+func GenerateNostrKeys() (string, string, error) {
+	// Generate private key
+	privateKey := nostr.GeneratePrivateKey()
+
+	// Get public key from private key
+	publicKey, err := nostr.GetPublicKey(privateKey)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate public key: %w", err)
+	}
+
+	// Encode private key to nsec format
+	nsec, err := nip19.EncodePrivateKey(privateKey)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to encode private key: %w", err)
+	}
+
+	// Encode public key to npub format
+	npub, err := nip19.EncodePublicKey(publicKey)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to encode public key: %w", err)
+	}
+
+	return nsec, npub, nil
 }
