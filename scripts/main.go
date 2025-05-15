@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
+	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
 )
 
 func randomSeed(length int) string {
@@ -31,9 +33,26 @@ func main() {
 	}
 
 	if mode == "nostrKeypair" {
-		nsec, npub, err := tss.GenerateNostrKeys()
+		// Generate a new private key
+		privateKey := nostr.GeneratePrivateKey()
+
+		// Get the public key from the private key
+		publicKey, err := nostr.GetPublicKey(privateKey)
 		if err != nil {
-			fmt.Printf("Failed to generate Nostr keys: %v\n", err)
+			fmt.Printf("Error generating public key: %v\n", err)
+			return
+		}
+
+		// Encode to nsec and npub format
+		nsec, err := nip19.EncodePrivateKey(privateKey)
+		if err != nil {
+			fmt.Printf("Error encoding private key: %v\n", err)
+			return
+		}
+
+		npub, err := nip19.EncodePublicKey(publicKey)
+		if err != nil {
+			fmt.Printf("Error encoding public key: %v\n", err)
 			return
 		}
 		keyPair := map[string]string{
@@ -214,7 +233,7 @@ func main() {
 
 		if net_type == "nostr" {
 			net_type = "nostr"
-			go tss.NostrListen(peer)
+			go tss.NostrListen(peer, "ws://bbw-nostr.xyz")
 			time.Sleep(time.Second * 2)
 		} else {
 			go tss.RunRelay("55055")
@@ -301,7 +320,7 @@ func main() {
 		net_type := "nostr"
 
 		if net_type == "nostr" {
-			tss.NostrListen(party)
+			tss.NostrListen(party, "ws://bbw-nostr.xyz")
 			select {}
 		}
 	}
