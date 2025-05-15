@@ -34,8 +34,6 @@ type MessengerImp struct {
 	SessionID  string
 	SessionKey string
 	Mutex      sync.Mutex
-	Net_Type   string
-	Parties    string
 }
 
 type LocalStateAccessorImp struct {
@@ -52,8 +50,6 @@ var (
 	keySignTimeout   = 60
 	msgFetchTimeout  = 70
 )
-
-var nostrMsgMutex sync.Mutex
 
 func SessionState(session string) string {
 	status, exists := statusMap[session]
@@ -164,9 +160,11 @@ func setStatus(session string, status Status) {
 	Hook(SessionState(session))
 }
 
-func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey, net_type string) (string, error) {
+func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
-
+	if len(parties) != 2 {
+		return "", fmt.Errorf("only two parties")
+	}
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
@@ -187,11 +185,6 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status.Info = "start joinSession"
 	setStatus(session, status)
 
-	//TODO: need to make nostr for this
-	if net_type == "nostr" {
-		//nostrHandshake(session, key)
-	}
-
 	if err := joinSession(server, session, key); err != nil {
 		return "", fmt.Errorf("fail to register session: %w", err)
 	}
@@ -201,7 +194,6 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status.Info = "waiting parties"
 	setStatus(session, status)
 
-	//TODO: Change to use nostr
 	if err := awaitJoiners(parties, server, session); err != nil {
 		Logln("BBMTLog", "fail to wait all parties", "error", err)
 		return "", fmt.Errorf("fail to wait all parties: %w", err)
@@ -216,7 +208,6 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 		Server:     server,
 		SessionID:  session,
 		SessionKey: sessionKey,
-		Net_Type:   net_type,
 	}
 
 	localStateAccessor := &LocalStateAccessorImp{
@@ -235,14 +226,8 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	endCh := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	Logln("BBMTLog", "downloadMessage active for :", key)
-
-	if net_type == "nostr" {
-		go nostrDownloadMessage(session, sessionKey, key, *tssServerImp, endCh, wg)
-	} else {
-		go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
-	}
-
+	Logln("BBMTLog", "downloadMessage active...")
+	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
 	Logln("BBMTLog", "doing ECDSA keygen...")
 	_, err = tssServerImp.KeygenECDSA(&KeygenRequest{
 		LocalPartyID: key,
@@ -286,11 +271,12 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	return localState, nil
 }
 
-func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message, net_type string) (string, error) {
+func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
-	if key == "peer2" {
-		fmt.Printf("session at keysign: %v\n", session)
+	if len(parties) != 2 {
+		return "", fmt.Errorf("only two parties")
 	}
+
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
@@ -311,10 +297,8 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	status.Info = "start joinSession"
 	setStatus(session, status)
 
-	if net_type != "nostr" {
-		if err := joinSession(server, session, key); err != nil {
-			return "", fmt.Errorf("fail to register session: %w", err)
-		}
+	if err := joinSession(server, session, key); err != nil {
+		return "", fmt.Errorf("fail to register session: %w", err)
 	}
 
 	Logln("BBMTLog", "waiting parties...")
@@ -322,11 +306,9 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	status.Info = "waiting parties"
 	setStatus(session, status)
 
-	if net_type != "nostr" {
-		if err := awaitJoiners(parties, server, session); err != nil {
-			Logln("BBMTLog", "fail to wait all parties", "error", err)
-			return "", fmt.Errorf("fail to wait all parties: %w", err)
-		}
+	if err := awaitJoiners(parties, server, session); err != nil {
+		Logln("BBMTLog", "fail to wait all parties", "error", err)
+		return "", fmt.Errorf("fail to wait all parties: %w", err)
 	}
 
 	status.SeqNo++
@@ -338,8 +320,6 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		Server:     server,
 		SessionID:  session,
 		SessionKey: sessionKey,
-		Net_Type:   net_type,
-		Parties:    partiesCSV,
 	}
 
 	localStateAccessor := &LocalStateAccessorImp{
@@ -359,13 +339,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	Logln("BBMTLog", "downloadMessage active...")
-
-	if net_type == "nostr" {
-		go nostrDownloadMessage(session, sessionKey, key, *tssServerImp, endCh, wg)
-	} else {
-		go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
-	}
-
+	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
 	Logln("BBMTLog", "start ECDSA keysign...")
 	resp, err := tssServerImp.KeysignECDSA(&KeysignRequest{
 		PubKey:               keyshare,
@@ -391,34 +365,19 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	setStatus(session, status)
 
 	time.Sleep(time.Second)
-
-	if net_type != "nostr" {
-		if err := endSession(server, session); err != nil {
-			close(endCh)
-			return "", fmt.Errorf("fail to end session: %w", err)
-		}
+	if err := endSession(server, session); err != nil {
+		close(endCh)
+		return "", fmt.Errorf("fail to end session: %w", err)
 	}
-
 	status.Step++
 	status.Info = "session ended"
 	setStatus(session, status)
 
 	time.Sleep(time.Second)
-
-	if net_type != "nostr" {
-		err = flagPartyKeysignComplete(server, session, message, string(sigStr))
-		if err != nil {
-			Logln("BBMTLog", "Warning: flagPartyKeysignComplete", "error", err)
-		}
+	err = flagPartyKeysignComplete(server, session, message, string(sigStr))
+	if err != nil {
+		Logln("BBMTLog", "Warning: flagPartyKeysignComplete", "error", err)
 	}
-
-	if net_type == "nostr" {
-		err = nostrFlagPartyKeysignComplete(session)
-		if err != nil {
-			Logln("BBMTLog", "Warning: nostrFlagPartyKeysignComplete", "error", err)
-		}
-	}
-
 	status.Step++
 	status.Info = "local party complete"
 	status.Done = true
@@ -521,7 +480,8 @@ func unpadPKCS7(data []byte) []byte {
 	return data[:length-unpadding]
 }
 
-func (m *MessengerImp) Send(from, to, body, parties string) error {
+func (m *MessengerImp) Send(from, to, body string) error {
+
 	m.Mutex.Lock()
 	defer m.Mutex.Unlock()
 
@@ -572,63 +532,28 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 	url := m.Server + "/message/" + m.SessionID
 	Logln("BBMTLog", "sending message...")
 
-	if m.Net_Type == "nostr" {
-
-		protoMessage := ProtoMessage{
-			MessageType:  "message",
-			FunctionType: "keysign",
-			SessionID:    m.SessionID,
-			From:         from,
-			To:           to,
-			RawMessage:   requestBody,
-			Recipients:   make([]NostrPartyPubKeys, 0, len(to)),
-			SeqNo:        strconv.Itoa(status.SeqNo),
-		}
-
-		recipients, err := GetNostrPartyPubKeys(to)
-		if err != nil {
-			return fmt.Errorf("failed to get nostr party pub keys: %w", err)
-		}
-
-		for peer, pubKey := range recipients {
-			if peer == to {
-				protoMessage.Recipients = append(protoMessage.Recipients, NostrPartyPubKeys{
-					Peer:   peer,
-					PubKey: pubKey,
-				})
-			}
-		}
-
-		err = nostrSend(from, protoMessage)
-
-		if err != nil {
-			return fmt.Errorf("failed to send nostr message: %w", err)
-		}
-
-	} else if m.Net_Type != "nostr" {
-
-		// Prepare the HTTP request
-		resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
-		if err != nil {
-			Logln("BBMTLog", "fail to send message: ", err)
-			return fmt.Errorf("fail to send message: %w", err)
-		}
-		defer resp.Body.Close()
-
-		// Log the response
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			Logln("BBMTLog", "fail to read response: ", err)
-			return fmt.Errorf("fail to read response: %w", err)
-		}
-		Logln("BBMTLog", "message sent, status:", resp.Status)
-
-		// Check for non-200 status codes
-		if resp.StatusCode != http.StatusOK {
-			Logln("BBMTLog", "message sent, response body:", string(respBody)[:min(80, len(string(respBody)))]+"...")
-			return fmt.Errorf("fail to send message: %s", resp.Status)
-		}
+	// Prepare the HTTP request
+	resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
+	if err != nil {
+		Logln("BBMTLog", "fail to send message: ", err)
+		return fmt.Errorf("fail to send message: %w", err)
 	}
+	defer resp.Body.Close()
+
+	// Log the response
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		Logln("BBMTLog", "fail to read response: ", err)
+		return fmt.Errorf("fail to read response: %w", err)
+	}
+	Logln("BBMTLog", "message sent, status:", resp.Status)
+
+	// Check for non-200 status codes
+	if resp.StatusCode != http.StatusOK {
+		Logln("BBMTLog", "message sent, response body:", string(respBody)[:min(80, len(string(respBody)))]+"...")
+		return fmt.Errorf("fail to send message: %s", resp.Status)
+	}
+
 	// Increment the sequence number after successful send
 	Logln("BBMTLog", "incremented Sent Message To OutSeqNo", status.SeqNo)
 	status.Info = fmt.Sprintf("Sent Message %d", status.SeqNo)
@@ -854,23 +779,10 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				continue
 			}
 			isApplyingMessages = true
-			Logln("BBMTLog", "Fetching messages...", key)
+			Logln("BBMTLog", "Fetching messages...")
 
-			var resp *http.Response
-			var err error
-
-			var messages []struct {
-				SessionID string   `json:"session_id,omitempty"`
-				From      string   `json:"from,omitempty"`
-				To        []string `json:"to,omitempty"`
-				Body      string   `json:"body,omitempty"`
-				SeqNo     string   `json:"sequence_no,omitempty"`
-				Hash      string   `json:"hash,omitempty"`
-			}
-
-			//Fetch messages from the server ( master device localnet relay )
-			resp, err = http.Get(server + "/message/" + session + "/" + key)
-
+			// Fetch messages from the server
+			resp, err := http.Get(server + "/message/" + session + "/" + key)
 			if err != nil {
 				Logln("BBMTLog", "Error fetching messages:", err)
 				isApplyingMessages = false
@@ -898,11 +810,22 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			}
 			resp.Body.Close()
 
+			// Decode the messages from the response
+			var messages []struct {
+				SessionID string   `json:"session_id,omitempty"`
+				From      string   `json:"from,omitempty"`
+				To        []string `json:"to,omitempty"`
+				Body      string   `json:"body,omitempty"`
+				SeqNo     string   `json:"sequence_no,omitempty"`
+				Hash      string   `json:"hash,omitempty"`
+			}
 			if err := json.Unmarshal(bodyBytes, &messages); err != nil {
 				Logln("BBMTLog", "Failed to decode messages:", err)
 				isApplyingMessages = false
 				continue
 			}
+
+			Logln("BBMTLog", "Got messages count:", len(messages))
 
 			// Sort messages by sequence number
 			sort.SliceStable(messages, func(i, j int) bool {
@@ -923,10 +846,10 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					continue
 				}
 
-				Logln("BBMTLog", "Checking message seqNo", message.SeqNo, key)
+				Logln("BBMTLog", "Checking message seqNo", message.SeqNo)
 				_, exists := msgMap[message.Hash]
 				if exists {
-					Logln("BBMTLog", "Already applied message:", message.SeqNo, key)
+					Logln("BBMTLog", "Already applied message:", message.SeqNo)
 					deleteMessage(server, session, key, message.Hash)
 					continue
 				} else {

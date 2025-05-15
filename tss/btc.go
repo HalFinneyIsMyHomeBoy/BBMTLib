@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -251,7 +250,7 @@ func MpcSendBTC(
 	/* tss */
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath,
 	/* btc */
-	publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, net_type, newSession string) (string, error) {
+	publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64) (string, error) {
 
 	Logln("BBMTLog", "invoking MpcSendBTC...")
 
@@ -383,47 +382,10 @@ func MpcSendBTC(
 			// Sign each utxo
 			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
-
-			var sigJSON string
-
-			if net_type == "nostr" {
-				txRequest := TxRequest{
-					SenderAddress:   senderAddress,
-					ReceiverAddress: receiverAddress,
-					AmountSatoshi:   amountSatoshi,
-					FeeSatoshi:      estimatedFee,
-					BtcPub:          publicKey,
-					DerivePath:      derivePath,
-				}
-
-				if newSession == "true" { //This is the master starting the session
-					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					ok, err := initiateNostrHandshake(session, key, sessionKey, txRequest)
-					if err != nil {
-						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
-					}
-					if !ok {
-						return "", fmt.Errorf("failed to initiate nostr handshake")
-					}
-				}
-
-				for _, item := range nostrSessionList {
-					if item.Status == "start_keysign" && item.SessionID == session {
-						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-						if err != nil {
-							return "", fmt.Errorf("failed to sign transaction: signature is empty")
-						}
-						time.Sleep(1 * time.Second)
-					}
-				}
-
-			} else {
-				sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-				if err != nil {
-					return "", fmt.Errorf("failed to sign transaction: signature is empty")
-				}
+			sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+			if err != nil {
+				return "", fmt.Errorf("failed to sign transaction: signature is empty")
 			}
-
 			var sig KeysignResponse
 			if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
 				return "", fmt.Errorf("failed to parse signature response: %w", err)
@@ -458,46 +420,10 @@ func MpcSendBTC(
 			// Sign
 			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
-			var sigJSON string
-
-			if net_type == "nostr" {
-				txRequest := TxRequest{
-					SenderAddress:   senderAddress,
-					ReceiverAddress: receiverAddress,
-					AmountSatoshi:   amountSatoshi,
-					FeeSatoshi:      estimatedFee,
-					BtcPub:          publicKey,
-					DerivePath:      derivePath,
-				}
-
-				if newSession == "true" { //This is the master starting the session
-					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					ok, err := initiateNostrHandshake(session, key, sessionKey, txRequest)
-					if err != nil {
-						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
-					}
-					if !ok {
-						return "", fmt.Errorf("failed to initiate nostr handshake")
-					}
-				}
-
-				for _, item := range nostrSessionList {
-					if item.Status == "start_keysign" && item.SessionID == session {
-						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-						if err != nil {
-							return "", fmt.Errorf("failed to sign transaction: signature is empty")
-						}
-						time.Sleep(1 * time.Second)
-					}
-				}
-
-			} else {
-				sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-				if err != nil {
-					return "", fmt.Errorf("failed to sign transaction: signature is empty")
-				}
+			sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64)
+			if err != nil {
+				return "", fmt.Errorf("failed to sign transaction: signature is empty")
 			}
-
 			var sig KeysignResponse
 			if err := json.Unmarshal([]byte(sigJSON), &sig); err != nil {
 				return "", fmt.Errorf("failed to parse signature response: %w", err)
@@ -548,11 +474,6 @@ func MpcSendBTC(
 			return "", fmt.Errorf("script validation failed for input %d: %w", i, err)
 		}
 		Logf("Script validation succeeded for input %d", i)
-		nostrClearSessionCache(utxoSession)
-	}
-
-	if net_type == "nostr" {
-		nostrDeleteSession(session)
 	}
 
 	// Serialize and broadcast
