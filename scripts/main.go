@@ -74,6 +74,172 @@ func main() {
 		select {}
 	}
 
+	if mode == "nostrKeygen" {
+		// prepare args
+		// server := os.Args[2]
+		// session := os.Args[3]
+		// chainCode := os.Args[4]
+		// party := os.Args[5]
+		// parties := os.Args[6]
+		// encKey := os.Args[7]
+		// decKey := os.Args[8]
+		// sessionKey := os.Args[9]
+		parties := "peer1,peer2,peer3" // All participating parties
+		session := randomSeed(64)      // Generate random session ID
+		sessionKey := randomSeed(64)   // Random session key
+		chainCode := randomSeed(64)
+		server := "http://127.0.0.1:55055"
+		net_type := "nostr"
+		peer := "peer1"
+		//nostrPubKey := os.Args[12]
+		//nostrPrivKey := os.Args[13]
+		//nostrPartyPubKeys := os.Args[14]
+
+		// if len(sessionKey) > 0 {
+		// 	encKey = ""
+		// 	decKey = ""
+		// }
+
+		ppmFile := peer + ".json"
+		keyshareFile := peer + ".ks"
+		nostrKeysFile := peer + ".nostr"
+		var updatedKeyshare []byte
+		var err error
+
+		if net_type == "nostr" {
+			net_type = "nostr"
+			go tss.NostrListen(peer, "ws://bbw-nostr.xyz")
+			time.Sleep(time.Second * 2)
+		} else {
+			go tss.RunRelay("55055")
+			time.Sleep(time.Second)
+		}
+
+		// Check if .nostr file exists
+		if _, err := os.Stat(nostrKeysFile); err == nil {
+			fmt.Printf("Existing Nostr keys found for %s\n", peer)
+		}
+		// } else {
+		// 	//generate nostr keys
+		// 	var nostrPartyPubKeysMap struct {
+		// 		NostrPubKeys map[string]string `json:"nostr_party_pub_keys"`
+		// 	}
+		// 	if err := json.Unmarshal([]byte(nostrPartyPubKeys), &nostrPartyPubKeysMap); err != nil {
+		// 		fmt.Printf("Failed to parse nostr party pubkeys: %v\n", err)
+		// 	}
+		// 	// Generate a new private key
+		// 	privateKey := nostr.GeneratePrivateKey()
+
+		// 	// Get the public key from the private key
+		// 	publicKey, err := nostr.GetPublicKey(privateKey)
+		// 	if err != nil {
+		// 		fmt.Printf("Error generating public key: %v\n", err)
+		// 		return
+		// 	}
+
+		// 	// Encode to nsec and npub format
+		// 	nsec, err := nip19.EncodePrivateKey(privateKey)
+		// 	if err != nil {
+		// 		fmt.Printf("Error encoding private key: %v\n", err)
+		// 		return
+		// 	}
+
+		// 	npub, err := nip19.EncodePublicKey(publicKey)
+		// 	if err != nil {
+		// 		fmt.Printf("Error encoding public key: %v\n", err)
+		// 		return
+		// 	}
+		// 	keyPair := map[string]string{
+		// 		"privateKey": nsec,
+		// 		"publicKey":  npub,
+		// 	}
+		// 	nostrKeyPairJSON, _ := json.Marshal(keyPair)
+		// 	//fmt.Printf(party + " Keygen Result Saved\n")
+
+		// 	//encodedResult := base64.StdEncoding.EncodeToString(nostrKeyPairJSON)
+
+		// 	if err := os.WriteFile(nostrKeysFile, []byte(nostrKeyPairJSON), 0644); err != nil {
+
+		// 		fmt.Printf("Failed to save nostr keys for %s: %v\n", party, err)
+
+		// 	}
+		// 	//localState.LocalNostrPubKey = nostrPubKey
+		// 	//localState.LocalNostrPrivKey = nostrPrivKey
+		// 	//localState.NostrPartyPubKeys = nostrPartyPubKeysMap.NostrPubKeys
+
+		// 	// Marshal the updated LocalState
+		// 	//updatedKeyshare, err = json.Marshal(localState)
+		// 	//if err != nil {
+
+		// 	//	fmt.Printf("Failed to marshal updated keyshare for %s: %v\n", party, err)
+
+		// 	//}
+		// }
+
+		//join keygen
+		keyshare, err := tss.JoinKeygen(ppmFile, peer, parties, "", "", session, server, chainCode, sessionKey, "nostr")
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		} else {
+
+			// Create LocalState with Nostr keys
+
+			var localState tss.LocalState
+
+			if err := json.Unmarshal([]byte(keyshare), &localState); err != nil {
+
+				fmt.Printf("Failed to parse keyshare for %s: %v\n", peer, err)
+
+			}
+
+			// save keyshare file - base64 encoded
+
+			fmt.Printf(peer + " Keygen Result Saved\n")
+
+			encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
+
+			if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
+
+				fmt.Printf("Failed to save keyshare for %s: %v\n", peer, err)
+
+			}
+
+			var kgR tss.KeygenResponse
+			if err := json.Unmarshal([]byte(keyshare), &kgR); err != nil {
+				fmt.Printf("Failed to parse keyshare for %s: %v\n", peer, err)
+			}
+
+			// print out pubkeys and p2pkh address
+			fmt.Printf(peer+" Public Key: %s\n", kgR.PubKey)
+			xPub := kgR.PubKey
+			btcPath := "m/44'/0'/0'/0/0"
+			btcPub, err := tss.GetDerivedPubKey(xPub, chainCode, btcPath, false)
+			if err != nil {
+				fmt.Printf("Failed to generate btc pubkey for %s: %v\n", peer, err)
+			} else {
+				fmt.Printf(peer+" BTC Public Key: %s\n", btcPub)
+				btcP2Pkh, err := tss.ConvertPubKeyToBTCAddress(btcPub, "testnet3")
+				if err != nil {
+					fmt.Printf("Failed to generate btc address for %s: %v\n", peer, err)
+				} else {
+					fmt.Printf(peer+" address btcP2Pkh: %s\n", btcP2Pkh)
+					//fmt.Printf(party+" Nostr Party PubKeys: %s\n", nostrPartyPubKeys)
+
+					// Master host is the party with the largest nostr public key
+					var maxPeer string
+					var maxKey string
+					for peer, key := range localState.NostrPartyPubKeys {
+						if key > maxKey { // Direct string comparison
+							maxKey = key
+							maxPeer = peer
+						}
+					}
+					fmt.Printf("Master host of the party is : %s: %s\n", maxPeer, maxKey)
+				}
+			}
+		}
+	}
+
 	if mode == "keygen" {
 		// prepare args
 		server := os.Args[2]
@@ -118,6 +284,7 @@ func main() {
 			if err := json.Unmarshal([]byte(nostrPartyPubKeys), &nostrPartyPubKeysMap); err != nil {
 				fmt.Printf("Failed to parse nostr party pubkeys: %v\n", err)
 			}
+
 			localState.LocalNostrPubKey = nostrPubKey
 			localState.LocalNostrPrivKey = nostrPrivKey
 			localState.NostrPartyPubKeys = nostrPartyPubKeysMap.NostrPubKeys
