@@ -164,7 +164,7 @@ func setStatus(session string, status Status) {
 	Hook(SessionState(session))
 }
 
-func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey, net_type string) (string, error) {
+func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey, net_type, newSession string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
 
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
@@ -208,6 +208,31 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status.SeqNo++
 	status.Index++
 	setStatus(session, status)
+
+	if net_type == "nostr" {
+
+		if newSession == "true" { //This is the master starting the session
+			fmt.Printf("Master is coordinating nostr session : %v\n", session)
+			ok, err := initiateNostrHandshake(session, key, sessionKey, TxRequest{})
+			if err != nil {
+				return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
+			}
+			if !ok {
+				return "", fmt.Errorf("failed to initiate nostr handshake")
+			}
+		}
+
+		for _, item := range nostrSessionList {
+			if item.Status == "start_keysign" && item.SessionID == session {
+				sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
+				if err != nil {
+					return "", fmt.Errorf("failed to sign transaction: signature is empty")
+				}
+				time.Sleep(1 * time.Second)
+			}
+		}
+
+	}
 
 	Logln("BBMTLog", "inbound messenger up...")
 	messenger := &MessengerImp{

@@ -17,7 +17,13 @@ go build -o "$BUILD_DIR/$BIN_NAME" main.go
 KEYPAIR1=$("$BUILD_DIR/$BIN_NAME" keypair)
 KEYPAIR2=$("$BUILD_DIR/$BIN_NAME" keypair)
 KEYPAIR3=$("$BUILD_DIR/$BIN_NAME" keypair)
-
+KEYPAIR4=$("$BUILD_DIR/$BIN_NAME" keypair)
+KEYPAIR5=$("$BUILD_DIR/$BIN_NAME" keypair)
+KEYPAIR6=$("$BUILD_DIR/$BIN_NAME" keypair)
+KEYPAIR7=$("$BUILD_DIR/$BIN_NAME" keypair)
+KEYPAIR8=$("$BUILD_DIR/$BIN_NAME" keypair)
+KEYPAIR9=$("$BUILD_DIR/$BIN_NAME" keypair)
+KEYPAIR10=$("$BUILD_DIR/$BIN_NAME" keypair)
 
 
 
@@ -27,24 +33,54 @@ KEYPAIR3=$("$BUILD_DIR/$BIN_NAME" keypair)
 NOSTR_KEYPAIR1=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
 NOSTR_KEYPAIR2=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
 NOSTR_KEYPAIR3=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
-
+NOSTR_KEYPAIR4=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
+NOSTR_KEYPAIR5=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
+NOSTR_KEYPAIR6=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
+NOSTR_KEYPAIR7=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
+NOSTR_KEYPAIR8=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
+NOSTR_KEYPAIR9=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
+NOSTR_KEYPAIR10=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
 
 NOSTR_PRIVATE_KEY1=$(echo "$NOSTR_KEYPAIR1" | jq -r '.privateKey')
 NOSTR_PRIVATE_KEY2=$(echo "$NOSTR_KEYPAIR2" | jq -r '.privateKey')
 NOSTR_PRIVATE_KEY3=$(echo "$NOSTR_KEYPAIR3" | jq -r '.privateKey')
-
+NOSTR_PRIVATE_KEY4=$(echo "$NOSTR_KEYPAIR4" | jq -r '.privateKey')
+NOSTR_PRIVATE_KEY5=$(echo "$NOSTR_KEYPAIR5" | jq -r '.privateKey')
+NOSTR_PRIVATE_KEY6=$(echo "$NOSTR_KEYPAIR6" | jq -r '.privateKey')
+NOSTR_PRIVATE_KEY7=$(echo "$NOSTR_KEYPAIR7" | jq -r '.privateKey')
+NOSTR_PRIVATE_KEY8=$(echo "$NOSTR_KEYPAIR8" | jq -r '.privateKey')
+NOSTR_PRIVATE_KEY9=$(echo "$NOSTR_KEYPAIR9" | jq -r '.privateKey')
+NOSTR_PRIVATE_KEY10=$(echo "$NOSTR_KEYPAIR10" | jq -r '.privateKey')
 NOSTR_PUBLIC_KEY1=$(echo "$NOSTR_KEYPAIR1" | jq -r '.publicKey')
 NOSTR_PUBLIC_KEY2=$(echo "$NOSTR_KEYPAIR2" | jq -r '.publicKey')
 NOSTR_PUBLIC_KEY3=$(echo "$NOSTR_KEYPAIR3" | jq -r '.publicKey')
-
+NOSTR_PUBLIC_KEY4=$(echo "$NOSTR_KEYPAIR4" | jq -r '.publicKey')
+NOSTR_PUBLIC_KEY5=$(echo "$NOSTR_KEYPAIR5" | jq -r '.publicKey')
+NOSTR_PUBLIC_KEY6=$(echo "$NOSTR_KEYPAIR6" | jq -r '.publicKey')
+NOSTR_PUBLIC_KEY7=$(echo "$NOSTR_KEYPAIR7" | jq -r '.publicKey')
+NOSTR_PUBLIC_KEY8=$(echo "$NOSTR_KEYPAIR8" | jq -r '.publicKey')
+NOSTR_PUBLIC_KEY9=$(echo "$NOSTR_KEYPAIR9" | jq -r '.publicKey')
+NOSTR_PUBLIC_KEY10=$(echo "$NOSTR_KEYPAIR10" | jq -r '.publicKey')
 PRIVATE_KEY1=$(echo "$KEYPAIR1" | jq -r '.privateKey')
 PRIVATE_KEY2=$(echo "$KEYPAIR2" | jq -r '.privateKey')
 PRIVATE_KEY3=$(echo "$KEYPAIR3" | jq -r '.privateKey')
-
+PRIVATE_KEY4=$(echo "$KEYPAIR4" | jq -r '.privateKey')
+PRIVATE_KEY5=$(echo "$KEYPAIR5" | jq -r '.privateKey')
+PRIVATE_KEY6=$(echo "$KEYPAIR6" | jq -r '.privateKey')
+PRIVATE_KEY7=$(echo "$KEYPAIR7" | jq -r '.privateKey')
+PRIVATE_KEY8=$(echo "$KEYPAIR8" | jq -r '.privateKey')
+PRIVATE_KEY9=$(echo "$KEYPAIR9" | jq -r '.privateKey')
+PRIVATE_KEY10=$(echo "$KEYPAIR10" | jq -r '.privateKey')
 PUBLIC_KEY1=$(echo "$KEYPAIR1" | jq -r '.publicKey')
 PUBLIC_KEY2=$(echo "$KEYPAIR2" | jq -r '.publicKey')
 PUBLIC_KEY3=$(echo "$KEYPAIR3" | jq -r '.publicKey')
-
+PUBLIC_KEY4=$(echo "$KEYPAIR4" | jq -r '.publicKey')
+PUBLIC_KEY5=$(echo "$KEYPAIR5" | jq -r '.publicKey')
+PUBLIC_KEY6=$(echo "$KEYPAIR6" | jq -r '.publicKey')
+PUBLIC_KEY7=$(echo "$KEYPAIR7" | jq -r '.publicKey')
+PUBLIC_KEY8=$(echo "$KEYPAIR8" | jq -r '.publicKey')
+PUBLIC_KEY9=$(echo "$KEYPAIR9" | jq -r '.publicKey')
+PUBLIC_KEY10=$(echo "$KEYPAIR10" | jq -r '.publicKey')
 # Generate random session ID and chain code
 SESSION_ID=$("$BUILD_DIR/$BIN_NAME" random)
 CHAIN_CODE=$("$BUILD_DIR/$BIN_NAME" random)
@@ -53,7 +89,7 @@ CHAIN_CODE=$("$BUILD_DIR/$BIN_NAME" random)
 PORT=55055
 HOST="127.0.0.1"
 SERVER="http://$HOST:$PORT"
-USENOSTR="true"
+USENOSTR="false"
 NOSTRRELAY="ws://bbw-nostr.xyz"
 
 PARTY1="peer1"
@@ -72,7 +108,7 @@ NOSTR_PARTY_PUBKEYS=$(jq -n \
     "nostr_party_pub_keys": {
       ($p1): $k1,
       ($p2): $k2,
-      ($p3): $k3,
+      ($p3): $k3
     }
   }')
 
@@ -103,13 +139,16 @@ SESSION_KEY=$("$BUILD_DIR/$BIN_NAME" random)
 
 # Start Keygen for both parties
 echo "Starting Keygen for PARTY1..."
-"$BUILD_DIR/$BIN_NAME" nostrKeygen "$SERVER" "$SESSION_ID" "$CHAIN_CODE" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$SESSION_KEY" "$USENOSTR" "$NOSTRRELAY"&
+"$BUILD_DIR/$BIN_NAME" keygen "$SERVER" "$SESSION_ID" "$CHAIN_CODE" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$SESSION_KEY" "$USENOSTR" "$NOSTRRELAY" "$NOSTR_PUBLIC_KEY1" "$NOSTR_PRIVATE_KEY1" "$NOSTR_PARTY_PUBKEYS"&
 PID1=$!
 
+echo "Starting Keygen for PARTY2..."
+"$BUILD_DIR/$BIN_NAME" keygen "$SERVER" "$SESSION_ID" "$CHAIN_CODE" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$SESSION_KEY" "$USENOSTR" "$NOSTRRELAY" "$NOSTR_PUBLIC_KEY2" "$NOSTR_PRIVATE_KEY2" "$NOSTR_PARTY_PUBKEYS"&
+PID2=$!
 
-
-
-
+echo "Starting Keygen for PARTY3..."
+"$BUILD_DIR/$BIN_NAME" keygen "$SERVER" "$SESSION_ID" "$CHAIN_CODE" "$PARTY3" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY3" "$SESSION_KEY" "$USENOSTR" "$NOSTRRELAY" "$NOSTR_PUBLIC_KEY3" "$NOSTR_PRIVATE_KEY3" "$NOSTR_PARTY_PUBKEYS"&
+PID3=$!
 
 
 
@@ -117,7 +156,7 @@ PID1=$!
 
 
 # Handle cleanup on exit
-trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3 exit" SIGINT SIGTERM
+trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3 $PID4 $PID5 $PID6 $PID7 $PID8 $PID9 $PID10; exit" SIGINT SIGTERM
 
 echo "Keygen processes running. Press Ctrl+C to stop."
 

@@ -251,7 +251,7 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 	// 	fmt.Printf("Go Error Decoding Base64: %v\n", err)
 	// }
 
-	fmt.Println(string(data))
+	//fmt.Println(string(data))
 	// Parse JSON into LocalState
 	var nostrKeys NostrKeys
 	if err := json.Unmarshal(data, &nostrKeys); err != nil {
@@ -429,7 +429,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey, recipientPubkey str
 	return nil
 }
 
-func initiateNostrHandshake(SessionID, localParty string, sessionKey string, txRequest TxRequest) (bool, error) {
+func initiateNostrHandshake(SessionID, localParty, sessionKey, functionType string, txRequest TxRequest) (bool, error) {
 
 	nostrKeys, err := GetNostrKeys(localParty)
 	if err != nil {
