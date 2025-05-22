@@ -30,12 +30,13 @@ type Status struct {
 }
 
 type MessengerImp struct {
-	Server     string
-	SessionID  string
-	SessionKey string
-	Mutex      sync.Mutex
-	Net_Type   string
-	Parties    string
+	Server       string
+	SessionID    string
+	SessionKey   string
+	Mutex        sync.Mutex
+	Net_Type     string
+	Parties      string
+	FunctionType string
 }
 
 type LocalStateAccessorImp struct {
@@ -166,6 +167,7 @@ func setStatus(session string, status Status) {
 
 func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey, net_type, newSession string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
+	functionType := "keygen"
 
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
@@ -212,8 +214,8 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	if net_type == "nostr" {
 
 		if newSession == "true" { //This is the master starting the session
-			fmt.Printf("Master is coordinating nostr session : %v\n", session)
-			ok, err := initiateNostrHandshake(session, key, sessionKey, TxRequest{})
+			fmt.Printf("Master is coordinating nostr keygen session : %v\n", session)
+			ok, err := initiateNostrHandshake(session, chaincode, key, sessionKey, functionType, TxRequest{})
 			if err != nil {
 				return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
 			}
@@ -222,24 +224,25 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 			}
 		}
 
-		for _, item := range nostrSessionList {
-			if item.Status == "start_keysign" && item.SessionID == session {
-				sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-				if err != nil {
-					return "", fmt.Errorf("failed to sign transaction: signature is empty")
-				}
-				time.Sleep(1 * time.Second)
-			}
-		}
+		// for _, item := range nostrSessionList {
+		// 	if item.Status == "start_keygen" && item.SessionID == session {
+		// 		sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
+		// 		if err != nil {
+		// 			return "", fmt.Errorf("failed to sign transaction: signature is empty")
+		// 		}
+		// 		time.Sleep(1 * time.Second)
+		// 	}
+		// }
 
 	}
 
 	Logln("BBMTLog", "inbound messenger up...")
 	messenger := &MessengerImp{
-		Server:     server,
-		SessionID:  session,
-		SessionKey: sessionKey,
-		Net_Type:   net_type,
+		Server:       server,
+		SessionID:    session,
+		SessionKey:   sessionKey,
+		Net_Type:     net_type,
+		FunctionType: functionType,
 	}
 
 	localStateAccessor := &LocalStateAccessorImp{
@@ -329,7 +332,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 
 func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message, net_type string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
-
+	functionType := "keysign"
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
@@ -374,11 +377,12 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 
 	Logln("BBMTLog", "inbound messenger up...")
 	messenger := &MessengerImp{
-		Server:     server,
-		SessionID:  session,
-		SessionKey: sessionKey,
-		Net_Type:   net_type,
-		Parties:    partiesCSV,
+		Server:       server,
+		SessionID:    session,
+		SessionKey:   sessionKey,
+		Net_Type:     net_type,
+		Parties:      partiesCSV,
+		FunctionType: functionType,
 	}
 
 	localStateAccessor := &LocalStateAccessorImp{
@@ -560,7 +564,7 @@ func unpadPKCS7(data []byte) []byte {
 	return data[:length-unpadding]
 }
 
-func (m *MessengerImp) Send(from, to, body, parties string) error {
+func (m *MessengerImp) Send(from, to, body, parties, functionType string) error {
 	m.Mutex.Lock()
 	defer m.Mutex.Unlock()
 
@@ -615,7 +619,7 @@ func (m *MessengerImp) Send(from, to, body, parties string) error {
 
 		protoMessage := ProtoMessage{
 			MessageType:  "message",
-			FunctionType: "keysign",
+			FunctionType: m.FunctionType,
 			SessionID:    m.SessionID,
 			From:         from,
 			To:           to,

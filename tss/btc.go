@@ -398,7 +398,7 @@ func MpcSendBTC(
 
 				if newSession == "true" { //This is the master starting the session
 					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					ok, err := initiateNostrHandshake(session, key, sessionKey, txRequest)
+					ok, err := initiateNostrHandshake(session, "", key, sessionKey, "start_keysign", txRequest)
 					if err != nil {
 						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
 					}
@@ -411,6 +411,7 @@ func MpcSendBTC(
 					if item.Status == "start_keysign" && item.SessionID == session {
 						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 						if err != nil {
+							Logf("Current status: %v", item.Status)
 							return "", fmt.Errorf("failed to sign transaction: signature is empty")
 						}
 						time.Sleep(1 * time.Second)
@@ -472,7 +473,7 @@ func MpcSendBTC(
 
 				if newSession == "true" { //This is the master starting the session
 					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					ok, err := initiateNostrHandshake(session, key, sessionKey, txRequest)
+					ok, err := initiateNostrHandshake(session, "", key, sessionKey, "start_keysign", txRequest)
 					if err != nil {
 						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
 					}
@@ -485,6 +486,7 @@ func MpcSendBTC(
 					if item.Status == "start_keysign" && item.SessionID == session {
 						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 						if err != nil {
+							Logf("Current status: %v", item.Status)
 							return "", fmt.Errorf("failed to sign transaction: signature is empty")
 						}
 						time.Sleep(1 * time.Second)

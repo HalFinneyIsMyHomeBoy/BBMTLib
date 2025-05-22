@@ -254,7 +254,7 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 	ecdsaEndCh <-chan *ecdsaKeygen.LocalPartySaveData,
 	localState *LocalState,
 	sortedPartyIds tss.SortedPartyIDs) (string, error) {
-
+	functionType := "keygen"
 	pubKey := ""
 	errChan := make(chan error, 1)
 
@@ -289,14 +289,14 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 						if item == localState.LocalPartyKey {
 							continue
 						}
-						if _err := s.messenger.Send(r.From.Moniker, item, outboundPayload, strings.Join(localState.KeygenCommitteeKeys, ",")); _err != nil {
+						if _err := s.messenger.Send(r.From.Moniker, item, outboundPayload, strings.Join(localState.KeygenCommitteeKeys, ","), functionType); _err != nil {
 							errChan <- fmt.Errorf("failed to broadcast message to peer, error: %v", _err)
 							return
 						}
 					}
 				} else {
 					for _, item := range r.To {
-						if _err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(localState.KeygenCommitteeKeys, ",")); _err != nil {
+						if _err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(localState.KeygenCommitteeKeys, ","), functionType); _err != nil {
 							errChan <- fmt.Errorf("failed to send message to peer, error: %v", _err)
 							return
 						}
@@ -462,6 +462,7 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 	endCh <-chan *common.SignatureData,
 	sortedPartyIds tss.SortedPartyIDs) (*common.SignatureData, error) {
 
+	functionType := "keysign"
 	var signature *common.SignatureData = nil
 	errChan := make(chan error, 1)
 
@@ -501,7 +502,7 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 						for i, p := range sortedPartyIds {
 							partyIDStrings[i] = p.Moniker
 						}
-						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(partyIDStrings, ",")); err != nil {
+						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(partyIDStrings, ","), functionType); err != nil {
 							errChan <- fmt.Errorf("failed to broadcast message to peer, error: %w", err)
 						}
 					}
@@ -512,7 +513,7 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 						for i, p := range sortedPartyIds {
 							partyIDStrings[i] = p.Moniker
 						}
-						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(partyIDStrings, ",")); err != nil {
+						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(partyIDStrings, ","), functionType); err != nil {
 							errChan <- fmt.Errorf("failed to send message to peer, error: %w", err)
 						}
 					}

@@ -90,7 +90,7 @@ func main() {
 		chainCode := randomSeed(64)
 		server := "http://127.0.0.1:55055"
 
-		net_type := os.Args[8]
+		net_type := "nostr"
 		//net_type := "nostr"
 		peer := "peer1"
 		//nostrPubKey := os.Args[12]
@@ -179,7 +179,7 @@ func main() {
 		// }
 
 		//join keygen
-		keyshare, err := tss.JoinKeygen(ppmFile, peer, parties, "", "", session, server, chainCode, sessionKey, net_type)
+		keyshare, err := tss.JoinKeygen(ppmFile, peer, parties, "", "", session, server, chainCode, sessionKey, net_type, "true")
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
@@ -265,7 +265,7 @@ func main() {
 		keyshareFile := party + ".ks"
 
 		//join keygen
-		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, "")
+		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, "", "false")
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {

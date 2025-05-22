@@ -29,7 +29,7 @@ var (
 	globalCtx                 context.Context
 	nostrRelayURL             string
 	KeysignApprovalTimeout    = 4 * time.Second
-	KeysignApprovalMaxRetries = 14
+	KeysignApprovalMaxRetries = 2
 	totalSentMessages         []ProtoMessage
 	nostrMutex                sync.Mutex
 	sessionMutex              sync.Mutex
@@ -49,6 +49,7 @@ type ProtoMessage struct {
 	Recipients      []NostrPartyPubKeys `json:"recipients"`
 	FromNostrPubKey string              `json:"from_nostr_pubkey"`
 	SessionID       string              `json:"sessionID"`
+	ChainCode       string              `json:"chain_code"`
 	RawMessage      []byte              `json:"raw_message"`
 	SeqNo           string              `json:"seq_no"`
 	From            string              `json:"from"`
@@ -61,6 +62,7 @@ type ProtoMessage struct {
 type NostrSession struct {
 	Status       string    `json:"status"`
 	SessionID    string    `json:"session_id"`
+	ChainCode    string    `json:"chain_code"`
 	SessionKey   string    `json:"session_key"`
 	Participants []string  `json:"participants"`
 	Master       Master    `json:"master"`
@@ -424,12 +426,19 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey, recipientPubkey str
 		nostrMutex.Lock()
 		nostrSetData(key, &protoMessage)
 		nostrMutex.Unlock()
-	}
 
+	case "start_keygen":
+		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.ChainCode, protoMessage.Participants, localParty)
+
+	case "keygen":
+		Logf("keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.ChainCode, protoMessage.Participants, localParty)
+	}
 	return nil
 }
 
-func initiateNostrHandshake(SessionID, localParty, sessionKey, functionType string, txRequest TxRequest) (bool, error) {
+func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functionType string, txRequest TxRequest) (bool, error) {
 
 	nostrKeys, err := GetNostrKeys(localParty)
 	if err != nil {
@@ -439,6 +448,7 @@ func initiateNostrHandshake(SessionID, localParty, sessionKey, functionType stri
 
 	protoMessage := ProtoMessage{
 		SessionID:       SessionID,
+		ChainCode:       chainCode,
 		SessionKey:      sessionKey,
 		FunctionType:    "init_handshake",
 		From:            localParty,
@@ -465,6 +475,7 @@ func initiateNostrHandshake(SessionID, localParty, sessionKey, functionType stri
 		Master:       protoMessage.Master,
 		Status:       "pending",
 		SessionKey:   sessionKey,
+		ChainCode:    chainCode,
 	}
 
 	if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
@@ -486,10 +497,10 @@ func initiateNostrHandshake(SessionID, localParty, sessionKey, functionType stri
 
 				participantCount := len(item.Participants)
 				if participantCount == partyCount {
-					Logf("All participants have approved, sending (start_keysign) for session: %s", SessionID)
+					Logf("All participants have approved, sending %s for session: %s", functionType, SessionID)
 					if item.Status == "pending" {
 						sessionReady = true
-						startKeysignMaster(SessionID, item.Participants, localParty)
+						startSessionMaster(SessionID, item.Participants, localParty, functionType)
 					} else {
 						return false, fmt.Errorf("session not ready")
 					}
@@ -498,9 +509,9 @@ func initiateNostrHandshake(SessionID, localParty, sessionKey, functionType stri
 					if retryCount >= maxRetries {
 						participationRatio := float64(participantCount) / float64(partyCount)
 						if participationRatio >= 0.66 {
-							Logf("We have 2/3 of participants approved, sending (start_keysign) for session: %s", SessionID)
+							Logf("We have 2/3 of participants approved, sending %s for session: %s", functionType, SessionID)
 							sessionReady = true
-							startKeysignMaster(SessionID, item.Participants, localParty)
+							startSessionMaster(SessionID, item.Participants, localParty, functionType)
 						} else {
 							Logf("Max retries reached, giving up on session: %s", SessionID)
 							return false, fmt.Errorf("max retries reached")
@@ -550,6 +561,7 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 	}
 
 	Logf("(init_handshake) message received from %s\n", protoMessage.From)
+	Logf("Collected ack handshake from %s for session: %s", protoMessage.From, session)
 	Logf("sending (ack_handshake) message to %s\n", protoMessage.From)
 	//============== UI - ask user to approve TX==================
 	//TODO
@@ -563,10 +575,10 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		Master:       protoMessage.Master,
 		Status:       "pending",
 		SessionKey:   protoMessage.SessionKey,
+		ChainCode:    protoMessage.ChainCode,
 	}
 	if !contains(nostrSession.Participants, protoMessage.From) {
 		nostrSession.Participants = append(nostrSession.Participants, protoMessage.From)
-		Logf("Collected ack handshake from %s for session: %s", protoMessage.From, session)
 	}
 
 	if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
@@ -575,6 +587,7 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 
 	ackProtoMessage := ProtoMessage{
 		SessionID:       session,
+		ChainCode:       protoMessage.ChainCode,
 		FunctionType:    "ack_handshake",
 		From:            localParty,
 		FromNostrPubKey: nostrKeys.LocalNostrPubKey,
@@ -588,7 +601,7 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 
 }
 
-func startKeysignMaster(sessionID string, participants []string, localParty string) {
+func startSessionMaster(sessionID string, participants []string, localParty string, functionType string) {
 
 	nostrKeys, err := GetNostrKeys(localParty)
 	if err != nil {
@@ -598,7 +611,7 @@ func startKeysignMaster(sessionID string, participants []string, localParty stri
 
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID && item.Status == "pending" {
-			nostrSessionList[i].Status = "start_keysign"
+			nostrSessionList[i].Status = functionType
 
 			recipients := make([]NostrPartyPubKeys, 0, len(participants))
 			for _, participant := range participants {
@@ -614,8 +627,9 @@ func startKeysignMaster(sessionID string, participants []string, localParty stri
 
 			startKeysignProtoMessage := ProtoMessage{
 				SessionID:    sessionID,
+				ChainCode:    item.ChainCode,
 				SessionKey:   item.SessionKey,
-				FunctionType: "start_keysign",
+				FunctionType: functionType,
 				From:         localParty,
 				Recipients:   recipients,
 				Participants: participants,
@@ -654,6 +668,46 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 			peers := strings.Join(item.Participants, ",")
 
 			result, err := MpcSendBTC("", localParty, peers, sessionID, sessionKey, "", "", string(nostrKeysJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
+			if err != nil {
+				fmt.Printf("Go Error: %v\n", err)
+			} else {
+				fmt.Printf("\n [%s] Keysign Result %s\n", localParty, result)
+			}
+		}
+	}
+}
+
+func startPartyNostrKeygen(sessionID, chainCode string, participants []string, localParty string) {
+
+	for i, item := range nostrSessionList {
+		if item.SessionID == sessionID {
+
+			nostrSessionList[i].Status = "start_keygen"
+			nostrSessionList[i].Participants = participants
+			sessionKey := nostrSessionList[i].SessionKey
+
+			// nostrKeys, err := GetNostrKeys(localParty)
+			// if err != nil {
+			// 	Logf("Error getting key share: %v", err)
+			// 	return
+			// }
+
+			// Marshal the keyshare to JSON
+			// nostrKeysJSON, err := json.Marshal(nostrKeys)
+			// if err != nil {
+			// 	Logf("Error marshaling keyshare: %v", err)
+			// 	return
+			// }
+			//sessionID = sessionID[:len(sessionID)-1]
+			ppmFile := localParty + ".json"
+			//keyshareFile := localParty + ".ks"
+			//nostrKeysFile := localParty + ".nostr"
+			//var updatedKeyshare []byte
+			//var err error
+
+			peers := strings.Join(item.Participants, ",")
+			result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
+			//result, err := JoinKeygen("", localParty, peers, sessionID, sessionKey, "", "", string(nostrKeysJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
 			if err != nil {
 				fmt.Printf("Go Error: %v\n", err)
 			} else {
