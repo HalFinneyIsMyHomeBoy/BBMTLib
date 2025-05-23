@@ -651,14 +651,13 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 			nostrSessionList[i].Participants = participants
 			sessionKey := nostrSessionList[i].SessionKey
 
-			nostrKeys, err := GetNostrKeys(localParty)
+			keyShare, err := GetKeyShare(localParty)
 			if err != nil {
 				Logf("Error getting key share: %v", err)
 				return
 			}
 
-			// Marshal the keyshare to JSON
-			nostrKeysJSON, err := json.Marshal(nostrKeys)
+			keyShareJSON, err := json.Marshal(keyShare)
 			if err != nil {
 				Logf("Error marshaling keyshare: %v", err)
 				return
@@ -667,7 +666,7 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 
 			peers := strings.Join(item.Participants, ",")
 
-			result, err := MpcSendBTC("", localParty, peers, sessionID, sessionKey, "", "", string(nostrKeysJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
+			result, err := MpcSendBTC("", localParty, peers, sessionID, sessionKey, "", "", string(keyShareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
 			if err != nil {
 				fmt.Printf("Go Error: %v\n", err)
 			} else {
