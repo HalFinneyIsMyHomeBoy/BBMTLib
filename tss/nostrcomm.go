@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"math/rand/v2"
 	"os"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip04"
 	"github.com/nbd-wtf/go-nostr/nip19"
 	"github.com/nbd-wtf/go-nostr/nip44"
 	"github.com/patrickmn/go-cache"
@@ -26,7 +28,7 @@ var (
 	nostrHandShakeList        []ProtoMessage
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
-	globalCtx                 context.Context
+	globalCtx, globalCancel   = context.WithCancel(context.Background())
 	nostrRelayURL             string
 	KeysignApprovalTimeout    = 4 * time.Second
 	KeysignApprovalMaxRetries = 2
@@ -35,6 +37,8 @@ var (
 	sessionMutex              sync.Mutex
 	nostrSendMutex            sync.Mutex
 	nostrDownloadMutex        sync.Mutex
+	chunkCache                = cache.New(5*time.Minute, 10*time.Minute)
+	chunkMutex                sync.Mutex
 )
 
 type NostrPartyPubKeys struct {
@@ -114,6 +118,21 @@ const (
 type Rumor struct {
 	nostr.Event
 	ID string
+}
+
+// ChunkedMessage represents a chunk of a larger message
+type ChunkedMessage struct {
+	TotalChunks int    `json:"total_chunks"`
+	ChunkIndex  int    `json:"chunk_index"`
+	MessageID   string `json:"message_id"`
+	Data        string `json:"data"`
+}
+
+// MessageChunks holds the chunks of a message being reassembled
+type MessageChunks struct {
+	TotalChunks int
+	Chunks      []string
+	Complete    bool
 }
 
 // Helper function to get current UNIX timestamp
@@ -263,26 +282,8 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 	return nostrKeys, nil
 }
 
-func GetNostrPartyPubKeys(party string) (map[string]string, error) {
-	keyShare, err := GetKeyShare(party)
-	if err != nil {
-		return nil, err
-	}
-	return keyShare.NostrPartyPubKeys, nil
-}
-
 func NostrListen(localParty, nostrRelay string) {
 	nostrRelayURL = nostrRelay
-
-	if globalCtx == nil {
-		globalCtx, _ = context.WithCancel(context.Background())
-	}
-
-	// keyShare, err := GetKeyShare(localParty)
-	// if err != nil {
-	// 	log.Printf("Error getting key share: %v\n", err)
-	// 	return
-	// }
 
 	nostrKeys, err := GetNostrKeys(localParty)
 	if err != nil {
@@ -302,104 +303,159 @@ func NostrListen(localParty, nostrRelay string) {
 		return
 	}
 
-	retryInterval := 3 * time.Second
+	retryInterval := 20 * time.Second
+	backoff := retryInterval
 
 	for {
-		ctx, cancel := context.WithCancel(globalCtx)
+		// Create a new context for this connection attempt
+		ctx, cancel := context.WithCancel(context.Background())
 
 		// Connect to relay
 		relay, err = nostr.RelayConnect(ctx, nostrRelay)
 		if err != nil {
-			log.Printf("Connection failed: %v, retrying in %v...\n", err, retryInterval)
+			log.Printf("Connection failed: %v, retrying in %v...\n", err, backoff)
 			cancel()
-			time.Sleep(retryInterval)
+			time.Sleep(backoff)
+			// Exponential backoff with max of 30 seconds
+			backoff = time.Duration(math.Min(float64(backoff*2), 30)) * time.Second
 			continue
 		}
 
+		// Reset backoff on successful connection
+		backoff = retryInterval
+
 		since := nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
-		//since := nostr.Timestamp(time.Now().Add(-2 * time.Hour).Unix())
 
 		filters := []nostr.Filter{{
-			Kinds: []int{1059},
+			Kinds: []int{4, 1059}, // Subscribe to both NIP-04 and NIP-44 messages
 			Tags:  map[string][]string{"p": {recipientPubkey}},
 			Since: &since,
 		}}
 
 		sub, err := relay.Subscribe(ctx, filters)
 		if err != nil {
-			log.Printf("Subscription failed: %v, retrying in %v...\n", err, retryInterval)
+			log.Printf("Subscription failed: %v, retrying in %v...\n", err, backoff)
 			cancel()
-			time.Sleep(retryInterval)
+			time.Sleep(backoff)
 			continue
 		}
 
 		log.Printf("%s subscribed to nostr\n", localParty)
 
-		for {
-			select {
-			case event := <-sub.Events:
-				if event == nil {
-					log.Printf("Connection lost, reconnecting...\n")
-					cancel()
-					break
+		// Create a channel to signal when we need to reconnect
+		reconnect := make(chan struct{})
+
+		// Start a goroutine to handle events
+		go func() {
+			for {
+				select {
+				case event := <-sub.Events:
+					if event == nil {
+						log.Printf("Connection lost, triggering reconnect...\n")
+						close(reconnect)
+						return
+					}
+
+					if err := processNostrEvent(event, recipientPrivkey.(string), recipientPubkey, localParty); err != nil {
+						log.Printf("Error processing event: %v\n", err)
+					}
+
+				case <-ctx.Done():
+					log.Printf("Context cancelled, triggering reconnect...\n")
+					close(reconnect)
+					return
+
+				case <-sub.EndOfStoredEvents:
+					continue
 				}
-
-				if err := processNostrEvent(event, recipientPrivkey.(string), recipientPubkey, localParty); err != nil {
-					log.Printf("Error processing event: %v\n", err)
-				}
-
-			case <-ctx.Done():
-				log.Printf("Context cancelled, reconnecting...\n")
-				cancel()
-				break
-
-			case <-sub.EndOfStoredEvents:
-				continue
 			}
-		}
+		}()
 
+		// Wait for reconnect signal
+		<-reconnect
+		cancel()
+
+		// Clean up the subscription
+		sub.Unsub()
+
+		// Small delay before reconnecting
+		time.Sleep(backoff)
 	}
 }
 
 func processNostrEvent(event *nostr.Event, recipientPrivkey, recipientPubkey string, localParty string) error {
+	var decryptedContent string
 
-	conversationKey, err := nip44.GenerateConversationKey(event.PubKey, recipientPrivkey)
-	if err != nil {
-		return fmt.Errorf("Failed to generate conversation key: %v\n", err)
+	// Handle different event kinds
+	switch event.Kind {
+	case 4: // NIP-04 encrypted direct message
+		sharedSecret, err := nip04.ComputeSharedSecret(event.PubKey, recipientPrivkey)
+		if err != nil {
+			return fmt.Errorf("failed to compute shared secret: %w", err)
+		}
+		decryptedContent, err = nip04.Decrypt(event.Content, sharedSecret)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt NIP-04 message: %w", err)
+		}
+
+	case 1059: // NIP-44 gift wrap
+		conversationKey, err := nip44.GenerateConversationKey(event.PubKey, recipientPrivkey)
+		if err != nil {
+			return fmt.Errorf("Failed to generate conversation key: %v\n", err)
+		}
+
+		// Decrypt gift wrap content (kind:1059)
+		sealJSON, err := nip44.Decrypt(event.Content, conversationKey)
+		if err != nil {
+			return fmt.Errorf("Failed to decrypt gift wrap: %v\n", err)
+		}
+
+		// Deserialize seal
+		var seal nostr.Event
+		if err := json.Unmarshal([]byte(sealJSON), &seal); err != nil {
+			return fmt.Errorf("Failed to deserialize seal: %v\n", err)
+		}
+
+		// Generate conversation key for seal
+		sealConversationKey, err := nip44.GenerateConversationKey(seal.PubKey, recipientPrivkey)
+		if err != nil {
+			return fmt.Errorf("Failed to generate seal conversation key: %v\n", err)
+		}
+
+		// Decrypt seal content (kind:13)
+		rumorJSON, err := nip44.Decrypt(seal.Content, sealConversationKey)
+		if err != nil {
+			return fmt.Errorf("Failed to decrypt seal: %v\n", err)
+		}
+
+		// Deserialize rumor
+		var rumor Rumor
+		if err := json.Unmarshal([]byte(rumorJSON), &rumor); err != nil {
+			return fmt.Errorf("Failed to deserialize rumor: %v\n", err)
+		}
+		decryptedContent = rumor.Content
+
+	default:
+		return fmt.Errorf("unsupported event kind: %d", event.Kind)
 	}
 
-	// Decrypt gift wrap content (kind:1059)
-	sealJSON, err := nip44.Decrypt(event.Content, conversationKey)
-	if err != nil {
-		return fmt.Errorf("Failed to decrypt gift wrap: %v\n", err)
-	}
-
-	// Deserialize seal
-	var seal nostr.Event
-	if err := json.Unmarshal([]byte(sealJSON), &seal); err != nil {
-		return fmt.Errorf("Failed to deserialize seal: %v\n", err)
-	}
-
-	// Generate conversation key for seal
-	sealConversationKey, err := nip44.GenerateConversationKey(seal.PubKey, recipientPrivkey)
-	if err != nil {
-		return fmt.Errorf("Failed to generate seal conversation key: %v\n", err)
-	}
-
-	// Decrypt seal content (kind:13)
-	rumorJSON, err := nip44.Decrypt(seal.Content, sealConversationKey)
-	if err != nil {
-		return fmt.Errorf("Failed to decrypt seal: %v\n", err)
-	}
-
-	// Deserialize rumor
-	var rumor Rumor
-	if err := json.Unmarshal([]byte(rumorJSON), &rumor); err != nil {
-		return fmt.Errorf("Failed to deserialize rumor: %v\n", err)
+	// Check if this is a chunked message
+	var chunkedMsg ChunkedMessage
+	if err := json.Unmarshal([]byte(decryptedContent), &chunkedMsg); err == nil && chunkedMsg.MessageID != "" {
+		// This is a chunked message, handle reassembly
+		completeMessage, err := handleChunkedMessage(chunkedMsg)
+		if err != nil {
+			return fmt.Errorf("failed to handle chunked message: %w", err)
+		}
+		if completeMessage == "" {
+			// Message is not yet complete
+			return nil
+		}
+		decryptedContent = completeMessage
 	}
 
 	var protoMessage ProtoMessage
-	if err := json.Unmarshal([]byte(rumor.Content), &protoMessage); err != nil {
+	if err := json.Unmarshal([]byte(decryptedContent), &protoMessage); err != nil {
 		return fmt.Errorf("parse message: %w", err)
 	}
 
@@ -429,13 +485,52 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey, recipientPubkey str
 
 	case "start_keygen":
 		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.ChainCode, protoMessage.Participants, localParty)
+		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
 
 	case "keygen":
 		Logf("keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.ChainCode, protoMessage.Participants, localParty)
+		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
 	}
 	return nil
+}
+
+func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
+	chunkMutex.Lock()
+	defer chunkMutex.Unlock()
+
+	// Get or create message chunks
+	var chunks *MessageChunks
+	if value, found := chunkCache.Get(chunk.MessageID); found {
+		chunks = value.(*MessageChunks)
+	} else {
+		chunks = &MessageChunks{
+			TotalChunks: chunk.TotalChunks,
+			Chunks:      make([]string, chunk.TotalChunks),
+		}
+		chunkCache.Set(chunk.MessageID, chunks, cache.DefaultExpiration)
+	}
+
+	// Store the chunk
+	chunks.Chunks[chunk.ChunkIndex] = chunk.Data
+
+	// Check if all chunks are received
+	complete := true
+	for _, c := range chunks.Chunks {
+		if c == "" {
+			complete = false
+			break
+		}
+	}
+
+	if complete {
+		// Combine all chunks
+		completeMessage := strings.Join(chunks.Chunks, "")
+		// Clean up the cache
+		chunkCache.Delete(chunk.MessageID)
+		return completeMessage, nil
+	}
+
+	return "", nil
 }
 
 func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functionType string, txRequest TxRequest) (bool, error) {
@@ -457,7 +552,7 @@ func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functi
 		TxRequest:       txRequest,
 		Master:          Master{MasterPeer: localParty, MasterPubKey: nostrKeys.LocalNostrPubKey},
 	}
-
+	fmt.Println("chaincode - initiateNostrHandshake-", chainCode)
 	// map nostrpartypubkeys
 	for party, pubKey := range nostrKeys.NostrPartyPubKeys {
 		if party != localParty {
@@ -544,6 +639,7 @@ func collectAckHandshake(localParty, sessionID string, protoMessage ProtoMessage
 			if !contains(item.Participants, protoMessage.From) {
 				item.Participants = append(item.Participants, protoMessage.From)
 				nostrSessionList[i] = item
+				fmt.Println("chaincode - collectAckHandshake-", item.ChainCode)
 				Logf("%s has approved session: %s", protoMessage.From, sessionID)
 				Logf("%v out of %v participants have approved", int(len(item.Participants)), int(len(nostrKeys.NostrPartyPubKeys)))
 			}
@@ -577,6 +673,7 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		SessionKey:   protoMessage.SessionKey,
 		ChainCode:    protoMessage.ChainCode,
 	}
+	fmt.Println("chaincode - AckNostrHandshake-", nostrSession.ChainCode)
 	if !contains(nostrSession.Participants, protoMessage.From) {
 		nostrSession.Participants = append(nostrSession.Participants, protoMessage.From)
 	}
@@ -596,7 +693,7 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		TxRequest:       protoMessage.TxRequest,
 		Master:          Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
 	}
-
+	fmt.Println("chaincode - AckNostrHandshake2-", ackProtoMessage.ChainCode)
 	nostrSend(localParty, ackProtoMessage)
 
 }
@@ -636,7 +733,7 @@ func startSessionMaster(sessionID string, participants []string, localParty stri
 				TxRequest:    item.TxRequest,
 				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
 			}
-
+			fmt.Println("chaincode - startSessionMaster-", startKeysignProtoMessage.ChainCode)
 			nostrSend(localParty, startKeysignProtoMessage)
 		}
 	}
@@ -676,15 +773,14 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 	}
 }
 
-func startPartyNostrKeygen(sessionID, chainCode string, participants []string, localParty string) {
+func startPartyNostrKeygen(sessionID string, participants []string, localParty string) {
 
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID {
-
 			nostrSessionList[i].Status = "start_keygen"
 			nostrSessionList[i].Participants = participants
 			sessionKey := nostrSessionList[i].SessionKey
-
+			chainCode := nostrSessionList[i].ChainCode
 			// nostrKeys, err := GetNostrKeys(localParty)
 			// if err != nil {
 			// 	Logf("Error getting key share: %v", err)
@@ -755,31 +851,7 @@ func nostrSessionAlreadyExists(list []NostrSession, nostrSession NostrSession) b
 	return false
 }
 
-func validateKeys(privateKey, publicKey string) error {
-	if len(privateKey) != 64 || !nostr.IsValidPublicKey(publicKey) {
-		return fmt.Errorf("invalid key format")
-	}
-	derivedPubKey, err := nostr.GetPublicKey(privateKey)
-	if err != nil {
-		return fmt.Errorf("error deriving public key: %v", err)
-	}
-	if derivedPubKey != publicKey {
-		return fmt.Errorf("private key does not match public key")
-	}
-	return nil
-}
-
-func nostrSend(from string, protoMessage ProtoMessage) error {
-
-	if globalCtx == nil {
-		globalCtx = context.Background()
-	}
-
-	// keyShare, err := GetKeyShare(from)
-	// if err != nil {
-	// 	log.Printf("Error getting key share: %v\n", err)
-	// 	return err
-	// }
+func nostrSendNIP04(from string, protoMessage ProtoMessage) error {
 
 	nostrKeys, err := GetNostrKeys(from)
 	if err != nil {
@@ -808,25 +880,170 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 			return fmt.Errorf("invalid recipient npub: %w", err)
 		}
 
-		// Create rumor
-		rumor := createRumor(string(protoMessageJSON), senderPubkey, recipientPubkey.(string))
-
-		// Create seal for recipient
-		seal, err := createSeal(rumor, senderPrivkey.(string), recipientPubkey.(string))
+		// Create encrypted direct message using NIP-04
+		sharedSecret, err := nip04.ComputeSharedSecret(recipientPubkey.(string), senderPrivkey.(string))
 		if err != nil {
-			return fmt.Errorf("failed to create seal: %w", err)
+			return fmt.Errorf("failed to compute shared secret: %w", err)
+		}
+		encryptedContent, err := nip04.Encrypt(string(protoMessageJSON), sharedSecret)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt message: %w", err)
 		}
 
-		// Create gift wrap for recipient
-		wrap, err := createWrap(seal, recipientPubkey.(string))
-		if err != nil {
-			return fmt.Errorf("failed to create wrap: %w", err)
+		// Create kind:4 event (encrypted direct message)
+		event := &nostr.Event{
+			Kind:      4,
+			CreatedAt: nostr.Now(),
+			PubKey:    senderPubkey,
+			Content:   encryptedContent,
+			Tags:      nostr.Tags{{"p", recipientPubkey.(string)}},
 		}
 
-		ctx, cancel := context.WithTimeout(globalCtx, 600*time.Second)
-		defer cancel()
+		// Sign the event
+		if err := event.Sign(senderPrivkey.(string)); err != nil {
+			return fmt.Errorf("failed to sign event: %w", err)
+		}
 
-		err = relay.Publish(ctx, *wrap)
+		ctx, cancel := context.WithTimeout(globalCtx, 120*time.Second)
+		err = relay.Publish(ctx, *event)
+		cancel()
+		if err != nil {
+			log.Printf("Error publishing event: %v\n", err)
+			return err
+		}
+	}
+	return nil
+}
+
+func nostrSend(from string, protoMessage ProtoMessage) error {
+	nostrKeys, err := GetNostrKeys(from)
+	if err != nil {
+		log.Printf("Error getting nostr keys: %v\n", err)
+		return err
+	}
+
+	for _, recipient := range protoMessage.Recipients {
+		protoMessageJSON, err := json.Marshal(protoMessage)
+		if err != nil {
+			log.Printf("Error marshalling protoMessage: %v\n", err)
+			return err
+		}
+
+		protoMessageSize := int64(len(protoMessageJSON))
+		var event *nostr.Event
+
+		if protoMessageSize > 20*1024 {
+			// Decode sender's private key and recipient's public key
+			_, senderPrivkey, err := nip19.Decode(nostrKeys.LocalNostrPrivKey)
+			if err != nil {
+				return fmt.Errorf("invalid sender nsec: %w", err)
+			}
+			senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
+			if err != nil {
+				return fmt.Errorf("failed to derive sender pubkey: %w", err)
+			}
+			_, recipientPubkey, err := nip19.Decode(recipient.PubKey)
+			if err != nil {
+				return fmt.Errorf("invalid recipient npub: %w", err)
+			}
+
+			// Generate a unique message ID for this chunked message
+			messageID := fmt.Sprintf("%s-%d", protoMessage.SessionID, time.Now().UnixNano())
+
+			// Split message into chunks of 60KB
+			chunkSize := 20 * 1024
+			totalChunks := int(math.Ceil(float64(protoMessageSize) / float64(chunkSize)))
+			messageStr := string(protoMessageJSON)
+
+			for i := 0; i < totalChunks; i++ {
+				start := i * chunkSize
+				end := int(math.Min(float64((i+1)*chunkSize), float64(protoMessageSize)))
+				chunk := messageStr[start:end]
+
+				// Create chunked message
+				chunkedMsg := ChunkedMessage{
+					TotalChunks: totalChunks,
+					ChunkIndex:  i,
+					MessageID:   messageID,
+					Data:        chunk,
+				}
+
+				// Marshal chunked message
+				chunkedJSON, err := json.Marshal(chunkedMsg)
+				if err != nil {
+					return fmt.Errorf("failed to marshal chunked message: %w", err)
+				}
+				chunkedJSONSize := int64(len(chunkedJSON))
+				fmt.Printf("chunkedJSONSize: %d\n", chunkedJSONSize)
+
+				// Create rumor for chunk
+				rumor := createRumor(string(chunkedJSON), senderPubkey, recipientPubkey.(string))
+				rumorSize := int64(len(rumor.Content))
+				fmt.Printf("rumorSize: %d\n", rumorSize)
+				// Create seal for chunk
+				seal, err := createSeal(rumor, senderPrivkey.(string), recipientPubkey.(string))
+				if err != nil {
+					return fmt.Errorf("failed to create seal: %w", err)
+				}
+				sealSize := int64(len(seal.Content))
+				fmt.Printf("sealSize: %d\n", sealSize)
+
+				// Create gift wrap for chunk
+				event, err = createWrap(seal, recipientPubkey.(string))
+				if err != nil {
+					return fmt.Errorf("failed to create wrap: %w", err)
+				}
+				wrapSize := int64(len(event.Content))
+				fmt.Printf("wrapSize: %d\n", wrapSize)
+				// Publish chunk
+				err = relay.Publish(globalCtx, *event)
+				if err != nil {
+					log.Printf("Error publishing chunk %d: %v\n", i, err)
+					return err
+				}
+
+				// Add a small delay between chunks to prevent overwhelming the relay
+				//time.Sleep(100 * time.Millisecond)
+			}
+			return nil // Return after sending all chunks
+		} else {
+			// Decode sender's private key and recipient's public key
+			_, senderPrivkey, err := nip19.Decode(nostrKeys.LocalNostrPrivKey)
+			if err != nil {
+				return fmt.Errorf("invalid sender nsec: %w", err)
+			}
+			senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
+			if err != nil {
+				return fmt.Errorf("failed to derive sender pubkey: %w", err)
+			}
+			_, recipientPubkey, err := nip19.Decode(recipient.PubKey)
+			if err != nil {
+				return fmt.Errorf("invalid recipient npub: %w", err)
+			}
+
+			// Create rumor
+			rumor := createRumor(string(protoMessageJSON), senderPubkey, recipientPubkey.(string))
+
+			// Create seal for recipient
+			seal, err := createSeal(rumor, senderPrivkey.(string), recipientPubkey.(string))
+			if err != nil {
+				return fmt.Errorf("failed to create seal: %w", err)
+			}
+
+			// Create gift wrap for recipient
+			event, err = createWrap(seal, recipientPubkey.(string))
+			if err != nil {
+				return fmt.Errorf("failed to create wrap: %w", err)
+			}
+		}
+
+		if event == nil {
+			return fmt.Errorf("failed to create event")
+		}
+		//defer cancel()
+		// Create a new context for each publish attempt
+		//publishCtx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		err = relay.Publish(globalCtx, *event)
 
 		if err != nil {
 			log.Printf("Error publishing event: %v\n", err)

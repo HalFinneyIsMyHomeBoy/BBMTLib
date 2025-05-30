@@ -84,9 +84,9 @@ func main() {
 		// encKey := os.Args[7]
 		// decKey := os.Args[8]
 		// sessionKey := os.Args[9]
-		parties := "peer1,peer2,peer3" // All participating parties
-		session := randomSeed(64)      // Generate random session ID
-		sessionKey := randomSeed(64)   // Random session key
+		parties := "peer1,peer2"     // All participating parties
+		session := randomSeed(64)    // Generate random session ID
+		sessionKey := randomSeed(64) // Random session key
 		chainCode := randomSeed(64)
 		server := "http://127.0.0.1:55055"
 
@@ -226,17 +226,6 @@ func main() {
 				} else {
 					fmt.Printf(peer+" address btcP2Pkh: %s\n", btcP2Pkh)
 					//fmt.Printf(party+" Nostr Party PubKeys: %s\n", nostrPartyPubKeys)
-
-					// Master host is the party with the largest nostr public key
-					var maxPeer string
-					var maxKey string
-					for peer, key := range localState.NostrPartyPubKeys {
-						if key > maxKey { // Direct string comparison
-							maxKey = key
-							maxPeer = peer
-						}
-					}
-					fmt.Printf("Master host of the party is : %s: %s\n", maxPeer, maxKey)
 				}
 			}
 		}
@@ -333,16 +322,6 @@ func main() {
 					fmt.Printf(party+" address btcP2Pkh: %s\n", btcP2Pkh)
 					fmt.Printf(party+" Nostr Party PubKeys: %s\n", nostrPartyPubKeys)
 
-					// Master host is the party with the largest nostr public key
-					var maxPeer string
-					var maxKey string
-					for peer, key := range localState.NostrPartyPubKeys {
-						if key > maxKey { // Direct string comparison
-							maxKey = key
-							maxPeer = peer
-						}
-					}
-					fmt.Printf("Master host of the party is : %s: %s\n", maxPeer, maxKey)
 				}
 			}
 		}
