@@ -28,8 +28,8 @@ PARTY3="peer3"
  "$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY2" "$nostrRelay" &
 PID1=$!
 
-echo "Start listening on peer 3..."
-"$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY3" "$nostrRelay" &    
+echo "Start listening on peer 3..." 
+"$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY3" "$nostrRelay" &
 PID2=$!
 
 

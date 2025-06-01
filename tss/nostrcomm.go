@@ -463,33 +463,43 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey, recipientPubkey str
 		return nil // Ignore messages from self
 	}
 
-	switch protoMessage.FunctionType {
-	case "init_handshake":
+	if protoMessage.FunctionType == "init_handshake" {
 		go AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
+	}
 
-	case "ack_handshake":
+	if protoMessage.FunctionType == "ack_handshake" {
 		if protoMessage.Master.MasterPeer == localParty {
 			collectAckHandshake(localParty, protoMessage.SessionID, protoMessage)
 		}
+	}
 
-	case "start_keysign":
+	if protoMessage.FunctionType == "start_keysign" {
 		Logf("start_keysign received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		go startPartyNostrMPCsendBTC(protoMessage.SessionID, protoMessage.Participants, localParty)
+	}
 
-	case "keysign":
+	if protoMessage.FunctionType == "keysign" && protoMessage.MessageType == "message" {
 		Logf("keysign received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		key := protoMessage.MessageType + "-" + protoMessage.SessionID
 		nostrMutex.Lock()
 		nostrSetData(key, &protoMessage)
 		nostrMutex.Unlock()
+	}
+	// case "start_keygen":
+	// 	Logf("11111111111start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+	// 	go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
 
-	case "start_keygen":
-		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+	if protoMessage.FunctionType == "keygen" && protoMessage.MessageType != "message" {
+		Logf("222222222222start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
+	}
 
-	case "keygen":
-		Logf("keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
+	if protoMessage.FunctionType == "keygen" && protoMessage.MessageType == "message" {
+		Logf("keygen message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+		key := protoMessage.MessageType + "-" + protoMessage.SessionID
+		nostrMutex.Lock()
+		nostrSetData(key, &protoMessage)
+		nostrMutex.Unlock()
 	}
 	return nil
 }
@@ -795,7 +805,7 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 			// }
 			//sessionID = sessionID[:len(sessionID)-1]
 			ppmFile := localParty + ".json"
-			//keyshareFile := localParty + ".ks"
+			keyshareFile := localParty + ".ks"
 			//nostrKeysFile := localParty + ".nostr"
 			//var updatedKeyshare []byte
 			//var err error
@@ -807,6 +817,46 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 				fmt.Printf("Go Error: %v\n", err)
 			} else {
 				fmt.Printf("\n [%s] Keysign Result %s\n", localParty, result)
+			}
+
+			var localState LocalState
+
+			if err := json.Unmarshal([]byte(result), &localState); err != nil {
+
+				fmt.Printf("Failed to parse keyshare for %s: %v\n", localParty, err)
+
+			}
+
+			// var nostrPartyPubKeysMap struct {
+			// 	NostrPubKeys map[string]string `json:"nostr_party_pub_keys"`
+			// }
+			// if err := json.Unmarshal([]byte(nostrPartyPubKeys), &nostrPartyPubKeysMap); err != nil {
+			// 	fmt.Printf("Failed to parse nostr party pubkeys: %v\n", err)
+			// }
+
+			// localState.LocalNostrPubKey = nostrPubKey
+			// localState.LocalNostrPrivKey = nostrPrivKey
+			// localState.NostrPartyPubKeys = nostrPartyPubKeysMap.NostrPubKeys
+
+			// // Marshal the updated LocalState
+			updatedKeyshare, err := json.Marshal(localState)
+
+			// if err != nil {
+
+			// 	fmt.Printf("Failed to marshal updated keyshare for %s: %v\n", party, err)
+
+			// }
+
+			// save keyshare file - base64 encoded
+
+			fmt.Printf(localParty + " Keygen Result Saved\n")
+
+			encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
+
+			if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
+
+				fmt.Printf("Failed to save keyshare for %s: %v\n", localParty, err)
+
 			}
 		}
 	}
