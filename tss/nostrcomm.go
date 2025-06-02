@@ -2,7 +2,9 @@ package tss
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -452,6 +454,10 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey, recipientPubkey str
 			return nil
 		}
 		decryptedContent = completeMessage
+		// Generate SHA256 sum of decrypted content
+		msgHash := sha256.Sum256([]byte(decryptedContent))
+		msgHashStr := hex.EncodeToString(msgHash[:])
+		Logf("msgHashStr (Received to %s): %s", localParty, msgHashStr)
 	}
 
 	var protoMessage ProtoMessage
@@ -811,7 +817,7 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 			//var err error
 
 			peers := strings.Join(item.Participants, ",")
-			result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
+			result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "http://127.0.0.1:55055", chainCode, sessionKey, "nostr", "false")
 			//result, err := JoinKeygen("", localParty, peers, sessionID, sessionKey, "", "", string(nostrKeysJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
 			if err != nil {
 				fmt.Printf("Go Error: %v\n", err)
@@ -827,27 +833,8 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 
 			}
 
-			// var nostrPartyPubKeysMap struct {
-			// 	NostrPubKeys map[string]string `json:"nostr_party_pub_keys"`
-			// }
-			// if err := json.Unmarshal([]byte(nostrPartyPubKeys), &nostrPartyPubKeysMap); err != nil {
-			// 	fmt.Printf("Failed to parse nostr party pubkeys: %v\n", err)
-			// }
-
-			// localState.LocalNostrPubKey = nostrPubKey
-			// localState.LocalNostrPrivKey = nostrPrivKey
-			// localState.NostrPartyPubKeys = nostrPartyPubKeysMap.NostrPubKeys
-
 			// // Marshal the updated LocalState
 			updatedKeyshare, err := json.Marshal(localState)
-
-			// if err != nil {
-
-			// 	fmt.Printf("Failed to marshal updated keyshare for %s: %v\n", party, err)
-
-			// }
-
-			// save keyshare file - base64 encoded
 
 			fmt.Printf(localParty + " Keygen Result Saved\n")
 
@@ -857,6 +844,11 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 
 				fmt.Printf("Failed to save keyshare for %s: %v\n", localParty, err)
 
+			}
+
+			var kgR KeygenResponse
+			if err := json.Unmarshal([]byte(result), &kgR); err != nil {
+				fmt.Printf("Failed to parse keyshare for %s: %v\n", localParty, err)
 			}
 		}
 	}
@@ -983,6 +975,10 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 		var event *nostr.Event
 
 		if protoMessageSize > 20*1024 {
+			// Generate SHA256 sum of message
+			msgHash := sha256.Sum256(protoMessageJSON)
+			msgHashStr := hex.EncodeToString(msgHash[:])
+			Logf("msgHashStr (Sent from %s to %s): %s", from, recipient.Peer, msgHashStr)
 			// Decode sender's private key and recipient's public key
 			_, senderPrivkey, err := nip19.Decode(nostrKeys.LocalNostrPrivKey)
 			if err != nil {
@@ -1094,6 +1090,7 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 		// Create a new context for each publish attempt
 		//publishCtx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		err = relay.Publish(globalCtx, *event)
+		//time.Sleep(100 * time.Millisecond)
 
 		if err != nil {
 			log.Printf("Error publishing event: %v\n", err)

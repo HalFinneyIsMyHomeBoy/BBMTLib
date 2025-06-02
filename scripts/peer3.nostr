@@ -1,9 +1,9 @@
 {
-  "local_nostr_pub_key": "npub17anx2xy24nkccjlcn6dz8wj2s9xqdpmv0dcu2gt3fr6ec4pt0ujs84vn62",
-  "local_nostr_priv_key": "nsec1mzrnx389lskzl9hreumhen00wr0fvyhlqy7el24sep9xs6t4e20q5lzrgu",
+  "local_nostr_pub_key": "npub1d9z4magn4n26tnjleu8akk0vz0hlvpvzj97k2t3qlkvcus0fa56qzmewxf",
+  "local_nostr_priv_key": "nsec1pejk245zwuyn5dxkf3r7spfh4y7ga44u5tywvp7dc4jfwwwljwdqyy9v55",
   "nostr_party_pub_keys": {
     "peer1": "npub16g6c7wv0lzw0864fy5jygtgrzdq4hc0sc0l34vsnpzpx2vul7quslrkc46",
     "peer2": "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp",
-    "peer3": "npub17anx2xy24nkccjlcn6dz8wj2s9xqdpmv0dcu2gt3fr6ec4pt0ujs84vn62"
+    "peer3": "npub1d9z4magn4n26tnjleu8akk0vz0hlvpvzj97k2t3qlkvcus0fa56qzmewxf"
   }
 }

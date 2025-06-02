@@ -84,9 +84,9 @@ func main() {
 		// encKey := os.Args[7]
 		// decKey := os.Args[8]
 		// sessionKey := os.Args[9]
-		parties := "peer1,peer2"     // All participating parties
-		session := randomSeed(64)    // Generate random session ID
-		sessionKey := randomSeed(64) // Random session key
+		parties := "peer1,peer2,peer3" // All participating parties
+		session := randomSeed(64)      // Generate random session ID
+		sessionKey := randomSeed(64)   // Random session key
 		chainCode := randomSeed(64)
 		server := "http://127.0.0.1:55055"
 
@@ -121,62 +121,6 @@ func main() {
 		if _, err := os.Stat(nostrKeysFile); err == nil {
 			fmt.Printf("Existing Nostr keys found for %s\n", peer)
 		}
-		// } else {
-		// 	//generate nostr keys
-		// 	var nostrPartyPubKeysMap struct {
-		// 		NostrPubKeys map[string]string `json:"nostr_party_pub_keys"`
-		// 	}
-		// 	if err := json.Unmarshal([]byte(nostrPartyPubKeys), &nostrPartyPubKeysMap); err != nil {
-		// 		fmt.Printf("Failed to parse nostr party pubkeys: %v\n", err)
-		// 	}
-		// 	// Generate a new private key
-		// 	privateKey := nostr.GeneratePrivateKey()
-
-		// 	// Get the public key from the private key
-		// 	publicKey, err := nostr.GetPublicKey(privateKey)
-		// 	if err != nil {
-		// 		fmt.Printf("Error generating public key: %v\n", err)
-		// 		return
-		// 	}
-
-		// 	// Encode to nsec and npub format
-		// 	nsec, err := nip19.EncodePrivateKey(privateKey)
-		// 	if err != nil {
-		// 		fmt.Printf("Error encoding private key: %v\n", err)
-		// 		return
-		// 	}
-
-		// 	npub, err := nip19.EncodePublicKey(publicKey)
-		// 	if err != nil {
-		// 		fmt.Printf("Error encoding public key: %v\n", err)
-		// 		return
-		// 	}
-		// 	keyPair := map[string]string{
-		// 		"privateKey": nsec,
-		// 		"publicKey":  npub,
-		// 	}
-		// 	nostrKeyPairJSON, _ := json.Marshal(keyPair)
-		// 	//fmt.Printf(party + " Keygen Result Saved\n")
-
-		// 	//encodedResult := base64.StdEncoding.EncodeToString(nostrKeyPairJSON)
-
-		// 	if err := os.WriteFile(nostrKeysFile, []byte(nostrKeyPairJSON), 0644); err != nil {
-
-		// 		fmt.Printf("Failed to save nostr keys for %s: %v\n", party, err)
-
-		// 	}
-		// 	//localState.LocalNostrPubKey = nostrPubKey
-		// 	//localState.LocalNostrPrivKey = nostrPrivKey
-		// 	//localState.NostrPartyPubKeys = nostrPartyPubKeysMap.NostrPubKeys
-
-		// 	// Marshal the updated LocalState
-		// 	//updatedKeyshare, err = json.Marshal(localState)
-		// 	//if err != nil {
-
-		// 	//	fmt.Printf("Failed to marshal updated keyshare for %s: %v\n", party, err)
-
-		// 	//}
-		// }
 
 		//join keygen
 		keyshare, err := tss.JoinKeygen(ppmFile, peer, parties, "", "", session, server, chainCode, sessionKey, net_type, "true")
@@ -194,6 +138,7 @@ func main() {
 
 			}
 
+			// // Marshal the updated LocalState
 			updatedKeyshare, err := json.Marshal(localState)
 
 			fmt.Printf(peer + " Keygen Result Saved\n")
@@ -269,27 +214,8 @@ func main() {
 
 			}
 
-			// var nostrPartyPubKeysMap struct {
-			// 	NostrPubKeys map[string]string `json:"nostr_party_pub_keys"`
-			// }
-			// if err := json.Unmarshal([]byte(nostrPartyPubKeys), &nostrPartyPubKeysMap); err != nil {
-			// 	fmt.Printf("Failed to parse nostr party pubkeys: %v\n", err)
-			// }
-
-			// localState.LocalNostrPubKey = nostrPubKey
-			// localState.LocalNostrPrivKey = nostrPrivKey
-			// localState.NostrPartyPubKeys = nostrPartyPubKeysMap.NostrPubKeys
-
 			// // Marshal the updated LocalState
 			updatedKeyshare, err := json.Marshal(localState)
-
-			// if err != nil {
-
-			// 	fmt.Printf("Failed to marshal updated keyshare for %s: %v\n", party, err)
-
-			// }
-
-			// save keyshare file - base64 encoded
 
 			fmt.Printf(party + " Keygen Result Saved\n")
 
