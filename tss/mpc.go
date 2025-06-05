@@ -642,7 +642,7 @@ func (m *MessengerImp) Send(from, to, body, parties, functionType string) error 
 			}
 		}
 
-		err = nostrSend(from, protoMessage)
+		err = nostrSendNIP04(from, protoMessage)
 
 		if err != nil {
 			return fmt.Errorf("failed to send nostr message: %w", err)

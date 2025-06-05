@@ -595,7 +595,7 @@ func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functi
 
 	//==============================SEND (INIT_HANDSHAKE) TO ALL PARTIES========================
 	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
-	nostrSend(localParty, protoMessage)
+	nostrSendNIP04(localParty, protoMessage)
 	//==============================COLLECT ACK_HANDSHAKES==============================
 
 	partyCount := len(nostrKeys.NostrPartyPubKeys)
@@ -710,7 +710,7 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		Master:          Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
 	}
 	fmt.Println("chaincode - AckNostrHandshake2-", ackProtoMessage.ChainCode)
-	nostrSend(localParty, ackProtoMessage)
+	nostrSendNIP04(localParty, ackProtoMessage)
 
 }
 
@@ -750,7 +750,7 @@ func startSessionMaster(sessionID string, participants []string, localParty stri
 				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
 			}
 			fmt.Println("chaincode - startSessionMaster-", startKeysignProtoMessage.ChainCode)
-			nostrSend(localParty, startKeysignProtoMessage)
+			nostrSendNIP04(localParty, startKeysignProtoMessage)
 		}
 	}
 }
