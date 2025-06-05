@@ -628,7 +628,7 @@ func (m *MessengerImp) Send(from, to, body, parties, functionType string) error 
 			SeqNo:        strconv.Itoa(status.SeqNo),
 		}
 
-		recipients, err := GetNostrKeys(to)
+		recipients, err := GetNostrKeys(from)
 		if err != nil {
 			return fmt.Errorf("failed to get nostr party pub keys: %w", err)
 		}

@@ -797,6 +797,11 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 			nostrSessionList[i].Participants = participants
 			sessionKey := nostrSessionList[i].SessionKey
 			chainCode := nostrSessionList[i].ChainCode
+
+			Logf("------ nostrSessionList[i] --------")
+			Logf("%+v", nostrSessionList[i])
+			Logf("------ participants: %s --------", participants)
+			Logf("------- item.Participants: %s --------", item.Participants)
 			// nostrKeys, err := GetNostrKeys(localParty)
 			// if err != nil {
 			// 	Logf("Error getting key share: %v", err)
@@ -817,6 +822,14 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 			//var err error
 
 			peers := strings.Join(item.Participants, ",")
+			Logf("------ Starting to join keygen for %s --------", localParty)
+			Logf("------ peers: %s --------", peers)
+			Logf("------ sessionID: %s --------", sessionID)
+			Logf("------ chainCode: %s --------", chainCode)
+			Logf("------ sessionKey: %s --------", sessionKey)
+			Logf("------ ppmFile: %s --------", ppmFile)
+			Logf("------ keyshareFile: %s --------", keyshareFile)
+			Logf("------ localParty: %s --------", localParty)
 			result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "http://127.0.0.1:55055", chainCode, sessionKey, "nostr", "false")
 			//result, err := JoinKeygen("", localParty, peers, sessionID, sessionKey, "", "", string(nostrKeysJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
 			if err != nil {
@@ -908,6 +921,7 @@ func nostrSendNIP04(from string, protoMessage ProtoMessage) error {
 	}
 
 	for _, recipient := range protoMessage.Recipients {
+		Logf("------ Starting to send file from %s to %s --------", from, recipient.Peer)
 		// Decode sender's private key and recipient's public key
 		_, senderPrivkey, err := nip19.Decode(nostrKeys.LocalNostrPrivKey)
 		if err != nil {
@@ -948,6 +962,7 @@ func nostrSendNIP04(from string, protoMessage ProtoMessage) error {
 
 		ctx, cancel := context.WithTimeout(globalCtx, 120*time.Second)
 		err = relay.Publish(ctx, *event)
+		Logf("------ Finished sending file from %s to %s --------", from, recipient.Peer)
 		cancel()
 		if err != nil {
 			log.Printf("Error publishing event: %v\n", err)
@@ -1154,7 +1169,6 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 				SeqNo     string   `json:"sequence_no,omitempty"`
 				Hash      string   `json:"hash,omitempty"`
 			}
-
 			nostrMsgMutex.Lock()
 			msgs, found := nostrGetData("message-" + session)
 			nostrMsgMutex.Unlock()
