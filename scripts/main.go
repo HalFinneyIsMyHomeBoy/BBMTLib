@@ -32,6 +32,89 @@ func main() {
 		fmt.Println(kp)
 	}
 
+	if mode == "generateNostrPeers" {
+		fmt.Println("Starting Nostr peer generation...")
+		// Generate 10 keypairs
+		peerKeys := make(map[string]map[string]string)
+		allPubKeys := make(map[string]string)
+
+		// Generate keys for 10 peers
+		for i := 1; i <= 10; i++ {
+			peerName := fmt.Sprintf("peer%d", i)
+			fmt.Printf("Generating keys for %s...\n", peerName)
+
+			// Generate keypair
+			privateKey := nostr.GeneratePrivateKey()
+			publicKey, err := nostr.GetPublicKey(privateKey)
+			if err != nil {
+				fmt.Printf("Error generating public key for %s: %v\n", peerName, err)
+				return
+			}
+
+			// Encode to nsec and npub format
+			nsec, err := nip19.EncodePrivateKey(privateKey)
+			if err != nil {
+				fmt.Printf("Error encoding private key for %s: %v\n", peerName, err)
+				return
+			}
+
+			npub, err := nip19.EncodePublicKey(publicKey)
+			if err != nil {
+				fmt.Printf("Error encoding public key for %s: %v\n", peerName, err)
+				return
+			}
+
+			peerKeys[peerName] = map[string]string{
+				"nsec": nsec,
+				"npub": npub,
+			}
+			allPubKeys[peerName] = npub
+			fmt.Printf("Successfully generated keys for %s\n", peerName)
+		}
+
+		// Create individual .nostr files for each peer
+		// Ensure the scripts/ directory exists
+		os.MkdirAll("scripts", 0755)
+		fmt.Println("\nCreating .nostr files...")
+		for i := 1; i <= 10; i++ {
+			peerName := fmt.Sprintf("peer%d", i)
+			fmt.Printf("Creating file for %s...\n", peerName)
+
+			nostrConfig := struct {
+				LocalNostrPubKey  string            `json:"local_nostr_pub_key"`
+				LocalNostrPrivKey string            `json:"local_nostr_priv_key"`
+				NostrPartyPubKeys map[string]string `json:"nostr_party_pub_keys"`
+			}{
+				LocalNostrPubKey:  peerKeys[peerName]["npub"],
+				LocalNostrPrivKey: peerKeys[peerName]["nsec"],
+				NostrPartyPubKeys: allPubKeys,
+			}
+
+			// Convert to JSON with indentation
+			jsonData, err := json.MarshalIndent(nostrConfig, "", "  ")
+			if err != nil {
+				fmt.Printf("Error creating JSON for %s: %v\n", peerName, err)
+				continue
+			}
+
+			// Write to file
+			filename := fmt.Sprintf("%s.nostr", peerName)
+			err = os.WriteFile(filename, jsonData, 0644)
+			if err != nil {
+				fmt.Printf("Error writing file for %s: %v\n", peerName, err)
+				continue
+			}
+
+			// Verify file was created
+			if _, err := os.Stat(filename); err == nil {
+				fmt.Printf("Successfully created %s\n", filename)
+			} else {
+				fmt.Printf("Warning: Could not verify creation of %s: %v\n", filename, err)
+			}
+		}
+		fmt.Println("\nNostr peer generation completed!")
+	}
+
 	if mode == "nostrKeypair" {
 		// Generate a new private key
 		privateKey := nostr.GeneratePrivateKey()
@@ -84,9 +167,9 @@ func main() {
 		// encKey := os.Args[7]
 		// decKey := os.Args[8]
 		// sessionKey := os.Args[9]
-		parties := "peer1,peer2,peer3" // All participating parties
-		session := randomSeed(64)      // Generate random session ID
-		sessionKey := randomSeed(64)   // Random session key
+		parties := "peer1,peer2,peer3,peer4,peer5,peer6,peer7,peer8,peer9,peer10" // All participating parties
+		session := randomSeed(64)                                                 // Generate random session ID
+		sessionKey := randomSeed(64)                                              // Random session key
 		chainCode := randomSeed(64)
 		server := "http://127.0.0.1:55055"
 

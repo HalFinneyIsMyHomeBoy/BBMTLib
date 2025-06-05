@@ -49,7 +49,7 @@ var (
 	encryptionKey    = ""
 	decryptionKey    = ""
 	localStateMemory = ""
-	keyGenTimeout    = 60
+	keyGenTimeout    = 360
 	keySignTimeout   = 60
 	msgFetchTimeout  = 70
 )
@@ -642,7 +642,7 @@ func (m *MessengerImp) Send(from, to, body, parties, functionType string) error 
 			}
 		}
 
-		err = nostrSendNIP04(from, protoMessage)
+		err = nostrSend(from, protoMessage)
 
 		if err != nil {
 			return fmt.Errorf("failed to send nostr message: %w", err)

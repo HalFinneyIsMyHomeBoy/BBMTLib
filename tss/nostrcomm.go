@@ -268,14 +268,6 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 		fmt.Printf("Go Error GetNostrKeys: %v\n", err)
 	}
 
-	// // Decode base64
-	// decodedData, err := base64.StdEncoding.DecodeString(string(data))
-	// if err != nil {
-	// 	fmt.Printf("Go Error Decoding Base64: %v\n", err)
-	// }
-
-	//fmt.Println(string(data))
-	// Parse JSON into LocalState
 	var nostrKeys NostrKeys
 	if err := json.Unmarshal(data, &nostrKeys); err != nil {
 		fmt.Printf("Go Error Unmarshalling LocalState: %v\n", err)
@@ -385,7 +377,7 @@ func NostrListen(localParty, nostrRelay string) {
 	}
 }
 
-func processNostrEvent(event *nostr.Event, recipientPrivkey, recipientPubkey string, localParty string) error {
+func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty string) error {
 	var decryptedContent string
 
 	// Handle different event kinds
@@ -491,12 +483,9 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey, recipientPubkey str
 		nostrSetData(key, &protoMessage)
 		nostrMutex.Unlock()
 	}
-	// case "start_keygen":
-	// 	Logf("11111111111start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-	// 	go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
 
 	if protoMessage.FunctionType == "keygen" && protoMessage.MessageType != "message" {
-		Logf("222222222222start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
 	}
 
@@ -595,7 +584,7 @@ func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functi
 
 	//==============================SEND (INIT_HANDSHAKE) TO ALL PARTIES========================
 	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
-	nostrSendNIP04(localParty, protoMessage)
+	nostrSend(localParty, protoMessage)
 	//==============================COLLECT ACK_HANDSHAKES==============================
 
 	partyCount := len(nostrKeys.NostrPartyPubKeys)
@@ -710,7 +699,7 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		Master:          Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
 	}
 	fmt.Println("chaincode - AckNostrHandshake2-", ackProtoMessage.ChainCode)
-	nostrSendNIP04(localParty, ackProtoMessage)
+	nostrSend(localParty, ackProtoMessage)
 
 }
 
@@ -750,7 +739,7 @@ func startSessionMaster(sessionID string, participants []string, localParty stri
 				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
 			}
 			fmt.Println("chaincode - startSessionMaster-", startKeysignProtoMessage.ChainCode)
-			nostrSendNIP04(localParty, startKeysignProtoMessage)
+			nostrSend(localParty, startKeysignProtoMessage)
 		}
 	}
 }
@@ -775,7 +764,6 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 				Logf("Error marshaling keyshare: %v", err)
 				return
 			}
-			//sessionID = sessionID[:len(sessionID)-1]
 
 			peers := strings.Join(item.Participants, ",")
 
@@ -797,41 +785,11 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 			nostrSessionList[i].Participants = participants
 			sessionKey := nostrSessionList[i].SessionKey
 			chainCode := nostrSessionList[i].ChainCode
-
-			Logf("------ nostrSessionList[i] --------")
-			Logf("%+v", nostrSessionList[i])
-			Logf("------ participants: %s --------", participants)
-			Logf("------- item.Participants: %s --------", item.Participants)
-			// nostrKeys, err := GetNostrKeys(localParty)
-			// if err != nil {
-			// 	Logf("Error getting key share: %v", err)
-			// 	return
-			// }
-
-			// Marshal the keyshare to JSON
-			// nostrKeysJSON, err := json.Marshal(nostrKeys)
-			// if err != nil {
-			// 	Logf("Error marshaling keyshare: %v", err)
-			// 	return
-			// }
-			//sessionID = sessionID[:len(sessionID)-1]
+			peers := strings.Join(nostrSessionList[i].Participants, ",")
 			ppmFile := localParty + ".json"
 			keyshareFile := localParty + ".ks"
-			//nostrKeysFile := localParty + ".nostr"
-			//var updatedKeyshare []byte
-			//var err error
 
-			peers := strings.Join(nostrSessionList[i].Participants, ",")
-			Logf("------ Starting to join keygen for %s --------", localParty)
-			Logf("------ peers: %s --------", peers)
-			Logf("------ sessionID: %s --------", sessionID)
-			Logf("------ chainCode: %s --------", chainCode)
-			Logf("------ sessionKey: %s --------", sessionKey)
-			Logf("------ ppmFile: %s --------", ppmFile)
-			Logf("------ keyshareFile: %s --------", keyshareFile)
-			Logf("------ localParty: %s --------", localParty)
 			result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "http://127.0.0.1:55055", chainCode, sessionKey, "nostr", "false")
-			//result, err := JoinKeygen("", localParty, peers, sessionID, sessionKey, "", "", string(nostrKeysJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
 			if err != nil {
 				fmt.Printf("Go Error: %v\n", err)
 			} else {
@@ -849,7 +807,7 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 			// // Marshal the updated LocalState
 			updatedKeyshare, err := json.Marshal(localState)
 
-			fmt.Printf(localParty + " Keygen Result Saved\n")
+			Logf("%s Keygen Result Saved\n", localParty)
 
 			encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
 
@@ -906,72 +864,6 @@ func nostrSessionAlreadyExists(list []NostrSession, nostrSession NostrSession) b
 	return false
 }
 
-func nostrSendNIP04(from string, protoMessage ProtoMessage) error {
-
-	nostrKeys, err := GetNostrKeys(from)
-	if err != nil {
-		log.Printf("Error getting nostr keys: %v\n", err)
-		return err
-	}
-
-	protoMessageJSON, err := json.Marshal(protoMessage)
-	if err != nil {
-		log.Printf("Error marshalling protoMessage: %v\n", err)
-		return err
-	}
-
-	for _, recipient := range protoMessage.Recipients {
-		Logf("------ Starting to send file from %s to %s --------", from, recipient.Peer)
-		// Decode sender's private key and recipient's public key
-		_, senderPrivkey, err := nip19.Decode(nostrKeys.LocalNostrPrivKey)
-		if err != nil {
-			return fmt.Errorf("invalid sender nsec: %w", err)
-		}
-		senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
-		if err != nil {
-			return fmt.Errorf("failed to derive sender pubkey: %w", err)
-		}
-		_, recipientPubkey, err := nip19.Decode(recipient.PubKey)
-		if err != nil {
-			return fmt.Errorf("invalid recipient npub: %w", err)
-		}
-
-		// Create encrypted direct message using NIP-04
-		sharedSecret, err := nip04.ComputeSharedSecret(recipientPubkey.(string), senderPrivkey.(string))
-		if err != nil {
-			return fmt.Errorf("failed to compute shared secret: %w", err)
-		}
-		encryptedContent, err := nip04.Encrypt(string(protoMessageJSON), sharedSecret)
-		if err != nil {
-			return fmt.Errorf("failed to encrypt message: %w", err)
-		}
-
-		// Create kind:4 event (encrypted direct message)
-		event := &nostr.Event{
-			Kind:      4,
-			CreatedAt: nostr.Now(),
-			PubKey:    senderPubkey,
-			Content:   encryptedContent,
-			Tags:      nostr.Tags{{"p", recipientPubkey.(string)}},
-		}
-
-		// Sign the event
-		if err := event.Sign(senderPrivkey.(string)); err != nil {
-			return fmt.Errorf("failed to sign event: %w", err)
-		}
-
-		ctx, cancel := context.WithTimeout(globalCtx, 120*time.Second)
-		err = relay.Publish(ctx, *event)
-		Logf("------ Finished sending file from %s to %s --------", from, recipient.Peer)
-		cancel()
-		if err != nil {
-			log.Printf("Error publishing event: %v\n", err)
-			return err
-		}
-	}
-	return nil
-}
-
 func nostrSend(from string, protoMessage ProtoMessage) error {
 	nostrKeys, err := GetNostrKeys(from)
 	if err != nil {
@@ -989,7 +881,7 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 		protoMessageSize := int64(len(protoMessageJSON))
 		var event *nostr.Event
 
-		if protoMessageSize > 20*1024 {
+		if protoMessageSize > 26*1024 { //If data is larger than 64KB, break into chunks otherwise NIP-44 won't support it
 			// Generate SHA256 sum of message
 			msgHash := sha256.Sum256(protoMessageJSON)
 			msgHashStr := hex.EncodeToString(msgHash[:])
@@ -1011,8 +903,8 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 			// Generate a unique message ID for this chunked message
 			messageID := fmt.Sprintf("%s-%d", protoMessage.SessionID, time.Now().UnixNano())
 
-			// Split message into chunks of 60KB
-			chunkSize := 20 * 1024
+			// Split message into chunks smaller than 64KB
+			chunkSize := 26 * 1024
 			totalChunks := int(math.Ceil(float64(protoMessageSize) / float64(chunkSize)))
 			messageStr := string(protoMessageJSON)
 
@@ -1034,37 +926,28 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 				if err != nil {
 					return fmt.Errorf("failed to marshal chunked message: %w", err)
 				}
-				chunkedJSONSize := int64(len(chunkedJSON))
-				fmt.Printf("chunkedJSONSize: %d\n", chunkedJSONSize)
 
 				// Create rumor for chunk
 				rumor := createRumor(string(chunkedJSON), senderPubkey, recipientPubkey.(string))
-				rumorSize := int64(len(rumor.Content))
-				fmt.Printf("rumorSize: %d\n", rumorSize)
+
 				// Create seal for chunk
 				seal, err := createSeal(rumor, senderPrivkey.(string), recipientPubkey.(string))
 				if err != nil {
 					return fmt.Errorf("failed to create seal: %w", err)
 				}
-				sealSize := int64(len(seal.Content))
-				fmt.Printf("sealSize: %d\n", sealSize)
 
 				// Create gift wrap for chunk
 				event, err = createWrap(seal, recipientPubkey.(string))
 				if err != nil {
 					return fmt.Errorf("failed to create wrap: %w", err)
 				}
-				wrapSize := int64(len(event.Content))
-				fmt.Printf("wrapSize: %d\n", wrapSize)
+
 				// Publish chunk
 				err = relay.Publish(globalCtx, *event)
 				if err != nil {
 					log.Printf("Error publishing chunk %d: %v\n", i, err)
 					return err
 				}
-
-				// Add a small delay between chunks to prevent overwhelming the relay
-				//time.Sleep(100 * time.Millisecond)
 			}
 			return nil // Return after sending all chunks
 		} else {
@@ -1101,11 +984,7 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 		if event == nil {
 			return fmt.Errorf("failed to create event")
 		}
-		//defer cancel()
-		// Create a new context for each publish attempt
-		//publishCtx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		err = relay.Publish(globalCtx, *event)
-		//time.Sleep(100 * time.Millisecond)
 
 		if err != nil {
 			log.Printf("Error publishing event: %v\n", err)
