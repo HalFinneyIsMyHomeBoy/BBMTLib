@@ -821,7 +821,7 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 			//var updatedKeyshare []byte
 			//var err error
 
-			peers := strings.Join(item.Participants, ",")
+			peers := strings.Join(nostrSessionList[i].Participants, ",")
 			Logf("------ Starting to join keygen for %s --------", localParty)
 			Logf("------ peers: %s --------", peers)
 			Logf("------ sessionID: %s --------", sessionID)
