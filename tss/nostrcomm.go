@@ -350,7 +350,7 @@ func NostrListen(localParty, nostrRelay string) {
 						return
 					}
 
-					if err := processNostrEvent(event, recipientPrivkey.(string), recipientPubkey, localParty); err != nil {
+					if err := processNostrEvent(event, recipientPrivkey.(string), localParty); err != nil {
 						log.Printf("Error processing event: %v\n", err)
 					}
 
@@ -476,26 +476,26 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		go startPartyNostrMPCsendBTC(protoMessage.SessionID, protoMessage.Participants, localParty)
 	}
 
-	if protoMessage.FunctionType == "keysign" && protoMessage.MessageType == "message" {
-		Logf("keysign received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-		key := protoMessage.MessageType + "-" + protoMessage.SessionID
-		nostrMutex.Lock()
-		nostrSetData(key, &protoMessage)
-		nostrMutex.Unlock()
-	}
-
 	if protoMessage.FunctionType == "keygen" && protoMessage.MessageType != "message" {
 		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
 	}
 
-	if protoMessage.FunctionType == "keygen" && protoMessage.MessageType == "message" {
-		Logf("keygen message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+	if protoMessage.MessageType == "message" {
+		Logf("message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		key := protoMessage.MessageType + "-" + protoMessage.SessionID
 		nostrMutex.Lock()
 		nostrSetData(key, &protoMessage)
 		nostrMutex.Unlock()
 	}
+
+	// if protoMessage.FunctionType == "keygen" && protoMessage.MessageType == "message" {
+	// 	Logf("keygen message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+	// 	key := protoMessage.MessageType + "-" + protoMessage.SessionID
+	// 	nostrMutex.Lock()
+	// 	nostrSetData(key, &protoMessage)
+	// 	nostrMutex.Unlock()
+	// }
 	return nil
 }
 
