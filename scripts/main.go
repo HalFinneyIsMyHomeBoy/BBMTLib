@@ -25,6 +25,9 @@ func randomSeed(length int) string {
 
 func main() {
 
+	var nostrRelay string
+	nostrRelay = "ws://bbw-nostr.xyz"
+
 	mode := os.Args[1]
 
 	if mode == "keypair" {
@@ -176,7 +179,7 @@ func main() {
 
 		if net_type == "nostr" {
 			net_type = "nostr"
-			go tss.NostrListen(peer, "ws://bbw-nostr.xyz")
+			go tss.NostrListen(peer, nostrRelay)
 			time.Sleep(time.Second * 2)
 		}
 
@@ -352,7 +355,7 @@ func main() {
 
 		if net_type == "nostr" {
 			net_type = "nostr"
-			go tss.NostrListen(peer, "ws://bbw-nostr.xyz")
+			go tss.NostrListen(peer, nostrRelay)
 			time.Sleep(time.Second * 2)
 		} else {
 			go tss.RunRelay("55055")
@@ -439,7 +442,7 @@ func main() {
 		net_type := "nostr"
 
 		if net_type == "nostr" {
-			tss.NostrListen(party, "ws://bbw-nostr.xyz")
+			tss.NostrListen(party, nostrRelay)
 			select {}
 		}
 	}
