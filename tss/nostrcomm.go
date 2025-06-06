@@ -321,7 +321,7 @@ func NostrListen(localParty, nostrRelay string) {
 		since := nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
 
 		filters := []nostr.Filter{{
-			Kinds: []int{4, 1059}, // Subscribe to both NIP-04 and NIP-44 messages
+			Kinds: []int{1059}, // Subscribe to NIP-44 messages
 			Tags:  map[string][]string{"p": {recipientPubkey}},
 			Since: &since,
 		}}
@@ -471,7 +471,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		}
 	}
 
-	if protoMessage.FunctionType == "start_keysign" {
+	if protoMessage.FunctionType == "start_keysign" && protoMessage.MessageType != "message" {
 		Logf("start_keysign received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		go startPartyNostrMPCsendBTC(protoMessage.SessionID, protoMessage.Participants, localParty)
 	}
@@ -489,13 +489,6 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		nostrMutex.Unlock()
 	}
 
-	// if protoMessage.FunctionType == "keygen" && protoMessage.MessageType == "message" {
-	// 	Logf("keygen message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-	// 	key := protoMessage.MessageType + "-" + protoMessage.SessionID
-	// 	nostrMutex.Lock()
-	// 	nostrSetData(key, &protoMessage)
-	// 	nostrMutex.Unlock()
-	// }
 	return nil
 }
 
@@ -557,7 +550,6 @@ func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functi
 		TxRequest:       txRequest,
 		Master:          Master{MasterPeer: localParty, MasterPubKey: nostrKeys.LocalNostrPubKey},
 	}
-	fmt.Println("chaincode - initiateNostrHandshake-", chainCode)
 	// map nostrpartypubkeys
 	for party, pubKey := range nostrKeys.NostrPartyPubKeys {
 		if party != localParty {
@@ -644,7 +636,6 @@ func collectAckHandshake(localParty, sessionID string, protoMessage ProtoMessage
 			if !contains(item.Participants, protoMessage.From) {
 				item.Participants = append(item.Participants, protoMessage.From)
 				nostrSessionList[i] = item
-				fmt.Println("chaincode - collectAckHandshake-", item.ChainCode)
 				Logf("%s has approved session: %s", protoMessage.From, sessionID)
 				Logf("%v out of %v participants have approved", int(len(item.Participants)), int(len(nostrKeys.NostrPartyPubKeys)))
 			}
@@ -663,12 +654,13 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 
 	Logf("(init_handshake) message received from %s\n", protoMessage.From)
 	Logf("Collected ack handshake from %s for session: %s", protoMessage.From, session)
-	Logf("sending (ack_handshake) message to %s\n", protoMessage.From)
+
 	//============== UI - ask user to approve TX==================
 	//TODO
 	//if approved, send ack, and set status="pending"
 	//If not approved, then status="rejected"
 	//===================USER APPROVED TX======================
+	Logf("sending (ack_handshake) message to %s\n", protoMessage.From)
 	nostrSession := NostrSession{
 		SessionID:    session,
 		Participants: []string{localParty},
@@ -678,7 +670,6 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		SessionKey:   protoMessage.SessionKey,
 		ChainCode:    protoMessage.ChainCode,
 	}
-	fmt.Println("chaincode - AckNostrHandshake-", nostrSession.ChainCode)
 	if !contains(nostrSession.Participants, protoMessage.From) {
 		nostrSession.Participants = append(nostrSession.Participants, protoMessage.From)
 	}
@@ -698,7 +689,6 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		TxRequest:       protoMessage.TxRequest,
 		Master:          Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
 	}
-	fmt.Println("chaincode - AckNostrHandshake2-", ackProtoMessage.ChainCode)
 	nostrSend(localParty, ackProtoMessage)
 
 }
@@ -738,7 +728,6 @@ func startSessionMaster(sessionID string, participants []string, localParty stri
 				TxRequest:    item.TxRequest,
 				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
 			}
-			fmt.Println("chaincode - startSessionMaster-", startKeysignProtoMessage.ChainCode)
 			nostrSend(localParty, startKeysignProtoMessage)
 		}
 	}
@@ -789,11 +778,16 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 			ppmFile := localParty + ".json"
 			keyshareFile := localParty + ".ks"
 
-			result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "http://127.0.0.1:55055", chainCode, sessionKey, "nostr", "false")
+			//============== UI - ask user to approve keygen==================
+			//TODO
+
+			//===================USER APPROVED KEYGEN======================
+
+			result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
 			if err != nil {
 				fmt.Printf("Go Error: %v\n", err)
 			} else {
-				fmt.Printf("\n [%s] Keysign Result %s\n", localParty, result)
+				fmt.Printf("\n [%s] Keygen Result %s\n", localParty, result)
 			}
 
 			var localState LocalState

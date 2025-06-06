@@ -1,10 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"os"
 	"time"
 
@@ -16,9 +16,9 @@ import (
 func randomSeed(length int) string {
 	const characters = "0123456789abcdef"
 	result := make([]byte, length)
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	rand.Read(result)
 	for i := 0; i < length; i++ {
-		result[i] = characters[r.Intn(len(characters))]
+		result[i] = characters[int(result[i])%len(characters)]
 	}
 	return string(result)
 }
@@ -32,14 +32,14 @@ func main() {
 		fmt.Println(kp)
 	}
 
-	if mode == "generateNostrPeers" {
+	if mode == "generateNostrKeys" {
 		fmt.Println("Starting Nostr peer generation...")
-		// Generate 10 keypairs
+		// Generate 3 keypairs
 		peerKeys := make(map[string]map[string]string)
 		allPubKeys := make(map[string]string)
 
-		// Generate keys for 10 peers
-		for i := 1; i <= 10; i++ {
+		// Generate keys for 3 peers
+		for i := 1; i <= 3; i++ {
 			peerName := fmt.Sprintf("peer%d", i)
 			fmt.Printf("Generating keys for %s...\n", peerName)
 
@@ -76,7 +76,7 @@ func main() {
 		// Ensure the scripts/ directory exists
 		os.MkdirAll("scripts", 0755)
 		fmt.Println("\nCreating .nostr files...")
-		for i := 1; i <= 10; i++ {
+		for i := 1; i <= 3; i++ {
 			peerName := fmt.Sprintf("peer%d", i)
 			fmt.Printf("Creating file for %s...\n", peerName)
 
@@ -159,45 +159,25 @@ func main() {
 
 	if mode == "nostrKeygen" {
 		// prepare args
-		// server := os.Args[2]
-		// session := os.Args[3]
-		// chainCode := os.Args[4]
-		// party := os.Args[5]
-		// parties := os.Args[6]
-		// encKey := os.Args[7]
-		// decKey := os.Args[8]
-		// sessionKey := os.Args[9]
-		parties := "peer1,peer2,peer3,peer4,peer5,peer6,peer7,peer8,peer9,peer10" // All participating parties
-		session := randomSeed(64)                                                 // Generate random session ID
-		sessionKey := randomSeed(64)                                              // Random session key
+
+		parties := "peer1,peer2,peer3" // All participating parties
+		session := randomSeed(64)      // Generate random session ID
+		sessionKey := randomSeed(64)   // Random session key
 		chainCode := randomSeed(64)
 		server := "http://127.0.0.1:55055"
 
 		net_type := "nostr"
-		//net_type := "nostr"
 		peer := "peer1"
-		//nostrPubKey := os.Args[12]
-		//nostrPrivKey := os.Args[13]
-		//nostrPartyPubKeys := os.Args[14]
-
-		// if len(sessionKey) > 0 {
-		// 	encKey = ""
-		// 	decKey = ""
-		// }
 
 		ppmFile := peer + ".json"
 		keyshareFile := peer + ".ks"
 		nostrKeysFile := peer + ".nostr"
-		//var updatedKeyshare []byte
 		var err error
 
 		if net_type == "nostr" {
 			net_type = "nostr"
 			go tss.NostrListen(peer, "ws://bbw-nostr.xyz")
 			time.Sleep(time.Second * 2)
-		} else {
-			//go tss.RunRelay("55055")
-			//time.Sleep(time.Second)
 		}
 
 		// Check if .nostr file exists
@@ -212,26 +192,19 @@ func main() {
 		} else {
 
 			// Create LocalState with Nostr keys
-
 			var localState tss.LocalState
 
 			if err := json.Unmarshal([]byte(keyshare), &localState); err != nil {
-
 				fmt.Printf("Failed to parse keyshare for %s: %v\n", peer, err)
-
 			}
 
 			// // Marshal the updated LocalState
 			updatedKeyshare, err := json.Marshal(localState)
-
 			fmt.Printf(peer + " Keygen Result Saved\n")
-
 			encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
 
 			if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
-
 				fmt.Printf("Failed to save keyshare for %s: %v\n", peer, err)
-
 			}
 
 			var kgR tss.KeygenResponse
@@ -269,9 +242,6 @@ func main() {
 		encKey := os.Args[7]
 		decKey := os.Args[8]
 		sessionKey := os.Args[9]
-		//nostrPubKey := os.Args[12]
-		//nostrPrivKey := os.Args[13]
-		nostrPartyPubKeys := os.Args[14]
 
 		if len(sessionKey) > 0 {
 			encKey = ""
@@ -292,22 +262,16 @@ func main() {
 			var localState tss.LocalState
 
 			if err := json.Unmarshal([]byte(keyshare), &localState); err != nil {
-
 				fmt.Printf("Failed to parse keyshare for %s: %v\n", party, err)
-
 			}
 
 			// // Marshal the updated LocalState
 			updatedKeyshare, err := json.Marshal(localState)
-
 			fmt.Printf(party + " Keygen Result Saved\n")
-
 			encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
 
 			if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
-
 				fmt.Printf("Failed to save keyshare for %s: %v\n", party, err)
-
 			}
 
 			var kgR tss.KeygenResponse
@@ -329,8 +293,6 @@ func main() {
 					fmt.Printf("Failed to generate btc address for %s: %v\n", party, err)
 				} else {
 					fmt.Printf(party+" address btcP2Pkh: %s\n", btcP2Pkh)
-					fmt.Printf(party+" Nostr Party PubKeys: %s\n", nostrPartyPubKeys)
-
 				}
 			}
 		}
@@ -372,7 +334,7 @@ func main() {
 		}
 	}
 
-	if mode == "InitiateNostrSendBTC" {
+	if mode == "nostrSendBTC" {
 
 		//This is to be called by the party initiating the session to send BTC
 		//The party to initiate this is the master by default for the session.
