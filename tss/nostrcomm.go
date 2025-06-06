@@ -2,9 +2,7 @@ package tss
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -18,7 +16,6 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
-	"github.com/nbd-wtf/go-nostr/nip04"
 	"github.com/nbd-wtf/go-nostr/nip19"
 	"github.com/nbd-wtf/go-nostr/nip44"
 	"github.com/patrickmn/go-cache"
@@ -33,7 +30,7 @@ var (
 	globalCtx, globalCancel   = context.WithCancel(context.Background())
 	nostrRelayURL             string
 	KeysignApprovalTimeout    = 4 * time.Second
-	KeysignApprovalMaxRetries = 2
+	KeysignApprovalMaxRetries = 10
 	totalSentMessages         []ProtoMessage
 	nostrMutex                sync.Mutex
 	sessionMutex              sync.Mutex
@@ -297,7 +294,7 @@ func NostrListen(localParty, nostrRelay string) {
 		return
 	}
 
-	retryInterval := 20 * time.Second
+	retryInterval := 10 * time.Second
 	backoff := retryInterval
 
 	for {
@@ -381,18 +378,8 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 	var decryptedContent string
 
 	// Handle different event kinds
-	switch event.Kind {
-	case 4: // NIP-04 encrypted direct message
-		sharedSecret, err := nip04.ComputeSharedSecret(event.PubKey, recipientPrivkey)
-		if err != nil {
-			return fmt.Errorf("failed to compute shared secret: %w", err)
-		}
-		decryptedContent, err = nip04.Decrypt(event.Content, sharedSecret)
-		if err != nil {
-			return fmt.Errorf("failed to decrypt NIP-04 message: %w", err)
-		}
+	if event.Kind == 1059 {
 
-	case 1059: // NIP-44 gift wrap
 		conversationKey, err := nip44.GenerateConversationKey(event.PubKey, recipientPrivkey)
 		if err != nil {
 			return fmt.Errorf("Failed to generate conversation key: %v\n", err)
@@ -428,8 +415,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 			return fmt.Errorf("Failed to deserialize rumor: %v\n", err)
 		}
 		decryptedContent = rumor.Content
-
-	default:
+	} else {
 		return fmt.Errorf("unsupported event kind: %d", event.Kind)
 	}
 
@@ -446,10 +432,6 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 			return nil
 		}
 		decryptedContent = completeMessage
-		// Generate SHA256 sum of decrypted content
-		msgHash := sha256.Sum256([]byte(decryptedContent))
-		msgHashStr := hex.EncodeToString(msgHash[:])
-		Logf("msgHashStr (Received to %s): %s", localParty, msgHashStr)
 	}
 
 	var protoMessage ProtoMessage
@@ -876,10 +858,7 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 		var event *nostr.Event
 
 		if protoMessageSize > 26*1024 { //If data is larger than 64KB, break into chunks otherwise NIP-44 won't support it
-			// Generate SHA256 sum of message
-			msgHash := sha256.Sum256(protoMessageJSON)
-			msgHashStr := hex.EncodeToString(msgHash[:])
-			Logf("msgHashStr (Sent from %s to %s): %s", from, recipient.Peer, msgHashStr)
+
 			// Decode sender's private key and recipient's public key
 			_, senderPrivkey, err := nip19.Decode(nostrKeys.LocalNostrPrivKey)
 			if err != nil {

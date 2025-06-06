@@ -50,7 +50,7 @@ var (
 	decryptionKey    = ""
 	localStateMemory = ""
 	keyGenTimeout    = 360
-	keySignTimeout   = 60
+	keySignTimeout   = 120
 	msgFetchTimeout  = 70
 )
 
@@ -223,17 +223,6 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 				return "", fmt.Errorf("failed to initiate nostr handshake")
 			}
 		}
-
-		// for _, item := range nostrSessionList {
-		// 	if item.Status == "start_keygen" && item.SessionID == session {
-		// 		sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-		// 		if err != nil {
-		// 			return "", fmt.Errorf("failed to sign transaction: signature is empty")
-		// 		}
-		// 		time.Sleep(1 * time.Second)
-		// 	}
-		// }
-
 	}
 
 	Logln("BBMTLog", "inbound messenger up...")
