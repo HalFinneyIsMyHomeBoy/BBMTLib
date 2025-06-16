@@ -332,7 +332,7 @@ func NostrListen(localParty, nostrRelay string) {
 		}
 
 		log.Printf("%s subscribed to nostr\n", localParty)
-		go pingNostrPeer(recipientPubkey, localParty)
+		go pingNostrPeer(localParty)
 		// Create a channel to signal when we need to reconnect
 		reconnect := make(chan struct{})
 
@@ -445,11 +445,12 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 
 	if protoMessage.FunctionType == "ping" {
 		Logf("ping received from %s", protoMessage.From)
+		var from = protoMessage.From
 		protoMessage.FunctionType = "pong"
 		protoMessage.Recipients = []NostrPartyPubKeys{{Peer: protoMessage.From, PubKey: protoMessage.FromNostrPubKey}}
 		protoMessage.From = localParty
 		nostrSend(localParty, protoMessage)
-		Logf("pong sent to %s", protoMessage.From)
+		Logf("pong sent to %s", from)
 		return nil
 	}
 
@@ -1146,9 +1147,7 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 	}
 }
 
-func pingNostrPeer(peerNpub string, localParty string) error {
-
-	peerNpub = "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp"
+func pingNostrPeer(localParty string) error {
 
 	for {
 		nostrKeys, err := GetNostrKeys(localParty)
@@ -1156,32 +1155,29 @@ func pingNostrPeer(peerNpub string, localParty string) error {
 			return fmt.Errorf("error getting nostr keys: %w", err)
 		}
 
-		// Find peer name for the pubkey
-		var peerName string
-		for peer, pubKey := range nostrKeys.NostrPartyPubKeys {
-			if pubKey == peerNpub {
-				peerName = peer
-				break
+		recipients := make([]NostrPartyPubKeys, 0, len(nostrKeys.NostrPartyPubKeys))
+		for p, pubKey := range nostrKeys.NostrPartyPubKeys {
+			if p != localParty {
+				recipients = append(recipients, NostrPartyPubKeys{
+					Peer:   p,
+					PubKey: pubKey,
+				})
 			}
-		}
-
-		recipient := NostrPartyPubKeys{
-			PubKey: peerNpub,
-			Peer:   peerName,
 		}
 
 		protoMessage := ProtoMessage{
 			FunctionType:    "ping",
 			From:            localParty,
 			FromNostrPubKey: nostrKeys.LocalNostrPubKey,
-			Recipients:      []NostrPartyPubKeys{recipient},
+			Recipients:      recipients,
 			Master:          Master{MasterPeer: localParty, MasterPubKey: nostrKeys.LocalNostrPubKey},
 			RawMessage:      []byte("ping"),
 		}
 
 		nostrSend(localParty, protoMessage)
-		Logf("ping sent to %s", recipient.Peer)
+		Logf("ping sent to %s", recipients)
 		time.Sleep(20 * time.Second)
+
 	}
 }
 
