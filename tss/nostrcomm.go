@@ -332,7 +332,7 @@ func NostrListen(localParty, nostrRelay string) {
 		}
 
 		log.Printf("%s subscribed to nostr\n", localParty)
-
+		go pingNostrPeer(recipientPubkey, localParty)
 		// Create a channel to signal when we need to reconnect
 		reconnect := make(chan struct{})
 
@@ -441,6 +441,21 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 
 	if protoMessage.From == localParty {
 		return nil // Ignore messages from self
+	}
+
+	if protoMessage.FunctionType == "ping" {
+		Logf("ping received from %s", protoMessage.From)
+		protoMessage.FunctionType = "pong"
+		protoMessage.Recipients = []NostrPartyPubKeys{{Peer: protoMessage.From, PubKey: protoMessage.FromNostrPubKey}}
+		protoMessage.From = localParty
+		nostrSend(localParty, protoMessage)
+		Logf("pong sent to %s", protoMessage.From)
+		return nil
+	}
+
+	if protoMessage.FunctionType == "pong" {
+		Logf("pong received from %s", protoMessage.From)
+		return nil
 	}
 
 	if protoMessage.FunctionType == "init_handshake" {
@@ -1128,6 +1143,45 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 			}
 			isApplyingMessages = false
 		}
+	}
+}
+
+func pingNostrPeer(peerNpub string, localParty string) error {
+
+	peerNpub = "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp"
+
+	for {
+		nostrKeys, err := GetNostrKeys(localParty)
+		if err != nil {
+			return fmt.Errorf("error getting nostr keys: %w", err)
+		}
+
+		// Find peer name for the pubkey
+		var peerName string
+		for peer, pubKey := range nostrKeys.NostrPartyPubKeys {
+			if pubKey == peerNpub {
+				peerName = peer
+				break
+			}
+		}
+
+		recipient := NostrPartyPubKeys{
+			PubKey: peerNpub,
+			Peer:   peerName,
+		}
+
+		protoMessage := ProtoMessage{
+			FunctionType:    "ping",
+			From:            localParty,
+			FromNostrPubKey: nostrKeys.LocalNostrPubKey,
+			Recipients:      []NostrPartyPubKeys{recipient},
+			Master:          Master{MasterPeer: localParty, MasterPubKey: nostrKeys.LocalNostrPubKey},
+			RawMessage:      []byte("ping"),
+		}
+
+		nostrSend(localParty, protoMessage)
+		Logf("ping sent to %s", recipient.Peer)
+		time.Sleep(20 * time.Second)
 	}
 }
 
