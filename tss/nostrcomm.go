@@ -25,7 +25,7 @@ import (
 var (
 	nostrSessionList          []NostrSession
 	nostrHandShakeList        []ProtoMessage
-	nostrPingList             []NostrPingData
+	nostrPingList             []ProtoMessage
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
 	globalCtx, globalCancel   = context.WithCancel(context.Background())
@@ -106,14 +106,6 @@ type TxRequest struct {
 	FeeSatoshi      int64  `json:"fee_satoshi"`
 	DerivePath      string `json:"derive_path"`
 	BtcPub          string `json:"btc_pub"`
-}
-
-type NostrPingData struct {
-	FunctionType    string              `json:"function_type"`
-	From            string              `json:"from"`
-	FromNostrPubKey string              `json:"from_nostr_pubkey"`
-	Recipients      []NostrPartyPubKeys `json:"recipients"`
-	RandomData      string              `json:"random_data"`
 }
 
 const (
@@ -448,7 +440,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 	}
 
 	if protoMessage.FunctionType == "ping" {
-		go returnNostrPing(protoMessage)
+		go returnNostrPing(localParty, protoMessage)
 		return nil
 	}
 
@@ -1145,7 +1137,7 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 	}
 }
 
-func sendNostrPing(localParty, randomData string) error {
+func sendNostrPing(localParty, pingID, nostrPubKey string) error { //Used to see if the peer is connected to nostr relay
 
 	nostrKeys, err := GetNostrKeys(localParty)
 	if err != nil {
@@ -1167,20 +1159,14 @@ func sendNostrPing(localParty, randomData string) error {
 		From:            localParty,
 		FromNostrPubKey: nostrKeys.LocalNostrPubKey,
 		Recipients:      recipients,
-		RawMessage:      []byte(randomData),
+		RawMessage:      []byte(pingID),
 	}
 
 	err = nostrSend(localParty, protoMessage)
 	if err != nil {
 		return fmt.Errorf("error sending ping: %w", err)
 	}
-	nostrPingList = append(nostrPingList, NostrPingData{
-		FunctionType:    "ping",
-		From:            localParty,
-		FromNostrPubKey: nostrKeys.LocalNostrPubKey,
-		Recipients:      recipients,
-		RandomData:      randomData,
-	})
+	nostrPingList = append(nostrPingList, protoMessage)
 	Logf("ping sent to %s", recipients)
 
 	return nil
