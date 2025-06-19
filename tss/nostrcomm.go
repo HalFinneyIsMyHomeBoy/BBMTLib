@@ -2,12 +2,12 @@ package tss
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
-	"math/rand/v2"
 	"os"
 	"sort"
 	"strconv"
@@ -25,6 +25,7 @@ import (
 var (
 	nostrSessionList          []NostrSession
 	nostrHandShakeList        []ProtoMessage
+	nostrPingList             []NostrPingData
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
 	globalCtx, globalCancel   = context.WithCancel(context.Background())
@@ -107,6 +108,14 @@ type TxRequest struct {
 	BtcPub          string `json:"btc_pub"`
 }
 
+type NostrPingData struct {
+	FunctionType    string              `json:"function_type"`
+	From            string              `json:"from"`
+	FromNostrPubKey string              `json:"from_nostr_pubkey"`
+	Recipients      []NostrPartyPubKeys `json:"recipients"`
+	RandomData      string              `json:"random_data"`
+}
+
 const (
 	// Two days in seconds for randomizing created_at
 	TWO_DAYS  = 2 * 24 * 60 * 60
@@ -137,11 +146,6 @@ type MessageChunks struct {
 // Helper function to get current UNIX timestamp
 func now() nostr.Timestamp {
 	return nostr.Timestamp(time.Now().Unix())
-}
-
-// Helper function to get randomized timestamp (within past 2 days)
-func randomNow() nostr.Timestamp {
-	return now() - nostr.Timestamp(rand.Float64()*TWO_HOURS)
 }
 
 // CreateRumor creates a kind:14 rumor (unsigned chat message)
@@ -332,7 +336,7 @@ func NostrListen(localParty, nostrRelay string) {
 		}
 
 		log.Printf("%s subscribed to nostr\n", localParty)
-		go pingNostrPeer(localParty)
+		go pingNostrPeer(localParty, randomSeed(32))
 		// Create a channel to signal when we need to reconnect
 		reconnect := make(chan struct{})
 
@@ -444,13 +448,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 	}
 
 	if protoMessage.FunctionType == "ping" {
-		Logf("ping received from %s", protoMessage.From)
-		var from = protoMessage.From
-		protoMessage.FunctionType = "pong"
-		protoMessage.Recipients = []NostrPartyPubKeys{{Peer: protoMessage.From, PubKey: protoMessage.FromNostrPubKey}}
-		protoMessage.From = localParty
-		nostrSend(localParty, protoMessage)
-		Logf("pong sent to %s", from)
+		go returnNostrPing(protoMessage)
 		return nil
 	}
 
@@ -1147,38 +1145,66 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 	}
 }
 
-func pingNostrPeer(localParty string) error {
+func sendNostrPing(localParty, randomData string) error {
 
-	for {
-		nostrKeys, err := GetNostrKeys(localParty)
-		if err != nil {
-			return fmt.Errorf("error getting nostr keys: %w", err)
-		}
-
-		recipients := make([]NostrPartyPubKeys, 0, len(nostrKeys.NostrPartyPubKeys))
-		for p, pubKey := range nostrKeys.NostrPartyPubKeys {
-			if p != localParty {
-				recipients = append(recipients, NostrPartyPubKeys{
-					Peer:   p,
-					PubKey: pubKey,
-				})
-			}
-		}
-
-		protoMessage := ProtoMessage{
-			FunctionType:    "ping",
-			From:            localParty,
-			FromNostrPubKey: nostrKeys.LocalNostrPubKey,
-			Recipients:      recipients,
-			Master:          Master{MasterPeer: localParty, MasterPubKey: nostrKeys.LocalNostrPubKey},
-			RawMessage:      []byte("ping"),
-		}
-
-		nostrSend(localParty, protoMessage)
-		Logf("ping sent to %s", recipients)
-		time.Sleep(20 * time.Second)
-
+	nostrKeys, err := GetNostrKeys(localParty)
+	if err != nil {
+		return fmt.Errorf("error getting nostr keys: %w", err)
 	}
+
+	recipients := make([]NostrPartyPubKeys, 0, len(nostrKeys.NostrPartyPubKeys))
+	for p, pubKey := range nostrKeys.NostrPartyPubKeys {
+		if p != localParty {
+			recipients = append(recipients, NostrPartyPubKeys{
+				Peer:   p,
+				PubKey: pubKey,
+			})
+		}
+	}
+
+	protoMessage := ProtoMessage{
+		FunctionType:    "ping",
+		From:            localParty,
+		FromNostrPubKey: nostrKeys.LocalNostrPubKey,
+		Recipients:      recipients,
+		RawMessage:      []byte(randomData),
+	}
+
+	err = nostrSend(localParty, protoMessage)
+	if err != nil {
+		return fmt.Errorf("error sending ping: %w", err)
+	}
+	nostrPingList = append(nostrPingList, NostrPingData{
+		FunctionType:    "ping",
+		From:            localParty,
+		FromNostrPubKey: nostrKeys.LocalNostrPubKey,
+		Recipients:      recipients,
+		RandomData:      randomData,
+	})
+	Logf("ping sent to %s", recipients)
+
+	return nil
+}
+
+func returnNostrPing(localParty string, protoMessage ProtoMessage) {
+	Logf("ping received from %s", protoMessage.From)
+	var from = protoMessage.From
+	protoMessage.FunctionType = "pong"
+	protoMessage.Recipients = []NostrPartyPubKeys{{Peer: protoMessage.From, PubKey: protoMessage.FromNostrPubKey}}
+	protoMessage.From = localParty
+	nostrSend(localParty, protoMessage)
+
+	Logf("pong sent to %s", from)
+}
+
+func randomSeed(length int) string {
+	const characters = "0123456789abcdef"
+	result := make([]byte, length)
+	rand.Read(result)
+	for i := 0; i < length; i++ {
+		result[i] = characters[int(result[i])%len(characters)]
+	}
+	return string(result)
 }
 
 func contains(slice []string, item string) bool {
