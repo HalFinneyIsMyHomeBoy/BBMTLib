@@ -328,7 +328,7 @@ func NostrListen(localParty, nostrRelay string) {
 		}
 
 		log.Printf("%s subscribed to nostr\n", localParty)
-		go pingNostrPeer(localParty, randomSeed(32))
+		go sendNostrPing(localParty, randomSeed(32), "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp")
 		// Create a channel to signal when we need to reconnect
 		reconnect := make(chan struct{})
 
@@ -445,7 +445,16 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 	}
 
 	if protoMessage.FunctionType == "pong" {
-		Logf("pong received from %s", protoMessage.From)
+		// Check if this pong corresponds to a ping we sent
+		for i, ping := range nostrPingList {
+			if string(ping.RawMessage) == string(protoMessage.RawMessage) {
+				// Remove the ping from the list once we get a response
+				nostrPingList = append(nostrPingList[:i], nostrPingList[i+1:]...)
+				Logf("pong received from %s for ping:%v", protoMessage.From, string(protoMessage.RawMessage))
+
+				break
+			}
+		}
 		return nil
 	}
 
@@ -666,16 +675,27 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		nostrSessionList = append(nostrSessionList, nostrSession)
 	}
 
+	recipients := make([]NostrPartyPubKeys, 0, 1)
+	for p, pubKey := range nostrKeys.NostrPartyPubKeys {
+		if pubKey == protoMessage.FromNostrPubKey {
+			recipients = append(recipients, NostrPartyPubKeys{
+				Peer:   p,
+				PubKey: pubKey,
+			})
+			break
+		}
+	}
+
 	ackProtoMessage := ProtoMessage{
 		SessionID:       session,
 		ChainCode:       protoMessage.ChainCode,
 		FunctionType:    "ack_handshake",
 		From:            localParty,
-		FromNostrPubKey: nostrKeys.LocalNostrPubKey,
-		Recipients:      []NostrPartyPubKeys{{Peer: protoMessage.Master.MasterPeer, PubKey: protoMessage.Master.MasterPubKey}},
+		FromNostrPubKey: protoMessage.FromNostrPubKey,
+		Recipients:      recipients,
 		Participants:    []string{localParty},
 		TxRequest:       protoMessage.TxRequest,
-		Master:          Master{MasterPeer: protoMessage.Master.MasterPeer, MasterPubKey: protoMessage.Master.MasterPubKey},
+		Master:          protoMessage.Master,
 	}
 	nostrSend(localParty, ackProtoMessage)
 
@@ -1137,6 +1157,8 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 	}
 }
 
+// go sendNostrPing(localParty, randomSeed(32), "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp")
+
 func sendNostrPing(localParty, pingID, nostrPubKey string) error { //Used to see if the peer is connected to nostr relay
 
 	nostrKeys, err := GetNostrKeys(localParty)
@@ -1144,13 +1166,14 @@ func sendNostrPing(localParty, pingID, nostrPubKey string) error { //Used to see
 		return fmt.Errorf("error getting nostr keys: %w", err)
 	}
 
-	recipients := make([]NostrPartyPubKeys, 0, len(nostrKeys.NostrPartyPubKeys))
+	recipients := make([]NostrPartyPubKeys, 0, 1)
 	for p, pubKey := range nostrKeys.NostrPartyPubKeys {
-		if p != localParty {
+		if pubKey == nostrPubKey {
 			recipients = append(recipients, NostrPartyPubKeys{
 				Peer:   p,
 				PubKey: pubKey,
 			})
+			break
 		}
 	}
 
