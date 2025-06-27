@@ -442,8 +442,23 @@ func main() {
 		net_type := "nostr"
 
 		if net_type == "nostr" {
-			tss.NostrListen(party, nostrRelay)
+			go tss.NostrListen(party, nostrRelay)
+			//time.Sleep(time.Second * 2)
+			//nostrPing(party)
 			select {}
 		}
+	}
+}
+
+func nostrPing(party string) {
+	ping, err := tss.SendNostrPing(party, randomSeed(32), "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp")
+	if err != nil {
+		fmt.Printf("Error sending ping: %v\n", err)
+	}
+	if ping {
+		fmt.Printf("Ping sent to %s\n", "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp")
+	}
+	if !ping {
+		fmt.Printf("Peer not responding %s\n", "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp")
 	}
 }

@@ -328,7 +328,7 @@ func NostrListen(localParty, nostrRelay string) {
 		}
 
 		log.Printf("%s subscribed to nostr\n", localParty)
-		go sendNostrPing(localParty, randomSeed(32), "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp")
+
 		// Create a channel to signal when we need to reconnect
 		reconnect := make(chan struct{})
 
@@ -440,7 +440,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 	}
 
 	if protoMessage.FunctionType == "ping" {
-		go returnNostrPing(localParty, protoMessage)
+		go returnNostrPong(localParty, protoMessage)
 		return nil
 	}
 
@@ -449,10 +449,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		for i, ping := range nostrPingList {
 			if string(ping.RawMessage) == string(protoMessage.RawMessage) {
 				// Remove the ping from the list once we get a response
-				nostrPingList = append(nostrPingList[:i], nostrPingList[i+1:]...)
-				Logf("pong received from %s for ping:%v", protoMessage.From, string(protoMessage.RawMessage))
-
-				break
+				nostrPingList[i].FunctionType = "pong"
 			}
 		}
 		return nil
@@ -1157,13 +1154,11 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 	}
 }
 
-// go sendNostrPing(localParty, randomSeed(32), "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp")
-
-func sendNostrPing(localParty, pingID, nostrPubKey string) error { //Used to see if the peer is connected to nostr relay
+func SendNostrPing(localParty, pingID, nostrPubKey string) (bool, error) { //Used to see if the peer is connected to nostr relay
 
 	nostrKeys, err := GetNostrKeys(localParty)
 	if err != nil {
-		return fmt.Errorf("error getting nostr keys: %w", err)
+		return false, fmt.Errorf("error getting nostr keys: %w", err)
 	}
 
 	recipients := make([]NostrPartyPubKeys, 0, 1)
@@ -1187,15 +1182,27 @@ func sendNostrPing(localParty, pingID, nostrPubKey string) error { //Used to see
 
 	err = nostrSend(localParty, protoMessage)
 	if err != nil {
-		return fmt.Errorf("error sending ping: %w", err)
+		return false, fmt.Errorf("error sending ping: %w", err)
 	}
 	nostrPingList = append(nostrPingList, protoMessage)
 	Logf("ping sent to %s", recipients)
 
-	return nil
+	for attempt := 0; attempt < 5; attempt++ {
+		for i, ping := range nostrPingList {
+			if string(ping.RawMessage) == pingID && ping.FunctionType == "pong" {
+				Logf("pong received from %s for ping:%v", ping.Recipients[0].Peer, string(ping.RawMessage))
+				nostrPingList = append(nostrPingList[:i], nostrPingList[i+1:]...)
+				return true, nil
+			}
+		}
+		if attempt < 4 {
+			time.Sleep(1 * time.Second)
+		}
+	}
+	return false, nil
 }
 
-func returnNostrPing(localParty string, protoMessage ProtoMessage) {
+func returnNostrPong(localParty string, protoMessage ProtoMessage) {
 	Logf("ping received from %s", protoMessage.From)
 	var from = protoMessage.From
 	protoMessage.FunctionType = "pong"
