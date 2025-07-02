@@ -438,27 +438,64 @@ func main() {
 		//Used for testing nostr MPCsendBTC
 		//This is to be run first by each party.
 		fmt.Println("ListenNostrMessages called")
-		party := os.Args[2]
+		localParty := os.Args[2]
 		net_type := "nostr"
 
 		if net_type == "nostr" {
-			go tss.NostrListen(party, nostrRelay)
+			go tss.NostrListen(localParty, nostrRelay)
 			//time.Sleep(time.Second * 2)
-			//nostrPing(party)
+			//nostrPing(localParty, recipientNpub)
 			select {}
 		}
 	}
 }
 
-func nostrPing(party string) {
-	ping, err := tss.SendNostrPing(party, randomSeed(32), "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp")
+func nostrPing(localParty, recipientNpub string) {
+	ping, err := tss.SendNostrPing(localParty, randomSeed(32), recipientNpub)
 	if err != nil {
 		fmt.Printf("Error sending ping: %v\n", err)
 	}
 	if ping {
-		fmt.Printf("Ping sent to %s\n", "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp")
+		fmt.Printf("Ping sent to %s\n", recipientNpub)
 	}
 	if !ping {
-		fmt.Printf("Peer not responding %s\n", "npub1eg5ne2jnsdn9ut6g5gmys9wy8crr90zataqsg8ezqs7zz6g9xrcs70xesp")
+		fmt.Printf("Peer not responding %s\n", recipientNpub)
 	}
+}
+
+func GetNostrKeys(party string) (tss.NostrKeys, error) {
+
+	data, err := os.ReadFile(party + ".nostr")
+	if err != nil {
+		fmt.Printf("Go Error GetNostrKeys: %v\n", err)
+	}
+
+	var nostrKeys tss.NostrKeys
+	if err := json.Unmarshal(data, &nostrKeys); err != nil {
+		fmt.Printf("Go Error Unmarshalling LocalState: %v\n", err)
+	}
+
+	return nostrKeys, nil
+}
+
+func GetKeyShare(party string) (tss.LocalState, error) {
+
+	data, err := os.ReadFile(party + ".ks")
+	if err != nil {
+		fmt.Printf("Go Error GetKeyShare: %v\n", err)
+	}
+
+	// Decode base64
+	decodedData, err := base64.StdEncoding.DecodeString(string(data))
+	if err != nil {
+		fmt.Printf("Go Error Decoding Base64: %v\n", err)
+	}
+
+	// Parse JSON into LocalState
+	var keyShare tss.LocalState
+	if err := json.Unmarshal(decodedData, &keyShare); err != nil {
+		fmt.Printf("Go Error Unmarshalling LocalState: %v\n", err)
+	}
+
+	return keyShare, nil
 }
