@@ -2,7 +2,6 @@ package tss
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -249,7 +248,7 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 	return nostrKeys, nil
 }
 
-func NostrListen(localParty, nostrRelay string) {
+func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys) {
 	nostrRelayURL = nostrRelay
 
 	// Decode recipient's private key
@@ -1145,16 +1144,6 @@ func returnNostrPong(localParty string, protoMessage ProtoMessage) {
 	nostrSend(localParty, protoMessage)
 
 	Logf("pong sent to %s", from)
-}
-
-func randomSeed(length int) string {
-	const characters = "0123456789abcdef"
-	result := make([]byte, length)
-	rand.Read(result)
-	for i := 0; i < length; i++ {
-		result[i] = characters[int(result[i])%len(characters)]
-	}
-	return string(result)
 }
 
 func contains(slice []string, item string) bool {

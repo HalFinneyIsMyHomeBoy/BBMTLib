@@ -179,7 +179,12 @@ func main() {
 
 		if net_type == "nostr" {
 			net_type = "nostr"
-			go tss.NostrListen(peer, nostrRelay)
+			localNostrKeys, err := GetNostrKeys(peer)
+			if err != nil {
+				fmt.Printf("Error getting local nostr keys: %v\n", err)
+				return
+			}
+			go tss.NostrListen(peer, nostrRelay, localNostrKeys)
 			time.Sleep(time.Second * 2)
 		}
 
@@ -355,7 +360,13 @@ func main() {
 
 		if net_type == "nostr" {
 			net_type = "nostr"
-			go tss.NostrListen(peer, nostrRelay)
+			localNostrKeys, err := GetNostrKeys(peer)
+			if err != nil {
+				fmt.Printf("Error getting local nostr keys: %v\n", err)
+				return
+			}
+
+			go tss.NostrListen(peer, nostrRelay, localNostrKeys)
 			time.Sleep(time.Second * 2)
 		} else {
 			go tss.RunRelay("55055")
@@ -440,9 +451,14 @@ func main() {
 		fmt.Println("ListenNostrMessages called")
 		localParty := os.Args[2]
 		net_type := "nostr"
+		localNostrKeys, err := GetNostrKeys(localParty)
+		if err != nil {
+			fmt.Printf("Error getting local nostr keys: %v\n", err)
+			return
+		}
 
 		if net_type == "nostr" {
-			go tss.NostrListen(localParty, nostrRelay)
+			go tss.NostrListen(localParty, nostrRelay, localNostrKeys)
 			//time.Sleep(time.Second * 2)
 			//nostrPing(localParty, recipientNpub)
 			select {}
