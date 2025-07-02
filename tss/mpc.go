@@ -215,7 +215,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 
 		if newSession == "true" { //This is the master starting the session
 			fmt.Printf("Master is coordinating nostr keygen session : %v\n", session)
-			ok, err := initiateNostrHandshake(session, chaincode, key, sessionKey, functionType, TxRequest{})
+			ok, err := initiateNostrHandshake(session, chaincode, key, sessionKey, functionType, TxRequest{}, localNostrKeys)
 			if err != nil {
 				return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
 			}

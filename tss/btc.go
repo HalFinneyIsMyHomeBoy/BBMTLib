@@ -398,7 +398,7 @@ func MpcSendBTC(
 
 				if newSession == "true" { //This is the master starting the session
 					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					ok, err := initiateNostrHandshake(session, "", key, sessionKey, "start_keysign", txRequest)
+					ok, err := initiateNostrHandshake(session, "", key, sessionKey, "start_keysign", txRequest, localNostrKeys)
 					if err != nil {
 						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
 					}
@@ -473,7 +473,7 @@ func MpcSendBTC(
 
 				if newSession == "true" { //This is the master starting the session
 					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					ok, err := initiateNostrHandshake(session, "", key, sessionKey, "start_keysign", txRequest)
+					ok, err := initiateNostrHandshake(session, "", key, sessionKey, "start_keysign", txRequest, localNostrKeys)
 					if err != nil {
 						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
 					}
