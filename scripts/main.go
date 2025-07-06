@@ -187,9 +187,9 @@ func main() {
 	if mode == "nostrKeygen" {
 		// prepare args
 
-		parties := "peer1,peer2"     // All participating parties
-		session := randomSeed(64)    // Generate random session ID
-		sessionKey := randomSeed(64) // Random session key
+		parties := "peer1,peer2,peer3" // All participating parties
+		session := randomSeed(64)      // Generate random session ID
+		sessionKey := randomSeed(64)   // Random session key
 		chainCode := randomSeed(64)
 		server := ""
 
