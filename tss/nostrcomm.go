@@ -1127,6 +1127,7 @@ func SendNostrPing(localParty, pingID, recipientNpub string) (bool, error) { //U
 		for i, ping := range nostrPingList {
 			if string(ping.RawMessage) == pingID && ping.FunctionType == "pong" {
 				Logf("pong received from %s for ping:%v", ping.Recipients[0].Peer, string(ping.RawMessage))
+				Logf("%s is online", ping.Recipients[0].Peer)
 				nostrPingList = append(nostrPingList[:i], nostrPingList[i+1:]...)
 				return true, nil
 			}

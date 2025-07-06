@@ -153,6 +153,30 @@ func main() {
 		fmt.Println(randomSeed(64))
 	}
 
+	if mode == "getAddress" {
+		if len(os.Args) != 6 {
+			fmt.Println("Usage: go run main.go getAddress <pubKey> <chainCode> <path> <network>")
+			os.Exit(1)
+		}
+		pubKey := os.Args[2]
+		chainCode := os.Args[3]
+		path := os.Args[4]
+		network := os.Args[5]
+		// Get derived public key
+		btcPub, err := tss.GetDerivedPubKey(pubKey, chainCode, path, false)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+		}
+
+		// Convert to testnet3 address
+		btcP2Pkh, err := tss.ConvertPubKeyToBTCAddress(btcPub, network)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+		}
+
+		fmt.Println(btcP2Pkh)
+	}
+
 	if mode == "relay" {
 		port := os.Args[2]
 		defer tss.StopRelay()
@@ -167,7 +191,7 @@ func main() {
 		session := randomSeed(64)    // Generate random session ID
 		sessionKey := randomSeed(64) // Random session key
 		chainCode := randomSeed(64)
-		server := "http://127.0.0.1:55055"
+		server := ""
 
 		net_type := "nostr"
 		peer := "peer1"
@@ -464,19 +488,47 @@ func main() {
 			select {}
 		}
 	}
+
+	if mode == "nostrPing" {
+		// Usage: go run main.go nostrPing <localParty> <recipientNpub>
+		if len(os.Args) != 4 {
+			fmt.Println("Usage: go run main.go nostrPing <localParty> <recipientNpub>")
+			fmt.Println("Example: go run main.go nostrPing peer1 npub1abc123...")
+			os.Exit(1)
+		}
+
+		localParty := os.Args[2]
+		recipientNpub := os.Args[3]
+
+		fmt.Printf("Sending Nostr ping from %s to %s...\n", localParty, recipientNpub)
+
+		// Get local Nostr keys
+		localNostrKeys, err := GetNostrKeys(localParty)
+		if err != nil {
+			fmt.Printf("Error getting local nostr keys: %v\n", err)
+			return
+		}
+
+		// Start Nostr listener in background
+		go tss.NostrListen(localParty, nostrRelay, localNostrKeys)
+		time.Sleep(time.Second * 2) // Wait for listener to start
+
+		// Send ping
+		nostrPing(localParty, recipientNpub)
+	}
 }
 
 func nostrPing(localParty, recipientNpub string) {
-	ping, err := tss.SendNostrPing(localParty, randomSeed(32), recipientNpub)
+	_, err := tss.SendNostrPing(localParty, randomSeed(32), recipientNpub)
 	if err != nil {
 		fmt.Printf("Error sending ping: %v\n", err)
 	}
-	if ping {
-		fmt.Printf("Ping sent to %s\n", recipientNpub)
-	}
-	if !ping {
-		fmt.Printf("Peer not responding %s\n", recipientNpub)
-	}
+	// if ping {
+	// 	fmt.Printf("Ping sent to %s\n", recipientNpub)
+	// }
+	// if !ping {
+	// 	fmt.Printf("Peer not responding %s\n", recipientNpub)
+	// }
 }
 
 func GetNostrKeys(party string) (tss.NostrKeys, error) {
