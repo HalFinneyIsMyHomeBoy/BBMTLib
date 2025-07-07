@@ -80,11 +80,6 @@ localTesting=true
 "$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer1" "$net_type" "$localTesting" &
 PID1=$!
 
-#"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer2" "$net_type" &
-#PID2=$!
-
-#"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer3" "$net_type" &
-#PID3=$!
 
 # Trap to kill background processes on exit
 trap "echo 'Stopping nostrSendBTC processes...'; kill $PID1 2>/dev/null; exit" SIGINT SIGTERM
