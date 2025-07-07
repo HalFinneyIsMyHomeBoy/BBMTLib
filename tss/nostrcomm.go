@@ -555,10 +555,9 @@ func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functi
 	for retryCount <= maxRetries {
 		for _, item := range nostrSessionList {
 			if item.SessionID == SessionID {
-
 				participantCount := len(item.Participants)
-				participationRatio := float64(participantCount) / float64(partyCount)
-				if participationRatio >= 0.66 {
+				aboveThreshold := participantCount >= 1+partyCount/2
+				if aboveThreshold {
 					Logf("Enough participants have approved, sending %s for session: %s", functionType, SessionID)
 					if item.Status == "pending" {
 						sessionReady = true
@@ -569,9 +568,8 @@ func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functi
 					return sessionReady, nil
 				} else {
 					if retryCount >= maxRetries {
-						participationRatio := float64(participantCount) / float64(partyCount)
-						if participationRatio >= 0.66 {
-							Logf("We have 2/3 of participants approved, sending %s for session: %s", functionType, SessionID)
+						if aboveThreshold {
+							Logf("We threshold of participants approved, sending %s for session: %s", functionType, SessionID)
 							sessionReady = true
 							startSessionMaster(SessionID, item.Participants, localParty, functionType)
 						} else {
