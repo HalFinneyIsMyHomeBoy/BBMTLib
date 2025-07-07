@@ -215,7 +215,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 
 		if newSession == "true" { //This is the master starting the session
 			fmt.Printf("Master is coordinating nostr keygen session : %v\n", session)
-			ok, err := initiateNostrHandshake(session, chaincode, key, sessionKey, functionType, TxRequest{}, localNostrKeys)
+			ok, err := initiateNostrHandshake(session, chaincode, key, sessionKey, functionType, TxRequest{})
 			if err != nil {
 				return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
 			}
@@ -617,10 +617,7 @@ func (m *MessengerImp) Send(from, to, body, parties, functionType string) error 
 			SeqNo:        strconv.Itoa(status.SeqNo),
 		}
 
-		recipients, err := GetNostrKeys(from)
-		if err != nil {
-			return fmt.Errorf("failed to get nostr party pub keys: %w", err)
-		}
+		recipients := globalLocalNostrKeys
 
 		for peer, pubKey := range recipients.NostrPartyPubKeys {
 			if peer == to {
@@ -631,7 +628,7 @@ func (m *MessengerImp) Send(from, to, body, parties, functionType string) error 
 			}
 		}
 
-		err = nostrSend(from, protoMessage)
+		err = nostrSend(protoMessage)
 
 		if err != nil {
 			return fmt.Errorf("failed to send nostr message: %w", err)

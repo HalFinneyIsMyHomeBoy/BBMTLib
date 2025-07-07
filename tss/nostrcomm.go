@@ -442,7 +442,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 
 	if protoMessage.FunctionType == "ack_handshake" {
 		if protoMessage.Master.MasterPeer == localParty {
-			collectAckHandshake(localParty, protoMessage.SessionID, protoMessage)
+			collectAckHandshake(protoMessage.SessionID, protoMessage)
 		}
 	}
 
@@ -506,7 +506,7 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 	return "", nil
 }
 
-func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functionType string, txRequest TxRequest, localNostrKeys NostrKeys) (bool, error) {
+func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functionType string, txRequest TxRequest) (bool, error) {
 
 	protoMessage := ProtoMessage{
 		SessionID:       SessionID,
@@ -545,7 +545,7 @@ func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functi
 
 	//==============================SEND (INIT_HANDSHAKE) TO ALL PARTIES========================
 	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
-	nostrSend(localParty, protoMessage)
+	nostrSend(protoMessage)
 	//==============================COLLECT ACK_HANDSHAKES==============================
 
 	partyCount := len(globalLocalNostrKeys.NostrPartyPubKeys)
@@ -591,7 +591,7 @@ func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functi
 	return sessionReady, nil
 }
 
-func collectAckHandshake(localParty, sessionID string, protoMessage ProtoMessage) {
+func collectAckHandshake(sessionID string, protoMessage ProtoMessage) {
 
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID && item.TxRequest == protoMessage.TxRequest {
@@ -656,7 +656,7 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		TxRequest:       protoMessage.TxRequest,
 		Master:          protoMessage.Master,
 	}
-	nostrSend(localParty, ackProtoMessage)
+	nostrSend(ackProtoMessage)
 
 }
 
@@ -689,7 +689,7 @@ func startSessionMaster(sessionID string, participants []string, localParty stri
 				TxRequest:    item.TxRequest,
 				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
 			}
-			nostrSend(localParty, startKeysignProtoMessage)
+			nostrSend(startKeysignProtoMessage)
 		}
 	}
 }
@@ -822,7 +822,7 @@ func nostrSessionAlreadyExists(list []NostrSession, nostrSession NostrSession) b
 	return false
 }
 
-func nostrSend(from string, protoMessage ProtoMessage) error {
+func nostrSend(protoMessage ProtoMessage) error {
 
 	for _, recipient := range protoMessage.Recipients {
 		protoMessageJSON, err := json.Marshal(protoMessage)
@@ -1129,7 +1129,7 @@ func SendNostrPing(localParty, pingID, recipientNpub string) (bool, error) { //U
 		RawMessage:      []byte(pingID),
 	}
 
-	err := nostrSend(localParty, protoMessage)
+	err := nostrSend(protoMessage)
 	if err != nil {
 		return false, fmt.Errorf("error sending ping: %w", err)
 	}
@@ -1158,7 +1158,7 @@ func returnNostrPong(localParty string, protoMessage ProtoMessage) {
 	protoMessage.FunctionType = "pong"
 	protoMessage.Recipients = []NostrPartyPubKeys{{Peer: protoMessage.From, PubKey: protoMessage.FromNostrPubKey}}
 	protoMessage.From = localParty
-	nostrSend(localParty, protoMessage)
+	nostrSend(protoMessage)
 
 	Logf("pong sent to %s", from)
 }
