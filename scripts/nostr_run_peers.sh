@@ -15,6 +15,7 @@ nostrRelay="ws://bbw-nostr.xyz"
 echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go 
 
+echo "Starting peer 2 and 3..."
 
 PARTY2="peer2"
 PARTY3="peer3"
