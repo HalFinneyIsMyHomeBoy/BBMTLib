@@ -75,7 +75,7 @@ amountSatoshi="1000"
 estimatedFee="600"
 peer="$localParty"
 net_type="nostr"
-localTesting=true
+localTesting="true"
 
 "$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer1" "$net_type" "$localTesting" &
 PID1=$!

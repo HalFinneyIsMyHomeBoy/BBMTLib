@@ -10,7 +10,7 @@ BUILD_DIR="./bin"
 mkdir -p "$BUILD_DIR"
 
 nostrRelay="ws://bbw-nostr.xyz"
-localTesting=true
+localTesting="true"
 # Build the Go binary
 echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go 
