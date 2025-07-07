@@ -711,6 +711,15 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 			nostrSessionList[i].Participants = participants
 			sessionKey := nostrSessionList[i].SessionKey
 
+			if globalLocalTesting {
+				var err error
+				keyShare, err = GetKeyShare(localParty)
+				if err != nil {
+					Logf("Error getting keyshare: %v", err)
+					return
+				}
+			}
+
 			keyShareJSON, err := json.Marshal(keyShare)
 			if err != nil {
 				Logf("Error marshaling keyshare: %v", err)
@@ -1169,4 +1178,26 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func GetKeyShare(party string) (LocalState, error) {
+
+	data, err := os.ReadFile(party + ".ks")
+	if err != nil {
+		fmt.Printf("Go Error GetKeyShare: %v\n", err)
+	}
+
+	// Decode base64
+	decodedData, err := base64.StdEncoding.DecodeString(string(data))
+	if err != nil {
+		fmt.Printf("Go Error Decoding Base64: %v\n", err)
+	}
+
+	// Parse JSON into LocalState
+	var keyShare LocalState
+	if err := json.Unmarshal(decodedData, &keyShare); err != nil {
+		fmt.Printf("Go Error Unmarshalling LocalState: %v\n", err)
+	}
+
+	return keyShare, nil
 }
