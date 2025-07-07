@@ -209,7 +209,7 @@ func main() {
 				fmt.Printf("Error getting local nostr keys: %v\n", err)
 				return
 			}
-			go tss.NostrListen(peer, nostrRelay, localNostrKeys)
+			go tss.NostrListen(peer, nostrRelay, localNostrKeys, true)
 			time.Sleep(time.Second * 2)
 		}
 
@@ -367,13 +367,117 @@ func main() {
 		}
 	}
 
+	if mode == "nostrSendBTC2" {
+
+		//This is to be called by the party initiating the session to send BTC
+		//The party to initiate this is the master by default for the session.
+
+		fmt.Println("InitiateNostrSendBTC called")
+		parties := "peer1,peer2,peer3" // All participating parties
+		session := randomSeed(64)      // Generate random session ID
+		sessionKey := randomSeed(64)   // Random session key
+		derivePath := "m/44'/0'/0'/0/0"
+		receiverAddress := "mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
+		amountSatoshi := 1000
+		estimatedFee := 600
+		peer := "peer1"
+		net_type := "nostr"
+		localTesting := true
+
+		if net_type == "nostr" {
+			net_type = "nostr"
+			localNostrKeys, err := GetNostrKeys(peer)
+			if err != nil {
+				fmt.Printf("Error getting local nostr keys: %v\n", err)
+				return
+			}
+
+			go tss.NostrListen(peer, nostrRelay, localNostrKeys, localTesting)
+			time.Sleep(time.Second * 2)
+		} else {
+			go tss.RunRelay("55055")
+			time.Sleep(time.Second)
+		}
+
+		fmt.Printf("Processing peer: %s\n", peer)
+		keyshareFile := peer + ".ks"
+
+		// Read and decode keyshare file for this peer
+		keyshare, err := os.ReadFile(keyshareFile)
+		if err != nil {
+			fmt.Printf("Error reading keyshare file for %s: %v\n", peer, err)
+			return
+		}
+		decodedKeyshare, err := base64.StdEncoding.DecodeString(string(keyshare))
+		if err != nil {
+			fmt.Printf("Failed to decode base64 keyshare: %v\n", err)
+			return
+		}
+
+		// Get the public key and chain code from keyshare
+		var localState tss.LocalState
+		if err := json.Unmarshal(decodedKeyshare, &localState); err != nil {
+			fmt.Printf("Failed to parse keyshare: %v\n", err)
+			return
+		}
+
+		// Get the derived public key using chain code from keyshare
+		btcPub, err := tss.GetDerivedPubKey(localState.PubKey, localState.ChainCodeHex, derivePath, false)
+		if err != nil {
+			fmt.Printf("Failed to get derived public key: %v\n", err)
+			return
+		}
+
+		// Get the sender address
+		senderAddress, err := tss.ConvertPubKeyToBTCAddress(btcPub, "testnet3")
+		if err != nil {
+			fmt.Printf("Failed to get sender address: %v\n", err)
+			return
+		}
+
+		fmt.Printf("Successfully processed keyshare for %s\n", peer)
+
+		fmt.Println("Testing...")
+		// prepare args
+		server := "http://127.0.0.1:55055" // Default relay server
+
+		// Generate keypair for encryption/decryption
+		keypair, err := tss.GenerateKeyPair()
+		if err != nil {
+			fmt.Printf("Error generating keypair: %v\n", err)
+			return
+		}
+		var keypairMap map[string]string
+		if err := json.Unmarshal([]byte(keypair), &keypairMap); err != nil {
+			fmt.Printf("Error parsing keypair: %v\n", err)
+			return
+		}
+		encKey := keypairMap["PublicKey"]  // Public key for encryption
+		decKey := keypairMap["PrivateKey"] // Private key for decryption
+
+		derivePath = "m/44'/0'/0'/0/0" // Standard BTC derivation path
+
+		if len(sessionKey) > 0 {
+			encKey = ""
+			decKey = ""
+		}
+
+		result, err := tss.MpcSendBTC(server, peer, parties, session, sessionKey, encKey, decKey, string(keyshare), derivePath, btcPub, senderAddress, receiverAddress, int64(amountSatoshi), int64(estimatedFee), net_type, "true")
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		} else {
+			fmt.Printf("\n [%s] Keysign Result %s\n", peer, result)
+		}
+
+	}
+
 	if mode == "nostrSendBTC" {
 
 		//This is to be called by the party initiating the session to send BTC
 		//The party to initiate this is the master by default for the session.
 
 		if len(os.Args) != 11 {
-			fmt.Println("Usage: go run main.go nostrSendBTC <parties> <session> <sessionKey> <derivePath> <receiverAddress> <amountSatoshi> <estimatedFee> <peer> <net_type>")
+			fmt.Println("Usage: go run main.go nostrSendBTC <parties> <session> <sessionKey> <derivePath> <receiverAddress> <amountSatoshi> <estimatedFee> <peer> <net_type> <localTesting>")
 			os.Exit(1)
 		}
 		parties := os.Args[2]
@@ -393,6 +497,13 @@ func main() {
 		}
 		peer := os.Args[9]
 		net_type := os.Args[10]
+		localTesting := os.Args[11]
+
+		localTestingBool, err := strconv.ParseBool(localTesting)
+		if err != nil {
+			fmt.Printf("Invalid localTesting: %v\n", err)
+			return
+		}
 
 		fmt.Println("InitiateNostrSendBTC called")
 		if net_type == "nostr" {
@@ -403,7 +514,7 @@ func main() {
 				return
 			}
 
-			go tss.NostrListen(peer, nostrRelay, localNostrKeys)
+			go tss.NostrListen(peer, nostrRelay, localNostrKeys, localTestingBool)
 			time.Sleep(time.Second * 2)
 		} else {
 			go tss.RunRelay("55055")
@@ -488,6 +599,14 @@ func main() {
 		fmt.Println("ListenNostrMessages called")
 		localParty := os.Args[2]
 		net_type := "nostr"
+		localTesting := os.Args[3]
+
+		localTestingBool, err := strconv.ParseBool(localTesting)
+		if err != nil {
+			fmt.Printf("Invalid localTesting: %v\n", err)
+			return
+		}
+
 		localNostrKeys, err := GetNostrKeys(localParty)
 		if err != nil {
 			fmt.Printf("Error getting local nostr keys: %v\n", err)
@@ -495,7 +614,7 @@ func main() {
 		}
 
 		if net_type == "nostr" {
-			go tss.NostrListen(localParty, nostrRelay, localNostrKeys)
+			go tss.NostrListen(localParty, nostrRelay, localNostrKeys, localTestingBool)
 			//time.Sleep(time.Second * 2)
 			//nostrPing(localParty, recipientNpub)
 			select {}
@@ -512,6 +631,13 @@ func main() {
 
 		localParty := os.Args[2]
 		recipientNpub := os.Args[3]
+		localTesting := os.Args[4]
+
+		localTestingBool, err := strconv.ParseBool(localTesting)
+		if err != nil {
+			fmt.Printf("Invalid localTesting: %v\n", err)
+			return
+		}
 
 		fmt.Printf("Sending Nostr ping from %s to %s...\n", localParty, recipientNpub)
 
@@ -523,7 +649,7 @@ func main() {
 		}
 
 		// Start Nostr listener in background
-		go tss.NostrListen(localParty, nostrRelay, localNostrKeys)
+		go tss.NostrListen(localParty, nostrRelay, localNostrKeys, localTestingBool)
 		time.Sleep(time.Second * 2) // Wait for listener to start
 
 		// Send ping

@@ -10,7 +10,7 @@ BUILD_DIR="./bin"
 mkdir -p "$BUILD_DIR"
 
 nostrRelay="ws://bbw-nostr.xyz"
-
+localTesting=true
 # Build the Go binary
 echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go 
@@ -21,11 +21,11 @@ PARTY2="peer2"
 PARTY3="peer3"
 
  echo "Start listening on peer 2..."
- "$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY2" "$nostrRelay" &
+ "$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY2" "$nostrRelay" "$localTesting" &
 PID1=$!
 
 echo "Start listening on peer 3..." 
-"$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY3" "$nostrRelay" &
+"$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY3" "$nostrRelay" "$localTesting" &
 PID2=$!
 
 # Handle cleanup on exit

@@ -30,7 +30,7 @@ var (
 	globalCtx, globalCancel   = context.WithCancel(context.Background())
 	nostrRelayURL             string
 	KeysignApprovalTimeout    = 4 * time.Second
-	KeysignApprovalMaxRetries = 10
+	KeysignApprovalMaxRetries = 3
 	totalSentMessages         []ProtoMessage
 	nostrMutex                sync.Mutex
 	sessionMutex              sync.Mutex
@@ -41,6 +41,7 @@ var (
 	localState                LocalState
 	localNostrKeys            NostrKeys
 	globalLocalNostrKeys      NostrKeys
+	globalLocalTesting        bool
 )
 
 type NostrPartyPubKeys struct {
@@ -249,10 +250,21 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 	return nostrKeys, nil
 }
 
-func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys) {
+func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys, localTesting bool) {
 	nostrRelayURL = nostrRelay
-	// Store the localNostrKeys in the global variable so other functions can access it
-	globalLocalNostrKeys = localNostrKeys
+
+	if localTesting {
+		globalLocalTesting = true
+		var err error
+		globalLocalNostrKeys, err = GetNostrKeys(localParty)
+		if err != nil {
+			log.Printf("Error getting local nostr keys: %v\n", err)
+			return
+		}
+	} else {
+		// Store the localNostrKeys in the global variable so other functions can access it
+		globalLocalNostrKeys = localNostrKeys
+	}
 
 	// Decode recipient's private key
 	_, recipientPrivkey, err := nip19.Decode(localNostrKeys.LocalNostrPrivKey)

@@ -75,18 +75,19 @@ amountSatoshi="1000"
 estimatedFee="600"
 peer="$localParty"
 net_type="nostr"
+localTesting=true
 
-"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer1" "$net_type" &
+"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer1" "$net_type" "$localTesting" &
 PID1=$!
 
-"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer2" "$net_type" &
-PID2=$!
+#"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer2" "$net_type" &
+#PID2=$!
 
-"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer3" "$net_type" &
-PID3=$!
+#"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer3" "$net_type" &
+#PID3=$!
 
 # Trap to kill background processes on exit
-trap "echo 'Stopping nostrSendBTC processes...'; kill $PID1 $PID2 $PID3 2>/dev/null; exit" SIGINT SIGTERM
+trap "echo 'Stopping nostrSendBTC processes...'; kill $PID1 2>/dev/null; exit" SIGINT SIGTERM
 
 echo "nostrSendBTC processes running. Press Ctrl+C to stop."
 
