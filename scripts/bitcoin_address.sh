@@ -24,6 +24,19 @@ network=$2
 # Check if keyshare file exists
 if [ ! -f "$keyshareFile" ]; then
     echo "Error: $keyshareFile not found"
+    echo "--------------------------------"
+    echo "usage example: ./btc_derive_address.sh peer1 testnet3"
+    echo "--------------------------------"
+    exit 1
+fi
+
+# Check supported networks
+if [ ! "$network" == "testnet3" ] && [ ! "$network" == "mainnet" ]; then
+    echo "--------------------------------"
+    echo "Error: $network is not a valid network"
+    echo "--------------------------------"
+    echo "usage example: ./btc_derive_address.sh peer1 testnet3"
+    echo "--------------------------------"
     exit 1
 fi
 
@@ -42,4 +55,4 @@ btcPath="m/44'/0'/0'/0/0"
 address=$(go run main.go getAddress "$pubKey" "$chainCode" "$btcPath" "$network")
 
 # Display result
-echo "$address" 	
+echo "$address"

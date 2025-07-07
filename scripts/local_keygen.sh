@@ -18,15 +18,9 @@ KEYPAIR1=$("$BUILD_DIR/$BIN_NAME" keypair)
 KEYPAIR2=$("$BUILD_DIR/$BIN_NAME" keypair)
 KEYPAIR3=$("$BUILD_DIR/$BIN_NAME" keypair)
 
-
-
-
-
-
 NOSTR_KEYPAIR1=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
 NOSTR_KEYPAIR2=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
 NOSTR_KEYPAIR3=$("$BUILD_DIR/$BIN_NAME" nostrKeypair)
-
 
 NOSTR_PRIVATE_KEY1=$(echo "$NOSTR_KEYPAIR1" | jq -r '.privateKey')
 NOSTR_PRIVATE_KEY2=$(echo "$NOSTR_KEYPAIR2" | jq -r '.privateKey')
@@ -52,6 +46,7 @@ CHAIN_CODE=$("$BUILD_DIR/$BIN_NAME" random)
 PORT=55055
 HOST="127.0.0.1"
 SERVER="http://$HOST:$PORT"
+
 USENOSTR="false"
 NOSTRRELAY="ws://bbw-nostr.xyz"
 
@@ -60,7 +55,6 @@ PARTY2="peer2"
 PARTY3="peer3"
 
 PARTIES="$PARTY1,$PARTY2,$PARTY3"  # Participants
-
 
 # Create JSON object mapping parties to their Nostr public keys
 NOSTR_PARTY_PUBKEYS=$(jq -n \
@@ -114,12 +108,8 @@ echo "Starting Keygen for PARTY3..."
 PID3=$!
 
 
-
-
-
-
 # Handle cleanup on exit
-trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3 $PID4 $PID5 $PID6 $PID7 $PID8 $PID9 $PID10; exit" SIGINT SIGTERM
+trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3; exit" SIGINT SIGTERM
 
 echo "Keygen processes running. Press Ctrl+C to stop."
 

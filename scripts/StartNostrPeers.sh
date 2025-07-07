@@ -19,8 +19,6 @@ go build -o "$BUILD_DIR/$BIN_NAME" main.go
 PARTY2="peer2"
 PARTY3="peer3"
 
-
-
  echo "Start listening on peer 2..."
  "$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY2" "$nostrRelay" &
 PID1=$!
@@ -29,8 +27,7 @@ echo "Start listening on peer 3..."
 "$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY3" "$nostrRelay" &
 PID2=$!
 
-
-    # Handle cleanup on exit
+# Handle cleanup on exit
 trap "echo 'Stopping processes...'; kill $PID1; kill $PID2;    exit" SIGINT SIGTERM
 
 echo "running peers. Press Ctrl+C to stop."

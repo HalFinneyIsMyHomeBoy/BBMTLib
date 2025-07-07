@@ -38,31 +38,16 @@ fi
 # Set peer name
 localParty="peer1"
 
-# Check if required .nostr file exists
-if [ ! -f "$localParty.nostr" ]; then
-    print_warning "$localParty.nostr file not found. Generating Nostr keys first..."
-    
-    # Run the generateNostrKeys mode to create the required files
-    print_status "Generating Nostr keys for all peers..."
-    go run main.go generateNostrKeys
-    
-    if [ ! -f "$localParty.nostr" ]; then
-        print_error "Failed to generate $localParty.nostr file"
-        exit 1
-    fi
-    print_success "Nostr keys generated successfully"
-fi
-
-# Check if keyshare file exists (required for BTC sending)
-if [ ! -f "$localParty.ks" ]; then
-    print_error "$localParty.ks file not found. You need to run keygen first."
-    print_status "Please run: ./run_nostr_keygen.sh"
-    exit 1
-fi
-
 # Build the Go application
 print_status "Building Go application..."
-go build -o bbmtlib main.go
+BIN_NAME="bbmt"
+BUILD_DIR="./bin"
+
+# Ensure build directory exists
+
+# Build the Go binary
+echo "Building the Go binary..."
+go build -o "$BUILD_DIR/$BIN_NAME" main.go
 
 if [ $? -ne 0 ]; then
     print_error "Failed to build the application"
@@ -79,7 +64,33 @@ print_status "  - Amount: 1000 satoshis"
 print_status "  - Fee: 600 satoshis"
 print_status "  - Derivation path: m/44'/0'/0'/0/0"
 
-./bbmtlib nostrSendBTC
+# Default values for arguments
+# trying 2 out of 3
+parties="peer1,peer2,peer3"
+session="$(go run main.go random)"
+sessionKey="$(go run main.go random)"
+derivePath="m/44'/0'/0'/0/0"
+receiverAddress="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
+amountSatoshi="1000"
+estimatedFee="600"
+peer="$localParty"
+net_type="nostr"
+
+"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer1" "$net_type" &
+PID1=$!
+
+"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer2" "$net_type" &
+PID2=$!
+
+"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer3" "$net_type" &
+PID3=$!
+
+# Trap to kill background processes on exit
+trap "echo 'Stopping nostrSendBTC processes...'; kill $PID1 $PID2 $PID3 2>/dev/null; exit" SIGINT SIGTERM
+
+echo "nostrSendBTC processes running. Press Ctrl+C to stop."
+
+wait
 
 if [ $? -eq 0 ]; then
     print_success "nostrSendBTC completed successfully!"

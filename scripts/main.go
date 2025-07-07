@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
 )
+
+var nostrRelay string
 
 func randomSeed(length int) string {
 	const characters = "0123456789abcdef"
@@ -25,7 +28,6 @@ func randomSeed(length int) string {
 
 func main() {
 
-	var nostrRelay string
 	nostrRelay = "ws://bbw-nostr.xyz"
 
 	mode := os.Args[1]
@@ -77,7 +79,6 @@ func main() {
 
 		// Create individual .nostr files for each peer
 		// Ensure the scripts/ directory exists
-		os.MkdirAll("scripts", 0755)
 		fmt.Println("\nCreating .nostr files...")
 		for i := 1; i <= 3; i++ {
 			peerName := fmt.Sprintf("peer%d", i)
@@ -371,17 +372,29 @@ func main() {
 		//This is to be called by the party initiating the session to send BTC
 		//The party to initiate this is the master by default for the session.
 
-		fmt.Println("InitiateNostrSendBTC called")
-		parties := "peer1,peer2,peer3" // All participating parties
-		session := randomSeed(64)      // Generate random session ID
-		sessionKey := randomSeed(64)   // Random session key
-		derivePath := "m/44'/0'/0'/0/0"
-		receiverAddress := "mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
-		amountSatoshi := 1000
-		estimatedFee := 600
-		peer := "peer1"
-		net_type := "nostr"
+		if len(os.Args) != 11 {
+			fmt.Println("Usage: go run main.go nostrSendBTC <parties> <session> <sessionKey> <derivePath> <receiverAddress> <amountSatoshi> <estimatedFee> <peer> <net_type>")
+			os.Exit(1)
+		}
+		parties := os.Args[2]
+		session := os.Args[3]
+		sessionKey := os.Args[4]
+		derivePath := os.Args[5]
+		receiverAddress := os.Args[6]
+		amountSatoshi, err := strconv.ParseInt(os.Args[7], 10, 64)
+		if err != nil {
+			fmt.Printf("Invalid amountSatoshi: %v\n", err)
+			return
+		}
+		estimatedFee, err := strconv.ParseInt(os.Args[8], 10, 64)
+		if err != nil {
+			fmt.Printf("Invalid estimatedFee: %v\n", err)
+			return
+		}
+		peer := os.Args[9]
+		net_type := os.Args[10]
 
+		fmt.Println("InitiateNostrSendBTC called")
 		if net_type == "nostr" {
 			net_type = "nostr"
 			localNostrKeys, err := GetNostrKeys(peer)
