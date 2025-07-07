@@ -564,8 +564,9 @@ func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functi
 			if item.SessionID == SessionID {
 
 				participantCount := len(item.Participants)
-				if participantCount == partyCount {
-					Logf("All participants have approved, sending %s for session: %s", functionType, SessionID)
+				participationRatio := float64(participantCount) / float64(partyCount)
+				if participationRatio >= 0.66 {
+					Logf("Enough participants have approved, sending %s for session: %s", functionType, SessionID)
 					if item.Status == "pending" {
 						sessionReady = true
 						startSessionMaster(SessionID, item.Participants, localParty, functionType)
