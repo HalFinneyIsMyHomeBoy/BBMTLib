@@ -37,9 +37,10 @@ var _fee_set = "30m"
 func SetNetwork(network string) (string, error) {
 	if network == "mainnet" || network == "testnet3" {
 		_btc_net = network
-		if network == "mainnet" {
+		switch network {
+		case "mainnet":
 			_api_url = "https://mempool.space/api"
-		} else if network == "testnet3" {
+		case "testnet3":
 			_api_url = "https://mempool.space/testnet/api"
 		}
 		return _api_url, nil
@@ -396,7 +397,7 @@ func MpcSendBTC(
 					DerivePath:      derivePath,
 				}
 
-				if newSession == "true" { //This is the master starting the session
+				if newSession == "true" {
 					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
 					ok, err := initiateNostrHandshake(session, "", key, sessionKey, "start_keysign", txRequest, localNostrKeys)
 					if err != nil {
@@ -407,11 +408,11 @@ func MpcSendBTC(
 					}
 				}
 
-				for _, item := range nostrSessionList {
-					if item.Status == "start_keysign" && item.SessionID == session {
-						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
+				for _, nostrSession := range nostrSessionList {
+					if nostrSession.Status == "start_keysign" && nostrSession.SessionID == session {
+						sigJSON, err = JoinKeysign(server, key, strings.Join(nostrSession.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 						if err != nil {
-							Logf("Current status: %v", item.Status)
+							Logf("Current status: %v", nostrSession.Status)
 							return "", fmt.Errorf("failed to sign transaction: signature is empty")
 						}
 						time.Sleep(1 * time.Second)

@@ -35,8 +35,26 @@ if [ ! -f "main.go" ]; then
     exit 1
 fi
 
-# Set peer name
-localParty="peer1"
+# Usage: ./nostr_spend.sh peer1 peer2 peer3 ...
+if [ "$#" -lt 1 ]; then
+    print_error "Usage: $0 peer1 [peer2 ...]"
+    exit 1
+fi
+
+peers=("$@")
+
+# Validate required files for each peer
+for peer in "${peers[@]}"; do
+    if [ ! -f "$peer.nostr" ]; then
+        print_error "$peer.nostr file not found. Please generate Nostr keys for $peer."
+        exit 1
+    fi
+    if [ ! -f "$peer.ks" ]; then
+        print_error "$peer.ks file not found. You need to run keygen for $peer."
+        exit 1
+    fi
+    print_success "Found required files for $peer"
+done
 
 # Build the Go application
 print_status "Building Go application..."
@@ -55,36 +73,39 @@ if [ $? -ne 0 ]; then
 fi
 print_success "Application built successfully"
 
-# Run the nostrSendBTC mode
-print_status "Starting nostrSendBTC process..."
-print_status "This will initiate a BTC send transaction using Nostr for $localParty"
-print_status "Default settings:"
-print_status "  - Receiver: mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV (testnet)"
-print_status "  - Amount: 1000 satoshis"
-print_status "  - Fee: 600 satoshis"
-print_status "  - Derivation path: m/44'/0'/0'/0/0"
-
 # Default values for arguments
-# trying 2 out of 3
-parties="peer1,peer2,peer3"
+parties="${peers[*]}"
+parties="${parties// /,}"
 session="$(go run main.go random)"
 sessionKey="$(go run main.go random)"
 derivePath="m/44'/0'/0'/0/0"
 receiverAddress="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
 amountSatoshi="1000"
 estimatedFee="600"
-peer="$localParty"
 net_type="nostr"
 localTesting="true"
 
-"$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "peer1" "$net_type" "$localTesting" &
-PID1=$!
+print_status "parties: $parties"
+print_status "session: $session"
+print_status "sessionKey: $sessionKey"
+print_status "derivePath: $derivePath"
+print_status "receiverAddress: $receiverAddress"
+print_status "amountSatoshi: $amountSatoshi"
+print_status "estimatedFee: $estimatedFee"
+print_status "net_type: $net_type"
 
+# Start nostrSendBTC for each peer in background
+PIDS=()
+for peer in "${peers[@]}"; do
+    print_status "Starting nostrSendBTC for $peer..."
+    "$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "$peer" "$net_type" "$localTesting" &
+    PIDS+=("$!")
+done
 
-# Trap to kill background processes on exit
-trap "echo 'Stopping nostrSendBTC processes...'; kill $PID1 2>/dev/null; exit" SIGINT SIGTERM
+# Trap to kill all background processes on exit
+trap "echo 'Stopping nostrSendBTC processes...'; kill ${PIDS[@]} 2>/dev/null; exit" SIGINT SIGTERM
 
-echo "nostrSendBTC processes running. Press Ctrl+C to stop."
+echo "nostrSendBTC processes running for peers: ${peers[*]}. Press Ctrl+C to stop."
 
 wait
 

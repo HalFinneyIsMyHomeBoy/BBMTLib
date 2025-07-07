@@ -23,19 +23,13 @@ import (
 // Global variables
 var (
 	nostrSessionList          []NostrSession
-	nostrHandShakeList        []ProtoMessage
 	nostrPingList             []ProtoMessage
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
-	globalCtx, globalCancel   = context.WithCancel(context.Background())
-	nostrRelayURL             string
+	globalCtx, _              = context.WithCancel(context.Background())
 	KeysignApprovalTimeout    = 4 * time.Second
 	KeysignApprovalMaxRetries = 3
-	totalSentMessages         []ProtoMessage
 	nostrMutex                sync.Mutex
-	sessionMutex              sync.Mutex
-	nostrSendMutex            sync.Mutex
-	nostrDownloadMutex        sync.Mutex
 	chunkCache                = cache.New(5*time.Minute, 10*time.Minute)
 	chunkMutex                sync.Mutex
 	localState                LocalState
@@ -239,26 +233,25 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 
 	data, err := os.ReadFile(party + ".nostr")
 	if err != nil {
-		fmt.Printf("Go Error GetNostrKeys: %v\n", err)
+		fmt.Printf("Go Error GetNostrKeys: %v", err)
 	}
 
 	var nostrKeys NostrKeys
 	if err := json.Unmarshal(data, &nostrKeys); err != nil {
-		fmt.Printf("Go Error Unmarshalling LocalState: %v\n", err)
+		fmt.Printf("Go Error Unmarshalling LocalState: %v", err)
 	}
 
 	return nostrKeys, nil
 }
 
 func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys, localTesting bool) {
-	nostrRelayURL = nostrRelay
 
 	if localTesting {
 		globalLocalTesting = true
 		var err error
 		globalLocalNostrKeys, err = GetNostrKeys(localParty)
 		if err != nil {
-			log.Printf("Error getting local nostr keys: %v\n", err)
+			log.Printf("Error getting local nostr keys: %v", err)
 			return
 		}
 	} else {
@@ -269,12 +262,12 @@ func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys, localT
 	// Decode recipient's private key
 	_, recipientPrivkey, err := nip19.Decode(localNostrKeys.LocalNostrPrivKey)
 	if err != nil {
-		log.Printf("Error decoding recipient nsec: %v\n", err)
+		log.Printf("Error decoding recipient nsec: %v", err)
 		return
 	}
 	recipientPubkey, err := nostr.GetPublicKey(recipientPrivkey.(string))
 	if err != nil {
-		log.Printf("Error deriving recipient pubkey: %v\n", err)
+		log.Printf("Error deriving recipient pubkey: %v", err)
 		return
 	}
 
@@ -332,7 +325,7 @@ func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys, localT
 					}
 
 					if err := processNostrEvent(event, recipientPrivkey.(string), localParty); err != nil {
-						log.Printf("Error processing event: %v\n", err)
+						log.Printf("Error processing event: %v", err)
 					}
 
 				case <-ctx.Done():
@@ -366,37 +359,37 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 
 		conversationKey, err := nip44.GenerateConversationKey(event.PubKey, recipientPrivkey)
 		if err != nil {
-			return fmt.Errorf("Failed to generate conversation key: %v\n", err)
+			return fmt.Errorf("failed to generate conversation key: %v", err)
 		}
 
 		// Decrypt gift wrap content (kind:1059)
 		sealJSON, err := nip44.Decrypt(event.Content, conversationKey)
 		if err != nil {
-			return fmt.Errorf("Failed to decrypt gift wrap: %v\n", err)
+			return fmt.Errorf("failed to decrypt gift wrap: %v", err)
 		}
 
 		// Deserialize seal
 		var seal nostr.Event
 		if err := json.Unmarshal([]byte(sealJSON), &seal); err != nil {
-			return fmt.Errorf("Failed to deserialize seal: %v\n", err)
+			return fmt.Errorf("failed to deserialize seal: %v", err)
 		}
 
 		// Generate conversation key for seal
 		sealConversationKey, err := nip44.GenerateConversationKey(seal.PubKey, recipientPrivkey)
 		if err != nil {
-			return fmt.Errorf("Failed to generate seal conversation key: %v\n", err)
+			return fmt.Errorf("failed to generate seal conversation key: %v", err)
 		}
 
 		// Decrypt seal content (kind:13)
 		rumorJSON, err := nip44.Decrypt(seal.Content, sealConversationKey)
 		if err != nil {
-			return fmt.Errorf("Failed to decrypt seal: %v\n", err)
+			return fmt.Errorf("failed to decrypt seal: %v", err)
 		}
 
 		// Deserialize rumor
 		var rumor Rumor
 		if err := json.Unmarshal([]byte(rumorJSON), &rumor); err != nil {
-			return fmt.Errorf("Failed to deserialize rumor: %v\n", err)
+			return fmt.Errorf("failed to deserialize rumor: %v", err)
 		}
 		decryptedContent = rumor.Content
 	} else {
@@ -730,7 +723,7 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 
 			result, err := MpcSendBTC("", localParty, peers, sessionID, sessionKey, "", "", string(keyShareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
 			if err != nil {
-				fmt.Printf("Go Error: %v\n", err)
+				fmt.Printf("Go Error: %v", err)
 			} else {
 				fmt.Printf("\n [%s] Keysign Result %s\n", localParty, result)
 			}
@@ -757,7 +750,7 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 
 			result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
 			if err != nil {
-				fmt.Printf("Go Error: %v\n", err)
+				fmt.Printf("Go Error: %v", err)
 			} else {
 				fmt.Printf("\n [%s] Keygen Result %s\n", localParty, result)
 			}
@@ -766,7 +759,7 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 
 			if err := json.Unmarshal([]byte(result), &localState); err != nil {
 
-				fmt.Printf("Failed to parse keyshare for %s: %v\n", localParty, err)
+				fmt.Printf("failed to parse keyshare for %s: %v", localParty, err)
 
 			}
 
@@ -779,13 +772,13 @@ func startPartyNostrKeygen(sessionID string, participants []string, localParty s
 
 			if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
 
-				fmt.Printf("Failed to save keyshare for %s: %v\n", localParty, err)
+				fmt.Printf("failed to save keyshare for %s: %v", localParty, err)
 
 			}
 
 			var kgR KeygenResponse
 			if err := json.Unmarshal([]byte(result), &kgR); err != nil {
-				fmt.Printf("Failed to parse keyshare for %s: %v\n", localParty, err)
+				fmt.Printf("failed to parse keyshare for %s: %v", localParty, err)
 			}
 		}
 	}
@@ -835,7 +828,7 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 	for _, recipient := range protoMessage.Recipients {
 		protoMessageJSON, err := json.Marshal(protoMessage)
 		if err != nil {
-			log.Printf("Error marshalling protoMessage: %v\n", err)
+			log.Printf("Error marshalling protoMessage: %v", err)
 			return err
 		}
 
@@ -903,7 +896,7 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 				// Publish chunk
 				err = relay.Publish(globalCtx, *event)
 				if err != nil {
-					log.Printf("Error publishing chunk %d: %v\n", i, err)
+					log.Printf("Error publishing chunk %d: %v", i, err)
 					return err
 				}
 			}
@@ -945,7 +938,7 @@ func nostrSend(from string, protoMessage ProtoMessage) error {
 		err = relay.Publish(globalCtx, *event)
 
 		if err != nil {
-			log.Printf("Error publishing event: %v\n", err)
+			log.Printf("Error publishing event: %v", err)
 			return err
 		}
 	}
@@ -1042,7 +1035,7 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 				}
 
 				if err := json.Unmarshal(protoMsg.RawMessage, &message); err != nil {
-					Logln("BBMTLog", "Failed to parse RawMessage:", err)
+					Logln("BBMTLog", "failed to parse RawMessage:", err)
 					continue
 				}
 
@@ -1088,20 +1081,20 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 				if len(sessionKey) > 0 {
 					body, err = AesDecrypt(message.Body, sessionKey)
 					if err != nil {
-						Logln("BBMTLog", "Failed to decrypt message:", err)
+						Logln("BBMTLog", "failed to decrypt message:", err)
 						continue
 					}
 				} else if len(decryptionKey) > 0 {
 					body, err = EciesDecrypt(message.Body, decryptionKey)
 					if err != nil {
-						Logln("BBMTLog", "Failed to decrypt ECIES message:", err)
+						Logln("BBMTLog", "failed to decrypt ECIES message:", err)
 						continue
 					}
 				}
 
 				Logln("BBMTLog", "Applying message body:", body[:min(50, len(body))])
 				if err := tssServerImp.ApplyData(body); err != nil {
-					Logln("BBMTLog", "Failed to apply message data:", err)
+					Logln("BBMTLog", "failed to apply message data:", err)
 				}
 
 				// Mark message as applied
@@ -1184,19 +1177,19 @@ func GetKeyShare(party string) (LocalState, error) {
 
 	data, err := os.ReadFile(party + ".ks")
 	if err != nil {
-		fmt.Printf("Go Error GetKeyShare: %v\n", err)
+		fmt.Printf("Go Error GetKeyShare: %v", err)
 	}
 
 	// Decode base64
 	decodedData, err := base64.StdEncoding.DecodeString(string(data))
 	if err != nil {
-		fmt.Printf("Go Error Decoding Base64: %v\n", err)
+		fmt.Printf("Go Error Decoding Base64: %v", err)
 	}
 
 	// Parse JSON into LocalState
 	var keyShare LocalState
 	if err := json.Unmarshal(decodedData, &keyShare); err != nil {
-		fmt.Printf("Go Error Unmarshalling LocalState: %v\n", err)
+		fmt.Printf("Go Error Unmarshalling LocalState: %v", err)
 	}
 
 	return keyShare, nil

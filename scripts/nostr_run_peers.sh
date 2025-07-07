@@ -11,27 +11,40 @@ mkdir -p "$BUILD_DIR"
 
 nostrRelay="ws://bbw-nostr.xyz"
 localTesting="true"
+
+# Usage: ./nostr_run_peers.sh peer2 peer3 ...
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 peer2 [peer3 ...]"
+    exit 1
+fi
+
+peers=("$@")
+
+# Validate required files for each peer
+for peer in "${peers[@]}"; do
+    if [ ! -f "$peer.nostr" ]; then
+        echo "[ERROR] $peer.nostr file not found. Please generate Nostr keys for $peer."
+        exit 1
+    fi
+    echo "[INFO] Found required files for $peer"
+done
+
 # Build the Go binary
 echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go 
 
-echo "Starting peer 2 and 3..."
-
-PARTY2="peer2"
-PARTY3="peer3"
-
- echo "Start listening on peer 2..."
- "$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY2" "$nostrRelay" "$localTesting" &
-PID1=$!
-
-echo "Start listening on peer 3..." 
-"$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$PARTY3" "$nostrRelay" "$localTesting" &
-PID2=$!
+# Start ListenNostrMessages for each peer in background
+PIDS=()
+for peer in "${peers[@]}"; do
+    echo "Start listening on $peer..."
+    "$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$peer" "$nostrRelay" "$localTesting" &
+    PIDS+=("$!")
+done
 
 # Handle cleanup on exit
-trap "echo 'Stopping processes...'; kill $PID1; kill $PID2;    exit" SIGINT SIGTERM
+trap "echo 'Stopping processes...'; kill ${PIDS[@]} 2>/dev/null; exit" SIGINT SIGTERM
 
-echo "running peers. Press Ctrl+C to stop."
+echo "running peers: ${peers[*]}. Press Ctrl+C to stop."
 
 # Keep the script alive
 wait
