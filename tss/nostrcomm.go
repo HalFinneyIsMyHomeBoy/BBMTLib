@@ -459,12 +459,14 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 
 	if protoMessage.FunctionType == "start_keysign" && protoMessage.MessageType != "message" {
 		Logf("start_keysign received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-		go startPartyNostrMPCsendBTC(protoMessage.SessionID, protoMessage.Participants, localParty, localState)
+		AddOrAppendNostrSession(protoMessage)
+		//go startPartyNostrSpend(protoMessage.SessionID, protoMessage.Participants, localParty, localState)
 	}
 
 	if protoMessage.FunctionType == "keygen" && protoMessage.MessageType != "message" {
 		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-		go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
+		AddOrAppendNostrSession(protoMessage)
+		//go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
 	}
 
 	if protoMessage.MessageType == "message" {
@@ -705,7 +707,7 @@ func startSessionMaster(sessionID string, participants []string, localParty stri
 	}
 }
 
-func startPartyNostrMPCsendBTC(sessionID string, participants []string, localParty string, keyShare LocalState) {
+func startPartyNostrSpend(sessionID string, participants []string, localParty string, keyShare LocalState) {
 
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID {
@@ -741,57 +743,81 @@ func startPartyNostrMPCsendBTC(sessionID string, participants []string, localPar
 	}
 }
 
-func startPartyNostrKeygen(sessionID string, participants []string, localParty string) {
+func startPartyNostrKeygen(sessionID string, localParty string) (string, error) {
+
+	nostrSession, err := GetSession(sessionID)
+	if err != nil {
+		Logf("Error getting session: %v", err)
+		return "", err
+	}
 
 	for i, item := range nostrSessionList {
 		if item.SessionID == sessionID {
 			nostrSessionList[i].Status = "start_keygen"
-			nostrSessionList[i].Participants = participants
-			sessionKey := nostrSessionList[i].SessionKey
-			chainCode := nostrSessionList[i].ChainCode
-			peers := strings.Join(nostrSessionList[i].Participants, ",")
-			ppmFile := localParty + ".json"
-			keyshareFile := localParty + ".ks"
-
-			//============== UI - ask user to approve keygen==================
-			//TODO
-
-			//===================USER APPROVED KEYGEN======================
-
-			result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
-			if err != nil {
-				fmt.Printf("Go Error: %v", err)
-			} else {
-				fmt.Printf("\n [%s] Keygen Result %s\n", localParty, result)
-			}
-
-			var localState LocalState
-
-			if err := json.Unmarshal([]byte(result), &localState); err != nil {
-
-				fmt.Printf("failed to parse keyshare for %s: %v", localParty, err)
-
-			}
-
-			// // Marshal the updated LocalState
-			updatedKeyshare, err := json.Marshal(localState)
-
-			Logf("%s Keygen Result Saved\n", localParty)
-
-			encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
-
-			if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
-
-				fmt.Printf("failed to save keyshare for %s: %v", localParty, err)
-
-			}
-
-			var kgR KeygenResponse
-			if err := json.Unmarshal([]byte(result), &kgR); err != nil {
-				fmt.Printf("failed to parse keyshare for %s: %v", localParty, err)
-			}
 		}
 	}
+
+	ppmFile := localParty + ".json"
+	peers := strings.Join(nostrSession.Participants, ",")
+
+	result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", nostrSession.ChainCode, nostrSession.SessionKey, "nostr", "true")
+	if err != nil {
+		fmt.Printf("Go Error: %v", err)
+	} else {
+		fmt.Printf("\n [%s] Keygen Result %s\n", localParty, result)
+	}
+
+	return result, nil
+
+	// for i, item := range nostrSessionList {
+	// 	if item.SessionID == sessionID {
+	// 		nostrSessionList[i].Status = "start_keygen"
+	// 		nostrSessionList[i].Participants = participants
+	// 		sessionKey := nostrSessionList[i].SessionKey
+	// 		chainCode := nostrSessionList[i].ChainCode
+	// 		peers := strings.Join(nostrSessionList[i].Participants, ",")
+	// 		ppmFile := localParty + ".json"
+	// 		keyshareFile := localParty + ".ks"
+
+	// 		//============== UI - ask user to approve keygen==================
+	// 		//TODO
+
+	// 		//===================USER APPROVED KEYGEN======================
+
+	// 		result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
+	// 		if err != nil {
+	// 			fmt.Printf("Go Error: %v", err)
+	// 		} else {
+	// 			fmt.Printf("\n [%s] Keygen Result %s\n", localParty, result)
+	// 		}
+
+	// 		var localState LocalState
+
+	// 		if err := json.Unmarshal([]byte(result), &localState); err != nil {
+
+	// 			fmt.Printf("failed to parse keyshare for %s: %v", localParty, err)
+
+	// 		}
+
+	// 		// // Marshal the updated LocalState
+	// 		updatedKeyshare, err := json.Marshal(localState)
+
+	// 		Logf("%s Keygen Result Saved\n", localParty)
+
+	// 		encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
+
+	// 		if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
+
+	// 			fmt.Printf("failed to save keyshare for %s: %v", localParty, err)
+
+	// 		}
+
+	// 		var kgR KeygenResponse
+	// 		if err := json.Unmarshal([]byte(result), &kgR); err != nil {
+	// 			fmt.Printf("failed to parse keyshare for %s: %v", localParty, err)
+	// 		}
+	// 	}
+	// }
 }
 
 func nostrFlagPartyKeysignComplete(sessionID string) error {
@@ -1211,4 +1237,43 @@ func StopNostrListen() {
 	if nostrListenCancel != nil {
 		nostrListenCancel()
 	}
+}
+
+func GetSession(sessionID string) (NostrSession, error) {
+	for _, session := range nostrSessionList {
+		if session.SessionID == sessionID {
+			return session, nil
+		}
+	}
+	return NostrSession{}, fmt.Errorf("session not found")
+}
+
+func GetSessions() ([]NostrSession, error) {
+	return nostrSessionList, nil
+}
+
+func AddOrAppendNostrSession(protoMessage ProtoMessage) {
+	for i, existingSession := range nostrSessionList {
+		if existingSession.SessionID == protoMessage.SessionID { //Session exists, update it
+			existingSession.Status = protoMessage.FunctionType
+			existingSession.Participants = protoMessage.Participants
+			existingSession.TxRequest = protoMessage.TxRequest
+			existingSession.Master = protoMessage.Master
+			existingSession.SessionKey = protoMessage.SessionKey
+			existingSession.ChainCode = protoMessage.ChainCode
+			nostrSessionList[i] = existingSession
+			break
+		}
+	}
+	//Session doesn't exist, add it
+	newSession := NostrSession{
+		SessionID:    protoMessage.SessionID,
+		Participants: protoMessage.Participants,
+		TxRequest:    protoMessage.TxRequest,
+		Master:       protoMessage.Master,
+		SessionKey:   protoMessage.SessionKey,
+		ChainCode:    protoMessage.ChainCode,
+		Status:       protoMessage.FunctionType,
+	}
+	nostrSessionList = append(nostrSessionList, newSession)
 }

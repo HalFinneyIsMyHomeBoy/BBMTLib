@@ -265,6 +265,21 @@ func main() {
 		}
 	}
 
+	if mode == "startPartyNostrKeygen" {
+		session := os.Args[2]
+		parties := os.Args[3]
+		peer := os.Args[4]
+		net_type := os.Args[5]
+		localTesting := os.Args[6]
+
+		keyshare, err := tss.StartPartyNostrKeygen(session, peer)
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		} else {
+			fmt.Printf("Keygen Result Saved\n")
+		}
+	}
+
 	if mode == "keygen" {
 		// prepare args
 		server := os.Args[2]
@@ -275,6 +290,8 @@ func main() {
 		encKey := os.Args[7]
 		decKey := os.Args[8]
 		sessionKey := os.Args[9]
+		net_type := os.Args[10]
+		newSession := os.Args[11]
 
 		if len(sessionKey) > 0 {
 			encKey = ""
@@ -285,7 +302,7 @@ func main() {
 		keyshareFile := party + ".ks"
 
 		//join keygen
-		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, "", "false")
+		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, net_type, newSession)
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
