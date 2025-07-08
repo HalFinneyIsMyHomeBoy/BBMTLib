@@ -36,6 +36,7 @@ var (
 	localNostrKeys            NostrKeys
 	globalLocalNostrKeys      NostrKeys
 	globalLocalTesting        bool
+	nostrListenCancel         context.CancelFunc
 )
 
 type NostrPartyPubKeys struct {
@@ -245,6 +246,9 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 }
 
 func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys, localTesting bool) {
+	ctx, cancel := context.WithCancel(context.Background())
+	nostrListenCancel = cancel
+	defer func() { nostrListenCancel = nil }()
 
 	if localTesting {
 		globalLocalTesting = true
@@ -275,14 +279,21 @@ func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys, localT
 	backoff := retryInterval
 
 	for {
+		// Check if we should stop
+		select {
+		case <-ctx.Done():
+			log.Printf("NostrListen stopped by cancel")
+			return
+		default:
+		}
 		// Create a new context for this connection attempt
-		ctx, cancel := context.WithCancel(context.Background())
+		ctxLoop, cancelLoop := context.WithCancel(ctx)
 
 		// Connect to relay
-		relay, err = nostr.RelayConnect(ctx, nostrRelay)
+		relay, err = nostr.RelayConnect(ctxLoop, nostrRelay)
 		if err != nil {
 			log.Printf("Connection failed: %v, retrying in %v...\n", err, backoff)
-			cancel()
+			cancelLoop()
 			time.Sleep(backoff)
 			// Exponential backoff with max of 30 seconds
 			backoff = time.Duration(math.Min(float64(backoff*2), 30)) * time.Second
@@ -300,10 +311,10 @@ func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys, localT
 			Since: &since,
 		}}
 
-		sub, err := relay.Subscribe(ctx, filters)
+		sub, err := relay.Subscribe(ctxLoop, filters)
 		if err != nil {
 			log.Printf("Subscription failed: %v, retrying in %v...\n", err, backoff)
-			cancel()
+			cancelLoop()
 			time.Sleep(backoff)
 			continue
 		}
@@ -328,7 +339,7 @@ func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys, localT
 						log.Printf("Error processing event: %v", err)
 					}
 
-				case <-ctx.Done():
+				case <-ctxLoop.Done():
 					log.Printf("Context cancelled, triggering reconnect...\n")
 					close(reconnect)
 					return
@@ -341,7 +352,7 @@ func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys, localT
 
 		// Wait for reconnect signal
 		<-reconnect
-		cancel()
+		cancelLoop()
 
 		// Clean up the subscription
 		sub.Unsub()
@@ -1192,4 +1203,12 @@ func GetKeyShare(party string) (LocalState, error) {
 	}
 
 	return keyShare, nil
+}
+
+// Simple function to stop NostrListen
+func StopNostrListen() {
+	Logf("Stopping NostrListen")
+	if nostrListenCancel != nil {
+		nostrListenCancel()
+	}
 }
