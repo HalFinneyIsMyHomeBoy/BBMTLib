@@ -42,7 +42,17 @@ for peer in "${peers[@]}"; do
 done
 
 # Handle cleanup on exit
-trap "echo 'Stopping processes...'; kill ${PIDS[@]} 2>/dev/null; exit" SIGINT SIGTERM
+cleanup() {
+    echo 'Stopping processes...'
+    for pid in "${PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null
+        fi
+    done
+    exit 0
+}
+
+trap cleanup SIGINT SIGTERM
 
 echo "running peers: ${peers[*]}. Press Ctrl+C to stop."
 
