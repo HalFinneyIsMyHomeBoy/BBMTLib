@@ -196,7 +196,7 @@ func main() {
 
 		net_type := "nostr"
 		peer := "peer1"
-		localTesting := true
+
 		ppmFile := peer + ".json"
 		keyshareFile := peer + ".ks"
 		nostrKeysFile := peer + ".nostr"
@@ -209,7 +209,7 @@ func main() {
 				fmt.Printf("Error getting local nostr keys: %v\n", err)
 				return
 			}
-			go tss.NostrListen(peer, nostrRelay, localNostrKeys, localTesting)
+			go tss.NostrListen(peer, nostrRelay, localNostrKeys)
 			time.Sleep(time.Second * 2)
 		}
 
@@ -265,19 +265,23 @@ func main() {
 		}
 	}
 
-	if mode == "startPartyNostrKeygen" {
-		session := os.Args[2]
-		parties := os.Args[3]
-		peer := os.Args[4]
-		net_type := os.Args[5]
-		localTesting := os.Args[6]
+	if mode == "joinPartyNostrKeygen" {
+		if len(os.Args) != 4 {
+			fmt.Println("Usage: go run main.go joinPartyNostrKeygen <sessionId> <peer>")
+			os.Exit(1)
+		}
+		sessionId := os.Args[2]
+		peer := os.Args[3]
 
-		keyshare, err := tss.StartPartyNostrKeygen(session, peer)
+		fmt.Printf("Joining Party Nostr Keygen for %s in session %s\n", peer, sessionId)
+		keyshare, err := tss.JoinPartyNostrKeygen(sessionId, peer)
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
 			fmt.Printf("Keygen Result Saved\n")
 		}
+
+		fmt.Printf("Keygen Result: %s\n", keyshare)
 	}
 
 	if mode == "keygen" {
@@ -410,13 +414,6 @@ func main() {
 		}
 		peer := os.Args[9]
 		net_type := os.Args[10]
-		localTesting := os.Args[11]
-
-		localTestingBool, err := strconv.ParseBool(localTesting)
-		if err != nil {
-			fmt.Printf("Invalid localTesting: %v\n", err)
-			return
-		}
 
 		fmt.Println("InitiateNostrSendBTC called")
 		if net_type == "nostr" {
@@ -427,7 +424,7 @@ func main() {
 				return
 			}
 
-			go tss.NostrListen(peer, nostrRelay, localNostrKeys, localTestingBool)
+			go tss.NostrListen(peer, nostrRelay, localNostrKeys)
 			time.Sleep(time.Second * 2)
 		} else {
 			go tss.RunRelay("55055")
@@ -513,13 +510,6 @@ func main() {
 		localParty := os.Args[2]
 		net_type := "nostr"
 		nostrRelay := os.Args[3]
-		localTesting := os.Args[4]
-
-		localTestingBool, err := strconv.ParseBool(localTesting)
-		if err != nil {
-			fmt.Printf("Invalid localTesting: %v\n", err)
-			return
-		}
 
 		localNostrKeys, err := GetNostrKeys(localParty)
 		if err != nil {
@@ -528,7 +518,7 @@ func main() {
 		}
 
 		if net_type == "nostr" {
-			go tss.NostrListen(localParty, nostrRelay, localNostrKeys, localTestingBool)
+			go tss.NostrListen(localParty, nostrRelay, localNostrKeys)
 			//time.Sleep(time.Second * 2)
 			//nostrPing(localParty, recipientNpub)
 			select {}
@@ -545,13 +535,6 @@ func main() {
 
 		localParty := os.Args[2]
 		recipientNpub := os.Args[3]
-		localTesting := os.Args[4]
-
-		localTestingBool, err := strconv.ParseBool(localTesting)
-		if err != nil {
-			fmt.Printf("Invalid localTesting: %v\n", err)
-			return
-		}
 
 		fmt.Printf("Sending Nostr ping from %s to %s...\n", localParty, recipientNpub)
 
@@ -563,11 +546,40 @@ func main() {
 		}
 
 		// Start Nostr listener in background
-		go tss.NostrListen(localParty, nostrRelay, localNostrKeys, localTestingBool)
+		go tss.NostrListen(localParty, nostrRelay, localNostrKeys)
 		time.Sleep(time.Second * 2) // Wait for listener to start
 
 		// Send ping
 		nostrPing(localParty, recipientNpub)
+	}
+
+	if mode == "nostrMpcTssSetup" {
+		// Usage: go run main.go nostrMpcTssSetup <relay> <nsec1> <npub1> <npubs> <sessionID> <sessionKey> <chaincode>
+		if len(os.Args) != 9 {
+			fmt.Println("Usage: go run main.go nostrMpcTssSetup <relay> <nsec1> <npub1> <npubs> <sessionID> <sessionKey> <chaincode>")
+			fmt.Println("Example: go run main.go nostrMpcTssSetup ws://bbw-nostr.xyz nsec1... npub1... npub1,npub2,npub3 session123 key123 chain123")
+			os.Exit(1)
+		}
+
+		relay := os.Args[2]
+		nsec1 := os.Args[3]
+		npub1 := os.Args[4]
+		npubs := os.Args[5]
+		sessionID := os.Args[6]
+		sessionKey := os.Args[7]
+		chaincode := os.Args[8]
+
+		fmt.Printf("Starting NostrMpcTssSetup...\n")
+		fmt.Printf("Relay: %s\n", relay)
+		fmt.Printf("Local Private Key: %s\n", nsec1)
+		fmt.Printf("Local Public Key: %s\n", npub1)
+		fmt.Printf("All Party Public Keys: %s\n", npubs)
+		fmt.Printf("Session ID: %s\n", sessionID)
+		fmt.Printf("Session Key: %s\n", sessionKey)
+		fmt.Printf("Chaincode: %s\n", chaincode)
+		fmt.Println("")
+
+		tss.NostrMpcTssSetup(relay, nsec1, npub1, npubs, sessionID, sessionKey, chaincode)
 	}
 }
 

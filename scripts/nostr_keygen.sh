@@ -49,10 +49,10 @@ echo "Local testing: $LOCAL_TESTING"
 echo "Parties: $PARTIES"
 echo ""
 
-
-
 # Array to store all Nostr listener PIDs
 NOSTR_PIDS=()
+# Array to store all keygen process PIDs
+KEYGEN_PIDS=()
 
 # Start Nostr listener in background for peer1
 echo "Starting Nostr listener for peer1..."
@@ -72,13 +72,37 @@ NOSTR_PIDS+=($!)
 sleep 3
 # Wait for Nostr listeners to start
 
-# Function to cleanup Nostr listeners
+
+
+# Run JoinKeygen for peer1 using the bbmt binary
+echo "Starting JoinKeygen for peer1..."
+"$BUILD_DIR/$BIN_NAME" keygen "" "$SESSION_ID" "$CHAIN_CODE" peer1 "$PARTIES" "" "" "$SESSION_KEY" "$NET_TYPE" "true" &
+KEYGEN_PIDS+=($!)
+
+sleep 3
+
+echo "Starting JoinKeygen for peer2..."
+"$BUILD_DIR/$BIN_NAME" joinPartyNostrKeygen "$SESSION_ID" peer2 &
+KEYGEN_PIDS+=($!)
+
+echo "Starting JoinKeygen for peer3..."
+"$BUILD_DIR/$BIN_NAME" joinPartyNostrKeygen "$SESSION_ID" peer3 &
+KEYGEN_PIDS+=($!)
+
+
+# Function to cleanup Nostr listeners and keygen processes
 cleanup() {
-    echo "Cleaning up Nostr listeners..."
+    echo "Cleaning up processes..."
     for pid in "${NOSTR_PIDS[@]}"; do
         if kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null || true
             echo "Killed Nostr listener PID: $pid"
+        fi
+    done
+    for pid in "${KEYGEN_PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            echo "Killed keygen process PID: $pid"
         fi
     done
     exit 0
@@ -87,26 +111,16 @@ cleanup() {
 # Set trap to cleanup on script exit
 trap cleanup EXIT INT TERM
 
-# Run JoinKeygen for peer1 using the bbmt binary
-echo "Starting JoinKeygen for peer1..."
-"$BUILD_DIR/$BIN_NAME" keygen "" "$SESSION_ID" "$CHAIN_CODE" peer1 "$PARTIES" "" "" "$SESSION_KEY" "$NET_TYPE" "true"
-
-sleep 12
-
-echo "Starting JoinKeygen for peer2..."
-"$BUILD_DIR/$BIN_NAME" keygen "" "$SESSION_ID" "$CHAIN_CODE" peer2 "$PARTIES" "" "" "$SESSION_KEY" "$NET_TYPE" "false"
-
-sleep 6
-
-echo "Starting JoinKeygen for peer3..."
-"$BUILD_DIR/$BIN_NAME" keygen "" "$SESSION_ID" "$CHAIN_CODE" peer3 "$PARTIES" "" "" "$SESSION_KEY" "$NET_TYPE" "false"
-
 # Wait for all keygen processes to complete
-wait
+echo "Waiting for all keygen processes to complete..."
+for pid in "${KEYGEN_PIDS[@]}"; do
+    wait "$pid"
+    echo "Keygen process $pid completed"
+done
 
 echo ""
-echo "Nostr Keygen completed for peer1!"
-echo "Check peer1.ks for the generated keyshare."
+echo "All Nostr Keygen processes completed!"
+echo "Check peer1.ks, peer2.ks, and peer3.ks for the generated keyshares."
 echo ""
 echo "To run keygen for other peers, you would need to:"
 echo "1. Run this script in separate terminals for each peer"

@@ -245,23 +245,13 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 	return nostrKeys, nil
 }
 
-func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys, localTesting bool) {
+func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys) {
 	ctx, cancel := context.WithCancel(context.Background())
 	nostrListenCancel = cancel
 	defer func() { nostrListenCancel = nil }()
 
-	if localTesting {
-		globalLocalTesting = true
-		var err error
-		globalLocalNostrKeys, err = GetNostrKeys(localParty)
-		if err != nil {
-			log.Printf("Error getting local nostr keys: %v", err)
-			return
-		}
-	} else {
-		// Store the localNostrKeys in the global variable so other functions can access it
-		globalLocalNostrKeys = localNostrKeys
-	}
+	// Store the localNostrKeys in the global variable so other functions can access it
+	globalLocalNostrKeys = localNostrKeys
 
 	// Decode recipient's private key
 	_, recipientPrivkey, err := nip19.Decode(localNostrKeys.LocalNostrPrivKey)
@@ -743,7 +733,7 @@ func startPartyNostrSpend(sessionID string, participants []string, localParty st
 	}
 }
 
-func startPartyNostrKeygen(sessionID string, localParty string) (string, error) {
+func JoinPartyNostrKeygen(sessionID string, localParty string) (string, error) {
 
 	nostrSession, err := GetSession(sessionID)
 	if err != nil {
@@ -760,7 +750,7 @@ func startPartyNostrKeygen(sessionID string, localParty string) (string, error) 
 	ppmFile := localParty + ".json"
 	peers := strings.Join(nostrSession.Participants, ",")
 
-	result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", nostrSession.ChainCode, nostrSession.SessionKey, "nostr", "true")
+	result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", nostrSession.ChainCode, nostrSession.SessionKey, "nostr", "false")
 	if err != nil {
 		fmt.Printf("Go Error: %v", err)
 	} else {
@@ -1276,4 +1266,55 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 		Status:       protoMessage.FunctionType,
 	}
 	nostrSessionList = append(nostrSessionList, newSession)
+}
+
+func NostrMpcTssSetup(relay, nsec1, npub1, npubs, sessionID, sessionKey, chaincode string) {
+
+	npubsArray := strings.Split(npubs, ",")
+
+	nostrKeys := NostrKeys{
+		LocalNostrPubKey:  npub1,
+		LocalNostrPrivKey: nsec1,
+		NostrPartyPubKeys: map[string]string{
+			"peer1": npubsArray[0],
+			"peer2": npubsArray[1],
+			"peer3": npubsArray[2],
+		},
+	}
+
+	parties := strings.Join(npubsArray, ",")
+
+	go NostrListen(npub1, relay, nostrKeys)
+	time.Sleep(1 * time.Second)
+
+	largestNpub := GetLexicographicallyFirstNpub(npubsArray)
+	if largestNpub == npub1 {
+		//I am master
+		keyshare, err := JoinKeygen(npub1+".json", npub1, parties, "", "", sessionID, "", chaincode, sessionKey, "nostr", "true")
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		}
+		fmt.Printf("Keyshare: %s\n", keyshare)
+	} else {
+		//I am not master
+		fmt.Printf("I am not master\n")
+		keyshare, err := JoinKeygen(npub1+".json", npub1, parties, "", "", sessionID, "", chaincode, sessionKey, "nostr", "false")
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		}
+		fmt.Printf("Keyshare: %s\n", keyshare)
+	}
+}
+
+// GetLexicographicallyFirstNpub takes a list of npubs and returns the one that comes first in lexicographical order
+func GetLexicographicallyFirstNpub(npubs []string) string {
+	if len(npubs) == 0 {
+		return ""
+	}
+
+	// Sort the npubs in lexicographical order
+	sort.Strings(npubs)
+
+	// Return the first one (which will be lexicographically first)
+	return npubs[0]
 }
