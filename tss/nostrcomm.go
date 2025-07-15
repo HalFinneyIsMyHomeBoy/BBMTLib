@@ -509,6 +509,27 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 	return "", nil
 }
 
+func nostrKeygen(relay, localNsec, localNpub, partyNpubs, sessionID, sessionKey, chainCode, verbose string) error {
+
+	peers := strings.Split(partyNpubs, ",")
+
+	// Find the master npub (peer with largest npub value)
+	masterNpub := peers[0]
+	for _, npub := range peers[1:] {
+		if npub > masterNpub {
+			masterNpub = npub
+		}
+	}
+
+	result, err := JoinKeygen("", localNpub, peers, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
+	if err != nil {
+		fmt.Printf("Go Error: %v", err)
+	} else {
+		fmt.Printf("\n [%s] Keygen Result %s\n", localParty, result)
+	}
+
+}
+
 func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functionType string, txRequest TxRequest) (bool, error) {
 
 	protoMessage := ProtoMessage{
