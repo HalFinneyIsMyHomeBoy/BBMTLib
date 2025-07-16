@@ -13,16 +13,37 @@ mkdir -p "$BUILD_DIR"
 echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go
 
-# Check if .nostr files exist for all peers
-echo "Checking for existing Nostr key files..."
+# Generate Nostr keys automatically
+echo "Generating Nostr keys for all peers..."
+"$BUILD_DIR/$BIN_NAME" generateNostrKeys
+
+# Parse the generated .nostr files to extract npubs and nsecs
+echo "Parsing generated Nostr keys..."
+declare -A NPUBS
+declare -A NSECS
+
 for peer in peer1 peer2 peer3; do
     if [ ! -f "$peer.nostr" ]; then
-        echo "Error: $peer.nostr file not found. Please run 'generateNostrKeys' first."
-        echo "Usage: go run main.go generateNostrKeys"
+        echo "Error: $peer.nostr file not found after generation."
         exit 1
     fi
-    echo "Found $peer.nostr"
+    
+    # Extract npub and nsec using jq (if available) or grep/sed
+    if command -v jq &> /dev/null; then
+        NPUBS[$peer]=$(jq -r '.local_nostr_pub_key' "$peer.nostr")
+        NSECS[$peer]=$(jq -r '.local_nostr_priv_key' "$peer.nostr")
+    else
+        # Fallback to grep/sed if jq is not available
+        NPUBS[$peer]=$(grep '"local_nostr_pub_key"' "$peer.nostr" | sed 's/.*"local_nostr_pub_key": *"\([^"]*\)".*/\1/')
+        NSECS[$peer]=$(grep '"local_nostr_priv_key"' "$peer.nostr" | sed 's/.*"local_nostr_priv_key": *"\([^"]*\)".*/\1/')
+    fi
+    
+    echo "Found $peer - npub: ${NPUBS[$peer]}"
+    echo "Found $peer - nsec: ${NSECS[$peer]}"
 done
+
+# Create comma-separated list of all npubs for partyNpubs parameter
+ALL_NPUBS="${NPUBS[peer1]},${NPUBS[peer2]},${NPUBS[peer3]}"
 
 # Generate random session ID and chain code
 echo "Generating random session parameters..."
@@ -39,92 +60,42 @@ echo "SESSION KEY: $SESSION_KEY"
 NOSTR_RELAY="ws://bbw-nostr.xyz"
 NET_TYPE="nostr"
 LOCAL_TESTING="true"
-PARTIES="peer1,peer2,peer3"
 
 echo ""
-echo "Starting Nostr Keygen for peer1..."
+echo "Starting Nostr Keygen for all peers..."
 echo "Using Nostr relay: $NOSTR_RELAY"
 echo "Network type: $NET_TYPE"
 echo "Local testing: $LOCAL_TESTING"
-echo "Parties: $PARTIES"
+echo "All npubs: $ALL_NPUBS"
 echo ""
 
 # Array to store all Nostr listener PIDs
-NOSTR_PIDS=()
+
 # Array to store all keygen process PIDs
-KEYGEN_PIDS=()
+#KEYGEN_PIDS=()
 
-# Start Nostr listener in background for peer1
-echo "Starting Nostr listener for peer1..."
-"$BUILD_DIR/$BIN_NAME" ListenNostrMessages peer1 "$NOSTR_RELAY" "$LOCAL_TESTING" &
-NOSTR_PIDS+=($!)
-sleep 1
 
-echo "Starting Nostr listener for peer2..."
-"$BUILD_DIR/$BIN_NAME" ListenNostrMessages peer2 "$NOSTR_RELAY" "$LOCAL_TESTING" &
-NOSTR_PIDS+=($!)
-sleep 1
-
-echo "Starting Nostr listener for peer3..."
-"$BUILD_DIR/$BIN_NAME" ListenNostrMessages peer3 "$NOSTR_RELAY" "$LOCAL_TESTING" &
-NOSTR_PIDS+=($!)
-
-sleep 3
+#sleep 3
 # Wait for Nostr listeners to start
 
-
-
-# Run JoinKeygen for peer1 using the bbmt binary
+# Run JoinKeygen for peer1 using the bbmt binary with actual Nostr keys
 echo "Starting JoinKeygen for peer1..."
-"$BUILD_DIR/$BIN_NAME" keygen "" "$SESSION_ID" "$CHAIN_CODE" peer1 "$PARTIES" "" "" "$SESSION_KEY" "$NET_TYPE" "true" &
-KEYGEN_PIDS+=($!)
+"$BUILD_DIR/$BIN_NAME" nostrKeygen "$NOSTR_RELAY" "${NSECS[peer1]}" "${NPUBS[peer1]}" "$ALL_NPUBS" "$SESSION_ID" "$SESSION_KEY" "$CHAIN_CODE" "$LOCAL_TESTING" &
+PID1=$!
 
 sleep 3
 
 echo "Starting JoinKeygen for peer2..."
-"$BUILD_DIR/$BIN_NAME" joinPartyNostrKeygen "$SESSION_ID" peer2 &
-KEYGEN_PIDS+=($!)
+"$BUILD_DIR/$BIN_NAME" nostrKeygen "$NOSTR_RELAY" "${NSECS[peer2]}" "${NPUBS[peer2]}" "$ALL_NPUBS" "$SESSION_ID" "$SESSION_KEY" "$CHAIN_CODE" "$LOCAL_TESTING" &
+PID2=$!
+
+sleep 3
 
 echo "Starting JoinKeygen for peer3..."
-"$BUILD_DIR/$BIN_NAME" joinPartyNostrKeygen "$SESSION_ID" peer3 &
-KEYGEN_PIDS+=($!)
+"$BUILD_DIR/$BIN_NAME" nostrKeygen "$NOSTR_RELAY" "${NSECS[peer3]}" "${NPUBS[peer3]}" "$ALL_NPUBS" "$SESSION_ID" "$SESSION_KEY" "$CHAIN_CODE" "$LOCAL_TESTING" &
+PID3=$!
+
+trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3; exit" SIGINT SIGTERM
 
 
-# Function to cleanup Nostr listeners and keygen processes
-cleanup() {
-    echo "Cleaning up processes..."
-    for pid in "${NOSTR_PIDS[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null || true
-            echo "Killed Nostr listener PID: $pid"
-        fi
-    done
-    for pid in "${KEYGEN_PIDS[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null || true
-            echo "Killed keygen process PID: $pid"
-        fi
-    done
-    exit 0
-}
 
-# Set trap to cleanup on script exit
-trap cleanup EXIT INT TERM
-
-# Wait for all keygen processes to complete
-echo "Waiting for all keygen processes to complete..."
-for pid in "${KEYGEN_PIDS[@]}"; do
-    wait "$pid"
-    echo "Keygen process $pid completed"
-done
-
-echo ""
-echo "All Nostr Keygen processes completed!"
-echo "Check peer1.ks, peer2.ks, and peer3.ks for the generated keyshares."
-echo ""
-echo "To run keygen for other peers, you would need to:"
-echo "1. Run this script in separate terminals for each peer"
-echo "2. Or modify the script to run all peers simultaneously"
-echo ""
-echo "For multi-peer keygen, you can also use the regular 'keygen' mode"
-echo "with a local relay server." 

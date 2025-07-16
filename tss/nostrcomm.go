@@ -245,16 +245,19 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 	return nostrKeys, nil
 }
 
-func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys) {
+func NostrListen(localNpub, localNsec, nostrRelay string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	nostrListenCancel = cancel
 	defer func() { nostrListenCancel = nil }()
 
 	// Store the localNostrKeys in the global variable so other functions can access it
-	globalLocalNostrKeys = localNostrKeys
+	globalLocalNostrKeys = NostrKeys{
+		LocalNostrPubKey:  localNpub,
+		LocalNostrPrivKey: localNsec,
+	}
 
 	// Decode recipient's private key
-	_, recipientPrivkey, err := nip19.Decode(localNostrKeys.LocalNostrPrivKey)
+	_, recipientPrivkey, err := nip19.Decode(globalLocalNostrKeys.LocalNostrPrivKey)
 	if err != nil {
 		log.Printf("Error decoding recipient nsec: %v", err)
 		return
@@ -309,7 +312,7 @@ func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys) {
 			continue
 		}
 
-		log.Printf("%s subscribed to nostr\n", localParty)
+		log.Printf("%s subscribed to nostr\n", globalLocalNostrKeys.LocalNostrPubKey)
 
 		// Create a channel to signal when we need to reconnect
 		reconnect := make(chan struct{})
@@ -325,7 +328,7 @@ func NostrListen(localParty, nostrRelay string, localNostrKeys NostrKeys) {
 						return
 					}
 
-					if err := processNostrEvent(event, recipientPrivkey.(string), localParty); err != nil {
+					if err := processNostrEvent(event, recipientPrivkey.(string), globalLocalNostrKeys.LocalNostrPubKey); err != nil {
 						log.Printf("Error processing event: %v", err)
 					}
 
@@ -509,11 +512,28 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 	return "", nil
 }
 
-func nostrKeygen(relay, localNsec, localNpub, partyNpubs, sessionID, sessionKey, chainCode, verbose string) error {
+func NostrKeygen(relay, localNsec, localNpub, partyNpubs, sessionID, sessionKey, chainCode, verbose string) error {
 
-	peers := strings.Split(partyNpubs, ",")
+	// Check if Nostr is already listening, if not start it
+	// if nostrListenCancel == nil {
+	// 	log.Printf("Nostr not listening, starting listener...")
 
+	// 	// Create NostrKeys from the provided parameters
+	// 	//peers := strings.Split(partyNpubs, ",")
+
+	// 	// Start Nostr listener in background
+	// 	go NostrListen(localNpub, localNsec, relay)
+
+	// 	// Wait a moment for the listener to start
+	// 	time.Sleep(3 * time.Second)
+	// } else {
+	// 	log.Printf("Nostr already listening, proceeding with keygen...")
+	// }
+
+	go NostrListen(localNpub, localNsec, relay)
+	time.Sleep(2 * time.Second)
 	// Find the master npub (peer with largest npub value)
+	peers := strings.Split(partyNpubs, ",")
 	masterNpub := peers[0]
 	for _, npub := range peers[1:] {
 		if npub > masterNpub {
@@ -521,16 +541,63 @@ func nostrKeygen(relay, localNsec, localNpub, partyNpubs, sessionID, sessionKey,
 		}
 	}
 
-	result, err := JoinKeygen("", localNpub, peers, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
-	if err != nil {
-		fmt.Printf("Go Error: %v", err)
+	if masterNpub == localNpub { //If we are the master, we need to initiate the handshake
+		txRequest := TxRequest{} //Empty TxRequest because it's a keygen, not a keysign
+		peers := strings.Split(partyNpubs, ",")
+		globalLocalNostrKeys.NostrPartyPubKeys = map[string]string{
+			"peer1": peers[0],
+			"peer2": peers[1],
+			"peer3": peers[2],
+		}
+		initiateNostrHandshake(sessionID, chainCode, sessionKey, localNpub, partyNpubs, "keygen", txRequest)
 	} else {
-		fmt.Printf("\n [%s] Keygen Result %s\n", localParty, result)
+		//If we are not the master, we need to join the keygen
+
+		sessions, err := WaitForSessions()
+		if err != nil {
+			return fmt.Errorf("error getting sessions: %v", err)
+		} else {
+			Logf("found session: %v", sessions)
+			AckNostrHandshake(sessions[0].SessionID, localNpub, ProtoMessage{
+				SessionID:  sessions[0].SessionID,
+				ChainCode:  sessions[0].ChainCode,
+				SessionKey: sessions[0].SessionKey,
+				TxRequest:  sessions[0].TxRequest,
+				Master:     sessions[0].Master,
+
+				FunctionType: "ack_handshake",
+				From:         localNpub,
+			})
+		}
 	}
 
+	// result, err := JoinKeygen("", localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
+	// if err != nil {
+	// 	fmt.Printf("Go Error: %v", err)
+	// } else {
+	// 	fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
+	// }
+
+	return nil
 }
 
-func initiateNostrHandshake(SessionID, chainCode, localParty, sessionKey, functionType string, txRequest TxRequest) (bool, error) {
+// WaitForSessions polls GetSessions() every second for up to 2 minutes until it returns a non-empty result
+func WaitForSessions() ([]NostrSession, error) {
+	for i := 0; i < 120; i++ { // 2 minutes = 120 seconds
+		sessions, err := GetSessions()
+		if err != nil {
+			return nil, err
+		}
+		if len(sessions) > 0 {
+			return sessions, nil
+		}
+		time.Sleep(1 * time.Second)
+		Logf("Waiting for sessions...")
+	}
+	return nil, fmt.Errorf("timeout waiting for sessions")
+}
+
+func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyNpubs, functionType string, txRequest TxRequest) (bool, error) {
 
 	protoMessage := ProtoMessage{
 		SessionID:       SessionID,
@@ -1293,19 +1360,9 @@ func NostrMpcTssSetup(relay, nsec1, npub1, npubs, sessionID, sessionKey, chainco
 
 	npubsArray := strings.Split(npubs, ",")
 
-	nostrKeys := NostrKeys{
-		LocalNostrPubKey:  npub1,
-		LocalNostrPrivKey: nsec1,
-		NostrPartyPubKeys: map[string]string{
-			"peer1": npubsArray[0],
-			"peer2": npubsArray[1],
-			"peer3": npubsArray[2],
-		},
-	}
-
 	parties := strings.Join(npubsArray, ",")
 
-	go NostrListen(npub1, relay, nostrKeys)
+	go NostrListen(npub1, nsec1, relay)
 	time.Sleep(1 * time.Second)
 
 	largestNpub := GetLexicographicallyFirstNpub(npubsArray)
