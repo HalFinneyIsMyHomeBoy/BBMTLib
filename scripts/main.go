@@ -265,6 +265,18 @@ func main() {
 	// 	}
 	// }
 
+	if mode == "debugNostrKeygen" {
+
+		nostrRelay := "ws://bbw-nostr.xyz"
+		localNsec := "nsec1q20w7rxa5qzyjavym2ls7xagdg6dvg6vusy3jad0gdsucy97jvcswxkuts"
+		localNpub := "npub1vqjp6lgtyh4v5c9tqacg5dy43w9ved3xxr3ec59n4mxqt2llpg5q9kzqfe"
+		partyNpubs := "npub1vqjp6lgtyh4v5c9tqacg5dy43w9ved3xxr3ec59n4mxqt2llpg5q9kzqfe,npub1fzthll6drn7y9aygh56lms6ajf53f65f7tgv3rgc8uqa80hysjasdac0ep,npub1lt574vtzfg6cwcjasqrlrspwed0jcvpjslgdts3278fcxcg0x2qq8h5a7n"
+		verbose := "true"
+
+		tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
+
+	}
+
 	if mode == "nostrKeygen" {
 		if len(os.Args) != 10 {
 			fmt.Println("Usage: go run main.go nostrKeygen <relay> <localNsec> <localNpub> <partyNpubs> <sessionID> <sessionKey> <chainCode> <verbose>")
@@ -274,12 +286,9 @@ func main() {
 		localNsec := os.Args[3]
 		localNpub := os.Args[4]
 		partyNpubs := os.Args[5] //all party npubs
-		sessionID := os.Args[6]
-		sessionKey := os.Args[7]
-		chainCode := os.Args[8]
-		verbose := os.Args[9]
+		verbose := os.Args[6]
 
-		tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, sessionID, sessionKey, chainCode, verbose)
+		tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
 
 	}
 

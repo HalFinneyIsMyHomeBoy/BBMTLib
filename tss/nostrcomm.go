@@ -2,6 +2,7 @@ package tss
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -39,26 +40,21 @@ var (
 	nostrListenCancel         context.CancelFunc
 )
 
-type NostrPartyPubKeys struct {
-	Peer   string `json:"peer"`
-	PubKey string `json:"pubkey"`
-}
-
 type ProtoMessage struct {
-	FunctionType    string              `json:"function_type"`
-	MessageType     string              `json:"message_type"`
-	Participants    []string            `json:"participants"`
-	Recipients      []NostrPartyPubKeys `json:"recipients"`
-	FromNostrPubKey string              `json:"from_nostr_pubkey"`
-	SessionID       string              `json:"sessionID"`
-	ChainCode       string              `json:"chain_code"`
-	RawMessage      []byte              `json:"raw_message"`
-	SeqNo           string              `json:"seq_no"`
-	From            string              `json:"from"`
-	To              string              `json:"to"`
-	TxRequest       TxRequest           `json:"tx_request"`
-	Master          Master              `json:"master"`
-	SessionKey      string              `json:"session_key"`
+	FunctionType    string    `json:"function_type"`
+	MessageType     string    `json:"message_type"`
+	Participants    []string  `json:"participants"`
+	Recipients      []string  `json:"recipients"`
+	FromNostrPubKey string    `json:"from_nostr_pubkey"`
+	SessionID       string    `json:"sessionID"`
+	ChainCode       string    `json:"chain_code"`
+	RawMessage      []byte    `json:"raw_message"`
+	SeqNo           string    `json:"seq_no"`
+	From            string    `json:"from"`
+	To              string    `json:"to"`
+	TxRequest       TxRequest `json:"tx_request"`
+	Master          Master    `json:"master"`
+	SessionKey      string    `json:"session_key"`
 }
 
 type NostrSession struct {
@@ -72,9 +68,9 @@ type NostrSession struct {
 }
 
 type NostrKeys struct {
-	LocalNostrPubKey  string            `json:"local_nostr_pub_key"`
-	LocalNostrPrivKey string            `json:"local_nostr_priv_key"`
-	NostrPartyPubKeys map[string]string `json:"nostr_party_pub_keys"`
+	LocalNostrPubKey  string   `json:"local_nostr_pub_key"`
+	LocalNostrPrivKey string   `json:"local_nostr_priv_key"`
+	NostrPartyPubKeys []string `json:"nostr_party_pub_keys"`
 }
 
 type Master struct {
@@ -136,6 +132,16 @@ type MessageChunks struct {
 // Helper function to get current UNIX timestamp
 func now() nostr.Timestamp {
 	return nostr.Timestamp(time.Now().Unix())
+}
+
+func randomSeed(length int) string {
+	const characters = "0123456789abcdef"
+	result := make([]byte, length)
+	rand.Read(result)
+	for i := 0; i < length; i++ {
+		result[i] = characters[int(result[i])%len(characters)]
+	}
+	return string(result)
 }
 
 // CreateRumor creates a kind:14 rumor (unsigned chat message)
@@ -512,7 +518,7 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 	return "", nil
 }
 
-func NostrKeygen(relay, localNsec, localNpub, partyNpubs, sessionID, sessionKey, chainCode, verbose string) error {
+func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) error {
 
 	// Check if Nostr is already listening, if not start it
 	// if nostrListenCancel == nil {
@@ -532,6 +538,7 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, sessionID, sessionKey,
 
 	go NostrListen(localNpub, localNsec, relay)
 	time.Sleep(2 * time.Second)
+
 	// Find the master npub (peer with largest npub value)
 	peers := strings.Split(partyNpubs, ",")
 	masterNpub := peers[0]
@@ -542,13 +549,16 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, sessionID, sessionKey,
 	}
 
 	if masterNpub == localNpub { //If we are the master, we need to initiate the handshake
-		txRequest := TxRequest{} //Empty TxRequest because it's a keygen, not a keysign
-		peers := strings.Split(partyNpubs, ",")
-		globalLocalNostrKeys.NostrPartyPubKeys = map[string]string{
-			"peer1": peers[0],
-			"peer2": peers[1],
-			"peer3": peers[2],
-		}
+		txRequest := TxRequest{}    //Empty TxRequest because it's a keygen, not a keysign
+		sessionID := randomSeed(64) //Master generates the sessionID, SessionKey and chaincode
+		sessionKey := randomSeed(64)
+		chainCode := randomSeed(64)
+
+		//Set the globalLocalNostrKeys
+		globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
+		globalLocalNostrKeys.LocalNostrPrivKey = localNsec
+		globalLocalNostrKeys.LocalNostrPubKey = localNpub
+
 		initiateNostrHandshake(sessionID, chainCode, sessionKey, localNpub, partyNpubs, "keygen", txRequest)
 	} else {
 		//If we are not the master, we need to join the keygen
@@ -599,6 +609,9 @@ func WaitForSessions() ([]NostrSession, error) {
 
 func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyNpubs, functionType string, txRequest TxRequest) (bool, error) {
 
+	peers := strings.Split(partyNpubs, ",")
+	globalLocalNostrKeys.NostrPartyPubKeys = peers
+
 	protoMessage := ProtoMessage{
 		SessionID:       SessionID,
 		ChainCode:       chainCode,
@@ -606,17 +619,14 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 		FunctionType:    "init_handshake",
 		From:            localParty,
 		FromNostrPubKey: globalLocalNostrKeys.LocalNostrPubKey,
-		Recipients:      make([]NostrPartyPubKeys, 0, len(globalLocalNostrKeys.NostrPartyPubKeys)),
+		Recipients:      make([]string, 0, len(globalLocalNostrKeys.NostrPartyPubKeys)),
 		TxRequest:       txRequest,
 		Master:          Master{MasterPeer: localParty, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey},
 	}
 	// map nostrpartypubkeys
-	for party, pubKey := range globalLocalNostrKeys.NostrPartyPubKeys {
-		if party != localParty {
-			protoMessage.Recipients = append(protoMessage.Recipients, NostrPartyPubKeys{
-				Peer:   party,
-				PubKey: pubKey,
-			})
+	for _, party := range globalLocalNostrKeys.NostrPartyPubKeys {
+		if party != globalLocalNostrKeys.LocalNostrPubKey {
+			protoMessage.Recipients = append(protoMessage.Recipients, party)
 		}
 	}
 
@@ -725,13 +735,10 @@ func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
 		nostrSessionList = append(nostrSessionList, nostrSession)
 	}
 
-	recipients := make([]NostrPartyPubKeys, 0, 1)
-	for p, pubKey := range globalLocalNostrKeys.NostrPartyPubKeys {
-		if pubKey == protoMessage.FromNostrPubKey {
-			recipients = append(recipients, NostrPartyPubKeys{
-				Peer:   p,
-				PubKey: pubKey,
-			})
+	recipients := make([]string, 0, 1)
+	for _, p := range globalLocalNostrKeys.NostrPartyPubKeys {
+		if p == protoMessage.FromNostrPubKey {
+			recipients = append(recipients, p)
 			break
 		}
 	}
@@ -757,15 +764,10 @@ func startSessionMaster(sessionID string, participants []string, localParty stri
 		if item.SessionID == sessionID && item.Status == "pending" {
 			nostrSessionList[i].Status = functionType
 
-			recipients := make([]NostrPartyPubKeys, 0, len(participants))
+			recipients := make([]string, 0, len(participants))
 			for _, participant := range participants {
 				if participant != item.Master.MasterPeer { // Skip if participant is the master
-					if pubKey, ok := globalLocalNostrKeys.NostrPartyPubKeys[participant]; ok {
-						recipients = append(recipients, NostrPartyPubKeys{
-							Peer:   participant,
-							PubKey: pubKey,
-						})
-					}
+					recipients = append(recipients, participant)
 				}
 			}
 
@@ -960,7 +962,7 @@ func nostrSend(protoMessage ProtoMessage) error {
 			if err != nil {
 				return fmt.Errorf("failed to derive sender pubkey: %w", err)
 			}
-			_, recipientPubkey, err := nip19.Decode(recipient.PubKey)
+			_, recipientPubkey, err := nip19.Decode(recipient)
 			if err != nil {
 				return fmt.Errorf("invalid recipient npub: %w", err)
 			}
@@ -1025,7 +1027,7 @@ func nostrSend(protoMessage ProtoMessage) error {
 			if err != nil {
 				return fmt.Errorf("failed to derive sender pubkey: %w", err)
 			}
-			_, recipientPubkey, err := nip19.Decode(recipient.PubKey)
+			_, recipientPubkey, err := nip19.Decode(recipient)
 			if err != nil {
 				return fmt.Errorf("invalid recipient npub: %w", err)
 			}
@@ -1225,13 +1227,10 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 
 func SendNostrPing(localParty, pingID, recipientNpub string) (bool, error) { //Used to see if the peer is connected to nostr relay.   PingID should be a random 32 byte string
 
-	recipients := make([]NostrPartyPubKeys, 0, 1)
-	for p, pubKey := range globalLocalNostrKeys.NostrPartyPubKeys {
-		if pubKey == recipientNpub {
-			recipients = append(recipients, NostrPartyPubKeys{
-				Peer:   p,
-				PubKey: pubKey,
-			})
+	recipients := make([]string, 0, 1)
+	for _, p := range globalLocalNostrKeys.NostrPartyPubKeys {
+		if p == recipientNpub {
+			recipients = append(recipients, p)
 			break
 		}
 	}
@@ -1254,8 +1253,8 @@ func SendNostrPing(localParty, pingID, recipientNpub string) (bool, error) { //U
 	for attempt := 0; attempt < 5; attempt++ {
 		for i, ping := range nostrPingList {
 			if string(ping.RawMessage) == pingID && ping.FunctionType == "pong" {
-				Logf("pong received from %s for ping:%v", ping.Recipients[0].Peer, string(ping.RawMessage))
-				Logf("%s is online", ping.Recipients[0].Peer)
+				Logf("pong received from %s for ping:%v", ping.Recipients[0], string(ping.RawMessage))
+				Logf("%s is online", ping.Recipients[0])
 				nostrPingList = append(nostrPingList[:i], nostrPingList[i+1:]...)
 				return true, nil
 			}
@@ -1271,7 +1270,7 @@ func returnNostrPong(localParty string, protoMessage ProtoMessage) {
 	Logf("ping received from %s", protoMessage.From)
 	var from = protoMessage.From
 	protoMessage.FunctionType = "pong"
-	protoMessage.Recipients = []NostrPartyPubKeys{{Peer: protoMessage.From, PubKey: protoMessage.FromNostrPubKey}}
+	protoMessage.Recipients = []string{protoMessage.FromNostrPubKey}
 	protoMessage.From = localParty
 	nostrSend(protoMessage)
 

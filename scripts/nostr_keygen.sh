@@ -89,13 +89,13 @@ echo "Starting JoinKeygen for peer2..."
 "$BUILD_DIR/$BIN_NAME" nostrKeygen "$NOSTR_RELAY" "${NSECS[peer2]}" "${NPUBS[peer2]}" "$ALL_NPUBS" "$SESSION_ID" "$SESSION_KEY" "$CHAIN_CODE" "$LOCAL_TESTING" &
 PID2=$!
 
-sleep 3
+sleep 1
 
 echo "Starting JoinKeygen for peer3..."
 "$BUILD_DIR/$BIN_NAME" nostrKeygen "$NOSTR_RELAY" "${NSECS[peer3]}" "${NPUBS[peer3]}" "$ALL_NPUBS" "$SESSION_ID" "$SESSION_KEY" "$CHAIN_CODE" "$LOCAL_TESTING" &
 PID3=$!
 
-trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3; exit" SIGINT SIGTERM
+trap "echo 'Stopping processes...'; kill $PID1 $PID2 $PID3; exit" SIGINT SIGTERM
 
 
 

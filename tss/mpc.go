@@ -613,18 +613,13 @@ func (m *MessengerImp) Send(from, to, body, parties, functionType string) error 
 			From:         from,
 			To:           to,
 			RawMessage:   requestBody,
-			Recipients:   make([]NostrPartyPubKeys, 0, len(to)),
+			Recipients:   make([]string, 0, len(globalLocalNostrKeys.NostrPartyPubKeys)),
 			SeqNo:        strconv.Itoa(status.SeqNo),
 		}
 
-		recipients := globalLocalNostrKeys
-
-		for peer, pubKey := range recipients.NostrPartyPubKeys {
+		for _, peer := range globalLocalNostrKeys.NostrPartyPubKeys {
 			if peer == to {
-				protoMessage.Recipients = append(protoMessage.Recipients, NostrPartyPubKeys{
-					Peer:   peer,
-					PubKey: pubKey,
-				})
+				protoMessage.Recipients = append(protoMessage.Recipients, peer)
 			}
 		}
 
