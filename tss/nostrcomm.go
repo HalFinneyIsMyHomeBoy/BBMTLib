@@ -46,6 +46,7 @@ type ProtoMessage struct {
 	Participants    []string  `json:"participants"`
 	Recipients      []string  `json:"recipients"`
 	FromNostrPubKey string    `json:"from_nostr_pubkey"`
+	PartyNpubs      []string  `json:"party_npubs"`
 	SessionID       string    `json:"sessionID"`
 	ChainCode       string    `json:"chain_code"`
 	RawMessage      []byte    `json:"raw_message"`
@@ -624,16 +625,18 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 		FunctionType:    "init_handshake",
 		From:            localParty,
 		FromNostrPubKey: globalLocalNostrKeys.LocalNostrPubKey,
-		Recipients:      make([]string, 0, len(globalLocalNostrKeys.NostrPartyPubKeys)),
-		TxRequest:       txRequest,
-		Master:          Master{MasterPeer: localParty, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey},
+		Recipients:      peers,
+		PartyNpubs:      peers,
+		//Participants:    peers,
+		TxRequest: txRequest,
+		Master:    Master{MasterPeer: localParty, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey},
 	}
 	// map nostrpartypubkeys
-	for _, party := range globalLocalNostrKeys.NostrPartyPubKeys {
-		if party != globalLocalNostrKeys.LocalNostrPubKey {
-			protoMessage.Recipients = append(protoMessage.Recipients, party)
-		}
-	}
+	// for _, party := range globalLocalNostrKeys.NostrPartyPubKeys {
+	// 	if party != globalLocalNostrKeys.LocalNostrPubKey {
+	// 		protoMessage.Recipients = append(protoMessage.Recipients, party)
+	// 	}
+	// }
 
 	nostrSession := NostrSession{
 		SessionID:    SessionID,
