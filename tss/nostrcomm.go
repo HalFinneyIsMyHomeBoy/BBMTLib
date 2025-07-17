@@ -29,7 +29,7 @@ var (
 	relay                     *nostr.Relay
 	globalCtx, _              = context.WithCancel(context.Background())
 	KeysignApprovalTimeout    = 4 * time.Second
-	KeysignApprovalMaxRetries = 3
+	KeysignApprovalMaxRetries = 30
 	nostrMutex                sync.Mutex
 	chunkCache                = cache.New(5*time.Minute, 10*time.Minute)
 	chunkMutex                sync.Mutex
@@ -447,7 +447,8 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 	}
 
 	if protoMessage.FunctionType == "init_handshake" {
-		go AckNostrHandshake(protoMessage.SessionID, localParty, protoMessage)
+		//go AckNostrHandshake(protoMessage.SessionID, localParty	)
+		AddOrAppendNostrSession(protoMessage)
 	}
 
 	if protoMessage.FunctionType == "ack_handshake" {
@@ -567,17 +568,21 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) error 
 		if err != nil {
 			return fmt.Errorf("error getting sessions: %v", err)
 		} else {
-			Logf("found session: %v", sessions)
-			AckNostrHandshake(sessions[0].SessionID, localNpub, ProtoMessage{
-				SessionID:  sessions[0].SessionID,
-				ChainCode:  sessions[0].ChainCode,
-				SessionKey: sessions[0].SessionKey,
-				TxRequest:  sessions[0].TxRequest,
-				Master:     sessions[0].Master,
+			//Logf("found session: %v", sessions)
 
-				FunctionType: "ack_handshake",
-				From:         localNpub,
-			})
+			// protoMessage := ProtoMessage{
+			// 	SessionID:       sessions[0].SessionID,
+			// 	ChainCode:       sessions[0].ChainCode,
+			// 	SessionKey:      sessions[0].SessionKey,
+			// 	TxRequest:       sessions[0].TxRequest,
+			// 	Master:          sessions[0].Master,
+			// 	FunctionType:    "ack_handshake",
+			// 	From:            localNpub,
+			// 	FromNostrPubKey: localNpub,
+			// 	Recipients:      []string{sessions[0].Master.MasterPubKey},
+			// 	Participants:    []string{localNpub},
+			// }
+			go AckNostrHandshake(sessions[0], localNpub)
 		}
 	}
 
@@ -706,53 +711,54 @@ func collectAckHandshake(sessionID string, protoMessage ProtoMessage) {
 	}
 }
 
-func AckNostrHandshake(session, localParty string, protoMessage ProtoMessage) {
+func AckNostrHandshake(nostrSession NostrSession, localParty string) {
 	// send handshake to master
 
-	Logf("(init_handshake) message received from %s\n", protoMessage.From)
-	Logf("Collected ack handshake from %s for session: %s", protoMessage.From, session)
+	Logf("(init_handshake) message received from %s\n", nostrSession.Master.MasterPeer)
+	Logf("Collected ack handshake from %s for session: %s", nostrSession.Master.MasterPeer, nostrSession.SessionID)
 
 	//============== UI - ask user to approve TX==================
 	//TODO
 	//if approved, send ack, and set status="pending"
 	//If not approved, then status="rejected"
 	//===================USER APPROVED TX======================
-	Logf("sending (ack_handshake) message to %s\n", protoMessage.From)
-	nostrSession := NostrSession{
-		SessionID:    session,
+	Logf("sending (ack_handshake) message to %s\n", nostrSession.Master.MasterPeer)
+	nostrSession = NostrSession{
+		SessionID:    nostrSession.SessionID,
 		Participants: []string{localParty},
-		TxRequest:    protoMessage.TxRequest,
-		Master:       protoMessage.Master,
+		TxRequest:    nostrSession.TxRequest,
+		Master:       nostrSession.Master,
 		Status:       "pending",
-		SessionKey:   protoMessage.SessionKey,
-		ChainCode:    protoMessage.ChainCode,
+		SessionKey:   nostrSession.SessionKey,
+		ChainCode:    nostrSession.ChainCode,
 	}
-	if !contains(nostrSession.Participants, protoMessage.From) {
-		nostrSession.Participants = append(nostrSession.Participants, protoMessage.From)
+
+	if !contains(nostrSession.Participants, nostrSession.Master.MasterPeer) {
+		nostrSession.Participants = append(nostrSession.Participants, nostrSession.Master.MasterPeer)
 	}
 
 	if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
 		nostrSessionList = append(nostrSessionList, nostrSession)
 	}
 
-	recipients := make([]string, 0, 1)
-	for _, p := range globalLocalNostrKeys.NostrPartyPubKeys {
-		if p == protoMessage.FromNostrPubKey {
-			recipients = append(recipients, p)
-			break
-		}
-	}
+	// recipients := make([]string, 0, 1)
+	// for _, p := range globalLocalNostrKeys.NostrPartyPubKeys {
+	// 	if p == protoMessage.FromNostrPubKey {
+	// 		recipients = append(recipients, p)
+	// 		break
+	// 	}
+	// }
 
 	ackProtoMessage := ProtoMessage{
-		SessionID:       session,
-		ChainCode:       protoMessage.ChainCode,
+		SessionID:       nostrSession.SessionID,
+		ChainCode:       nostrSession.ChainCode,
 		FunctionType:    "ack_handshake",
 		From:            localParty,
-		FromNostrPubKey: protoMessage.FromNostrPubKey,
-		Recipients:      recipients,
+		FromNostrPubKey: nostrSession.Master.MasterPubKey,
+		Recipients:      []string{nostrSession.Master.MasterPeer},
 		Participants:    []string{localParty},
-		TxRequest:       protoMessage.TxRequest,
-		Master:          protoMessage.Master,
+		TxRequest:       nostrSession.TxRequest,
+		Master:          nostrSession.Master,
 	}
 	nostrSend(ackProtoMessage)
 
