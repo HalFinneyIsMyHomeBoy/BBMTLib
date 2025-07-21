@@ -268,9 +268,10 @@ func main() {
 	if mode == "debugNostrKeygen" {
 
 		nostrRelay := "ws://bbw-nostr.xyz"
-		localNsec := "nsec1q20w7rxa5qzyjavym2ls7xagdg6dvg6vusy3jad0gdsucy97jvcswxkuts"
-		localNpub := "npub1vqjp6lgtyh4v5c9tqacg5dy43w9ved3xxr3ec59n4mxqt2llpg5q9kzqfe"
-		partyNpubs := "npub1vqjp6lgtyh4v5c9tqacg5dy43w9ved3xxr3ec59n4mxqt2llpg5q9kzqfe,npub1fzthll6drn7y9aygh56lms6ajf53f65f7tgv3rgc8uqa80hysjasdac0ep,npub1lt574vtzfg6cwcjasqrlrspwed0jcvpjslgdts3278fcxcg0x2qq8h5a7n"
+		localNsec := "nsec183nfvz0fpxum3p6vw0yk9v3gzgyczqlz90uhejlen0qnqhr924rsa3x74a"
+		localNpub := "npub13jg6w8gd4zz8zp60sf8t52wp3mwu7kxgvmgkthl82rddgchzstmsn2af7m"
+		//remote "nsec12p2mh25m5frvncwwmglrrjt3t2mrpctl4x6kpzkl6nr2g5gw806sjhefv6"
+		partyNpubs := "npub18rkqkh0ppdu2pjc3y6dg2myg9k5nz6e5m8gm7xte9jhxrt35dmeqcxj55x,npub13jg6w8gd4zz8zp60sf8t52wp3mwu7kxgvmgkthl82rddgchzstmsn2af7m"
 		verbose := "true"
 
 		tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
@@ -288,7 +289,8 @@ func main() {
 		partyNpubs := os.Args[5] //all party npubs
 		verbose := os.Args[6]
 
-		tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
+		go tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
+		select {}
 
 	}
 
