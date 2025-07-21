@@ -755,6 +755,7 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 	ackProtoMessage := ProtoMessage{
 		SessionID:       nostrSession.SessionID,
 		ChainCode:       nostrSession.ChainCode,
+		SessionKey:      nostrSession.SessionKey,
 		FunctionType:    "ack_handshake",
 		From:            localParty,
 		FromNostrPubKey: nostrSession.Master.MasterPubKey,
