@@ -571,19 +571,19 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) error 
 		} else {
 			//Logf("found session: %v", sessions)
 
-			// protoMessage := ProtoMessage{
-			// 	SessionID:       sessions[0].SessionID,
-			// 	ChainCode:       sessions[0].ChainCode,
-			// 	SessionKey:      sessions[0].SessionKey,
-			// 	TxRequest:       sessions[0].TxRequest,
-			// 	Master:          sessions[0].Master,
-			// 	FunctionType:    "ack_handshake",
-			// 	From:            localNpub,
-			// 	FromNostrPubKey: localNpub,
-			// 	Recipients:      []string{sessions[0].Master.MasterPubKey},
-			// 	Participants:    []string{localNpub},
-			// }
-			go AckNostrHandshake(sessions[0], localNpub)
+			protoMessage := ProtoMessage{
+				SessionID:       sessions[0].SessionID,
+				ChainCode:       sessions[0].ChainCode,
+				SessionKey:      sessions[0].SessionKey,
+				TxRequest:       sessions[0].TxRequest,
+				Master:          sessions[0].Master,
+				FunctionType:    "ack_handshake",
+				From:            localNpub,
+				FromNostrPubKey: localNpub,
+				Recipients:      []string{sessions[0].Master.MasterPubKey},
+				Participants:    []string{localNpub},
+			}
+			AckNostrHandshake(protoMessage, localNpub)
 		}
 	}
 
@@ -714,26 +714,26 @@ func collectAckHandshake(sessionID string, protoMessage ProtoMessage) {
 	}
 }
 
-func AckNostrHandshake(nostrSession NostrSession, localParty string) {
+func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 	// send handshake to master
 
-	Logf("(init_handshake) message received from %s\n", nostrSession.Master.MasterPeer)
-	Logf("Collected ack handshake from %s for session: %s", nostrSession.Master.MasterPeer, nostrSession.SessionID)
+	Logf("(init_handshake) message received from %s\n", protoMessage.Master.MasterPeer)
+	Logf("Collected ack handshake from %s for session: %s", protoMessage.Master.MasterPeer, protoMessage.SessionID)
 
 	//============== UI - ask user to approve TX==================
 	//TODO
 	//if approved, send ack, and set status="pending"
 	//If not approved, then status="rejected"
 	//===================USER APPROVED TX======================
-	Logf("sending (ack_handshake) message to %s\n", nostrSession.Master.MasterPeer)
-	nostrSession = NostrSession{
-		SessionID:    nostrSession.SessionID,
+	Logf("sending (ack_handshake) message to %s\n", protoMessage.Master.MasterPeer)
+	nostrSession := NostrSession{
+		SessionID:    protoMessage.SessionID,
 		Participants: []string{localParty},
-		TxRequest:    nostrSession.TxRequest,
-		Master:       nostrSession.Master,
+		TxRequest:    protoMessage.TxRequest,
+		Master:       protoMessage.Master,
 		Status:       "pending",
-		SessionKey:   nostrSession.SessionKey,
-		ChainCode:    nostrSession.ChainCode,
+		SessionKey:   protoMessage.SessionKey,
+		ChainCode:    protoMessage.ChainCode,
 	}
 
 	if !contains(nostrSession.Participants, nostrSession.Master.MasterPeer) {
