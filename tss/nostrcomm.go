@@ -589,6 +589,11 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) error 
 	} else {
 		//If we are not the master, we need to join the keygen
 
+		//Set the globalLocalNostrKeys
+		globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
+		globalLocalNostrKeys.LocalNostrPrivKey = localNsec
+		globalLocalNostrKeys.LocalNostrPubKey = localNpub
+
 		sessions, err := WaitForSessions()
 		if err != nil {
 			return fmt.Errorf("error getting sessions: %v", err)
