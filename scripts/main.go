@@ -40,11 +40,16 @@ func main() {
 	if mode == "generateNostrKeys" {
 		fmt.Println("Starting Nostr peer generation...")
 		// Generate 3 keypairs
+		numPeers, err := strconv.Atoi(os.Args[2])
+		if err != nil {
+			fmt.Printf("Error parsing number of peers: %v\n", err)
+			return
+		}
 		peerKeys := make(map[string]map[string]string)
 		allPubKeys := make(map[string]string)
 
 		// Generate keys for 3 peers
-		for i := 1; i <= 3; i++ {
+		for i := 1; i <= numPeers; i++ {
 			peerName := fmt.Sprintf("peer%d", i)
 			fmt.Printf("Generating keys for %s...\n", peerName)
 
@@ -80,7 +85,7 @@ func main() {
 		// Create individual .nostr files for each peer
 		// Ensure the scripts/ directory exists
 		fmt.Println("\nCreating .nostr files...")
-		for i := 1; i <= 3; i++ {
+		for i := 1; i <= numPeers; i++ {
 			peerName := fmt.Sprintf("peer%d", i)
 			fmt.Printf("Creating file for %s...\n", peerName)
 
@@ -268,14 +273,34 @@ func main() {
 	if mode == "debugNostrKeygen" {
 
 		nostrRelay := "ws://bbw-nostr.xyz"
-		localNsec := "nsec183nfvz0fpxum3p6vw0yk9v3gzgyczqlz90uhejlen0qnqhr924rsa3x74a"
-		localNpub := "npub13jg6w8gd4zz8zp60sf8t52wp3mwu7kxgvmgkthl82rddgchzstmsn2af7m"
+		localNpub := "npub18rkqkh0ppdu2pjc3y6dg2myg9k5nz6e5m8gm7xte9jhxrt35dmeqcxj55x"
+		localNsec := "nsec12p2mh25m5frvncwwmglrrjt3t2mrpctl4x6kpzkl6nr2g5gw806sjhefv6"
 		//remote "nsec12p2mh25m5frvncwwmglrrjt3t2mrpctl4x6kpzkl6nr2g5gw806sjhefv6"
 		partyNpubs := "npub18rkqkh0ppdu2pjc3y6dg2myg9k5nz6e5m8gm7xte9jhxrt35dmeqcxj55x,npub13jg6w8gd4zz8zp60sf8t52wp3mwu7kxgvmgkthl82rddgchzstmsn2af7m"
 		verbose := "true"
 
-		tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
+		go tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
 
+		// for {
+		// 	// sessions, err := tss.GetSessions()
+		// 	// if err != nil {
+		// 	// 	fmt.Printf("Error getting sessions: %v\n", err)
+		// 	// }
+		// 	// for _, session := range sessions {
+		// 	// 	if session.Status == "keygen" {
+		// 	// 		result, err := tss.JoinKeygen(localNsec+".json", localNpub, partyNpubs, "", "", session.SessionID, "", session.ChainCode, session.SessionKey, "nostr", "true")
+		// 	// 		if err != nil {
+		// 	// 			fmt.Printf("Go Error: %v", err)
+		// 	// 		} else {
+		// 	// 			fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
+		// 	// 		}
+		// 	// 	}
+		// 	// }
+		// 	//fmt.Println(sessions)
+		// 	time.Sleep(time.Second * 1)
+		// }
+
+		select {}
 	}
 
 	if mode == "nostrKeygen" {
