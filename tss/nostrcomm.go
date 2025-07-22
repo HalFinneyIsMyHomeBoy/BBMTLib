@@ -562,6 +562,30 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) error 
 		globalLocalNostrKeys.LocalNostrPubKey = localNpub
 
 		initiateNostrHandshake(sessionID, chainCode, sessionKey, localNpub, partyNpubs, "keygen", txRequest)
+		Logf("Starting Master Keygen for session: %s", sessionID)
+
+		// session, err := GetSession(sessionID)
+		// if err != nil {
+		// 	return fmt.Errorf("error getting session: %v", err)
+		// }
+
+		//session.Status = "start_keygen"
+
+		// nostrSessionList[i].Status = "start_keygen"
+		// nostrSessionList[i].Participants = participants
+		// sessionKey := nostrSessionList[i].SessionKey
+		// chainCode := nostrSessionList[i].ChainCode
+		// peers := strings.Join(nostrSessionList[i].Participants, ",")
+		ppmFile := localNpub + ".json"
+		// keyshareFile := localParty + ".ks"
+
+		result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr", "true")
+		if err != nil {
+			fmt.Printf("Go Error: %v", err)
+		} else {
+			fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
+		}
+
 	} else {
 		//If we are not the master, we need to join the keygen
 
@@ -584,6 +608,17 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) error 
 				Participants:    []string{localNpub},
 			}
 			AckNostrHandshake(protoMessage, localNpub)
+
+			Logf("Joining Keygen for session: %s", sessions[0].SessionID)
+			ppmFile := localNpub + ".json"
+			// keyshareFile := localParty + ".ks"
+
+			result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessions[0].SessionID, "", sessions[0].ChainCode, sessions[0].SessionKey, "nostr", "false")
+			if err != nil {
+				fmt.Printf("Go Error: %v", err)
+			} else {
+				fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
+			}
 		}
 	}
 
@@ -1340,7 +1375,7 @@ func GetSessions() ([]NostrSession, error) {
 }
 
 func AddOrAppendNostrSession(protoMessage ProtoMessage) {
-	newSession := false
+	newSession := true
 	for i, existingSession := range nostrSessionList {
 		if existingSession.SessionID == protoMessage.SessionID { //Session exists, update it
 			existingSession.Status = protoMessage.FunctionType
