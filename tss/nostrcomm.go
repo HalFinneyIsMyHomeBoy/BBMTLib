@@ -520,7 +520,7 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 	return "", nil
 }
 
-func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) error {
+func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (string, error) {
 
 	// Check if Nostr is already listening, if not start it
 	// if nostrListenCancel == nil {
@@ -596,7 +596,7 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) error 
 
 		sessions, err := WaitForSessions()
 		if err != nil {
-			return fmt.Errorf("error getting sessions: %v", err)
+			return "", fmt.Errorf("error getting sessions: %v", err)
 		} else {
 			//Logf("found session: %v", sessions)
 
@@ -622,7 +622,8 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) error 
 			if err != nil {
 				fmt.Printf("Go Error: %v", err)
 			} else {
-				fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
+				//fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
+				return result, nil
 			}
 		}
 	}
@@ -634,7 +635,7 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) error 
 	// 	fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
 	// }
 
-	return nil
+	return "", nil
 }
 
 // WaitForSessions polls GetSessions() every second for up to 2 minutes until it returns a non-empty result

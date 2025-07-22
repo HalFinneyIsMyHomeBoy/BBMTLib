@@ -279,7 +279,12 @@ func main() {
 		partyNpubs := "npub18rkqkh0ppdu2pjc3y6dg2myg9k5nz6e5m8gm7xte9jhxrt35dmeqcxj55x,npub13jg6w8gd4zz8zp60sf8t52wp3mwu7kxgvmgkthl82rddgchzstmsn2af7m"
 		verbose := "true"
 
-		go tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
+		result, err := tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		} else {
+			fmt.Printf("Keygen Result: %s\n", result)
+		}
 
 		// for {
 		// 	// sessions, err := tss.GetSessions()
@@ -314,7 +319,13 @@ func main() {
 		partyNpubs := os.Args[5] //all party npubs
 		verbose := os.Args[6]
 
-		go tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
+		result, err := tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
+		if err != nil {
+			fmt.Printf("Go Error: %v\n", err)
+		} else {
+			fmt.Printf("Keygen Result: %s\n", result)
+		}
+
 		select {}
 
 	}
