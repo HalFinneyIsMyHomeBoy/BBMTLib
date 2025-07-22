@@ -1340,6 +1340,7 @@ func GetSessions() ([]NostrSession, error) {
 }
 
 func AddOrAppendNostrSession(protoMessage ProtoMessage) {
+	newSession := false
 	for i, existingSession := range nostrSessionList {
 		if existingSession.SessionID == protoMessage.SessionID { //Session exists, update it
 			existingSession.Status = protoMessage.FunctionType
@@ -1349,20 +1350,24 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 			existingSession.SessionKey = protoMessage.SessionKey
 			existingSession.ChainCode = protoMessage.ChainCode
 			nostrSessionList[i] = existingSession
+			newSession = false
 			break
 		}
 	}
-	//Session doesn't exist, add it
-	newSession := NostrSession{
-		SessionID:    protoMessage.SessionID,
-		Participants: protoMessage.Participants,
-		TxRequest:    protoMessage.TxRequest,
-		Master:       protoMessage.Master,
-		SessionKey:   protoMessage.SessionKey,
-		ChainCode:    protoMessage.ChainCode,
-		Status:       protoMessage.FunctionType,
+
+	if newSession {
+		//Session doesn't exist, add it
+		newSession := NostrSession{
+			SessionID:    protoMessage.SessionID,
+			Participants: protoMessage.Participants,
+			TxRequest:    protoMessage.TxRequest,
+			Master:       protoMessage.Master,
+			SessionKey:   protoMessage.SessionKey,
+			ChainCode:    protoMessage.ChainCode,
+			Status:       protoMessage.FunctionType,
+		}
+		nostrSessionList = append(nostrSessionList, newSession)
 	}
-	nostrSessionList = append(nostrSessionList, newSession)
 }
 
 func NostrMpcTssSetup(relay, nsec1, npub1, npubs, sessionID, sessionKey, chaincode string) {
