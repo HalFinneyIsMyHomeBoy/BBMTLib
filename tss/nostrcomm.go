@@ -517,6 +517,84 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 	return "", nil
 }
 
+func nostrSpend(relay, localNsec, localNpub, partyNpubs string, txRequest TxRequest, verbose string) (string, error) {
+
+	go NostrListen(localNpub, localNsec, relay)
+	time.Sleep(2 * time.Second)
+
+	// Find the master npub (peer with largest npub value)
+	peers := strings.Split(partyNpubs, ",")
+	masterNpub := peers[0]
+	for _, npub := range peers[1:] {
+		if npub > masterNpub {
+			masterNpub = npub
+		}
+	}
+
+	if masterNpub == localNpub { //If we are the master, we need to initiate the handshake
+		txRequest := TxRequest{}    //Empty TxRequest because it's a keygen, not a keysign
+		sessionID := randomSeed(64) //Master generates the sessionID, SessionKey and chaincode
+		sessionKey := randomSeed(64)
+		chainCode := randomSeed(64)
+
+		//Set the globalLocalNostrKeys
+		globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
+		globalLocalNostrKeys.LocalNostrPrivKey = localNsec
+		globalLocalNostrKeys.LocalNostrPubKey = localNpub
+
+		initiateNostrHandshake(sessionID, chainCode, sessionKey, localNpub, partyNpubs, "keysign", txRequest)
+		Logf("Starting Master keysign for session: %s", sessionID)
+
+		result, err := JoinKeysign("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, derivePath, message, "nostr")
+		if err != nil {
+			fmt.Printf("Go Error: %v", err)
+		} else {
+			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+		}
+
+	} else {
+		//If we are not the master, we need to join the keygen
+
+		//Set the globalLocalNostrKeys
+		globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
+		globalLocalNostrKeys.LocalNostrPrivKey = localNsec
+		globalLocalNostrKeys.LocalNostrPubKey = localNpub
+
+		sessions, err := WaitForSessions()
+		if err != nil {
+			return "", fmt.Errorf("error getting sessions: %v", err)
+		} else {
+
+			protoMessage := ProtoMessage{
+				SessionID:       sessions[0].SessionID,
+				ChainCode:       sessions[0].ChainCode,
+				SessionKey:      sessions[0].SessionKey,
+				TxRequest:       sessions[0].TxRequest,
+				Master:          sessions[0].Master,
+				FunctionType:    "ack_handshake",
+				From:            localNpub,
+				FromNostrPubKey: localNpub,
+				Recipients:      []string{sessions[0].Master.MasterPubKey},
+				Participants:    []string{localNpub},
+			}
+			AckNostrHandshake(protoMessage, localNpub)
+
+			Logf("Joining Keysign for session: %s", sessions[0].SessionID)
+			ppmFile := localNpub + ".json"
+
+			result, err := JoinKeysign(ppmFile, localNpub, partyNpubs, "", "", sessions[0].SessionID, "", sessions[0].ChainCode, sessions[0].SessionKey, "nostr")
+			if err != nil {
+				fmt.Printf("Go Error: %v", err)
+			} else {
+				return result, nil
+			}
+		}
+	}
+
+	return "", nil
+
+}
+
 func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (string, error) {
 
 	go NostrListen(localNpub, localNsec, relay)
