@@ -448,7 +448,6 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 	}
 
 	if protoMessage.FunctionType == "init_handshake" {
-		//go AckNostrHandshake(protoMessage.SessionID, localParty	)
 		AddOrAppendNostrSession(protoMessage)
 	}
 
@@ -461,13 +460,11 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 	if protoMessage.FunctionType == "start_keysign" && protoMessage.MessageType != "message" {
 		Logf("start_keysign received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		AddOrAppendNostrSession(protoMessage)
-		//go startPartyNostrSpend(protoMessage.SessionID, protoMessage.Participants, localParty, localState)
 	}
 
 	if protoMessage.FunctionType == "keygen" && protoMessage.MessageType != "message" {
 		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		AddOrAppendNostrSession(protoMessage)
-		//go startPartyNostrKeygen(protoMessage.SessionID, protoMessage.Participants, localParty)
 	}
 
 	if protoMessage.MessageType == "message" {
@@ -522,22 +519,6 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 
 func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (string, error) {
 
-	// Check if Nostr is already listening, if not start it
-	// if nostrListenCancel == nil {
-	// 	log.Printf("Nostr not listening, starting listener...")
-
-	// 	// Create NostrKeys from the provided parameters
-	// 	//peers := strings.Split(partyNpubs, ",")
-
-	// 	// Start Nostr listener in background
-	// 	go NostrListen(localNpub, localNsec, relay)
-
-	// 	// Wait a moment for the listener to start
-	// 	time.Sleep(3 * time.Second)
-	// } else {
-	// 	log.Printf("Nostr already listening, proceeding with keygen...")
-	// }
-
 	go NostrListen(localNpub, localNsec, relay)
 	time.Sleep(2 * time.Second)
 
@@ -564,22 +545,9 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 		initiateNostrHandshake(sessionID, chainCode, sessionKey, localNpub, partyNpubs, "keygen", txRequest)
 		Logf("Starting Master Keygen for session: %s", sessionID)
 
-		// session, err := GetSession(sessionID)
-		// if err != nil {
-		// 	return fmt.Errorf("error getting session: %v", err)
-		// }
-
-		//session.Status = "start_keygen"
-
-		// nostrSessionList[i].Status = "start_keygen"
-		// nostrSessionList[i].Participants = participants
-		// sessionKey := nostrSessionList[i].SessionKey
-		// chainCode := nostrSessionList[i].ChainCode
-		// peers := strings.Join(nostrSessionList[i].Participants, ",")
 		ppmFile := localNpub + ".json"
-		// keyshareFile := localParty + ".ks"
 
-		result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr", "true")
+		result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr")
 		if err != nil {
 			fmt.Printf("Go Error: %v", err)
 		} else {
@@ -598,7 +566,6 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 		if err != nil {
 			return "", fmt.Errorf("error getting sessions: %v", err)
 		} else {
-			//Logf("found session: %v", sessions)
 
 			protoMessage := ProtoMessage{
 				SessionID:       sessions[0].SessionID,
@@ -616,24 +583,15 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 
 			Logf("Joining Keygen for session: %s", sessions[0].SessionID)
 			ppmFile := localNpub + ".json"
-			// keyshareFile := localParty + ".ks"
 
-			result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessions[0].SessionID, "", sessions[0].ChainCode, sessions[0].SessionKey, "nostr", "false")
+			result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessions[0].SessionID, "", sessions[0].ChainCode, sessions[0].SessionKey, "nostr")
 			if err != nil {
 				fmt.Printf("Go Error: %v", err)
 			} else {
-				//fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
 				return result, nil
 			}
 		}
 	}
-
-	// result, err := JoinKeygen("", localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
-	// if err != nil {
-	// 	fmt.Printf("Go Error: %v", err)
-	// } else {
-	// 	fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
-	// }
 
 	return "", nil
 }
@@ -668,16 +626,9 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 		FromNostrPubKey: globalLocalNostrKeys.LocalNostrPubKey,
 		Recipients:      peers,
 		PartyNpubs:      peers,
-		//Participants:    peers,
-		TxRequest: txRequest,
-		Master:    Master{MasterPeer: localParty, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey},
+		TxRequest:       txRequest,
+		Master:          Master{MasterPeer: localParty, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey},
 	}
-	// map nostrpartypubkeys
-	// for _, party := range globalLocalNostrKeys.NostrPartyPubKeys {
-	// 	if party != globalLocalNostrKeys.LocalNostrPubKey {
-	// 		protoMessage.Recipients = append(protoMessage.Recipients, party)
-	// 	}
-	// }
 
 	nostrSession := NostrSession{
 		SessionID:    SessionID,
@@ -776,13 +727,8 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 
 	Logf("(init_handshake) message received from %s\n", protoMessage.Master.MasterPeer)
 	Logf("Collected ack handshake from %s for session: %s", protoMessage.Master.MasterPeer, protoMessage.SessionID)
-
-	//============== UI - ask user to approve TX==================
-	//TODO
-	//if approved, send ack, and set status="pending"
-	//If not approved, then status="rejected"
-	//===================USER APPROVED TX======================
 	Logf("sending (ack_handshake) message to %s\n", protoMessage.Master.MasterPeer)
+
 	nostrSession := NostrSession{
 		SessionID:    protoMessage.SessionID,
 		Participants: []string{localParty},
@@ -800,14 +746,6 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 	if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
 		nostrSessionList = append(nostrSessionList, nostrSession)
 	}
-
-	// recipients := make([]string, 0, 1)
-	// for _, p := range globalLocalNostrKeys.NostrPartyPubKeys {
-	// 	if p == protoMessage.FromNostrPubKey {
-	// 		recipients = append(recipients, p)
-	// 		break
-	// 	}
-	// }
 
 	ackProtoMessage := ProtoMessage{
 		SessionID:       nostrSession.SessionID,
@@ -888,83 +826,6 @@ func startPartyNostrSpend(sessionID string, participants []string, localParty st
 			}
 		}
 	}
-}
-
-func JoinPartyNostrKeygen(sessionID string, localParty string) (string, error) {
-
-	nostrSession, err := GetSession(sessionID)
-	if err != nil {
-		Logf("Error getting session: %v", err)
-		return "", err
-	}
-
-	for i, item := range nostrSessionList {
-		if item.SessionID == sessionID {
-			nostrSessionList[i].Status = "start_keygen"
-		}
-	}
-
-	ppmFile := localParty + ".json"
-	peers := strings.Join(nostrSession.Participants, ",")
-
-	result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", nostrSession.ChainCode, nostrSession.SessionKey, "nostr", "false")
-	if err != nil {
-		fmt.Printf("Go Error: %v", err)
-	} else {
-		fmt.Printf("\n [%s] Keygen Result %s\n", localParty, result)
-	}
-
-	return result, nil
-
-	// for i, item := range nostrSessionList {
-	// 	if item.SessionID == sessionID {
-	// 		nostrSessionList[i].Status = "start_keygen"
-	// 		nostrSessionList[i].Participants = participants
-	// 		sessionKey := nostrSessionList[i].SessionKey
-	// 		chainCode := nostrSessionList[i].ChainCode
-	// 		peers := strings.Join(nostrSessionList[i].Participants, ",")
-	// 		ppmFile := localParty + ".json"
-	// 		keyshareFile := localParty + ".ks"
-
-	// 		//============== UI - ask user to approve keygen==================
-	// 		//TODO
-
-	// 		//===================USER APPROVED KEYGEN======================
-
-	// 		result, err := JoinKeygen(ppmFile, localParty, peers, "", "", sessionID, "", chainCode, sessionKey, "nostr", "false")
-	// 		if err != nil {
-	// 			fmt.Printf("Go Error: %v", err)
-	// 		} else {
-	// 			fmt.Printf("\n [%s] Keygen Result %s\n", localParty, result)
-	// 		}
-
-	// 		var localState LocalState
-
-	// 		if err := json.Unmarshal([]byte(result), &localState); err != nil {
-
-	// 			fmt.Printf("failed to parse keyshare for %s: %v", localParty, err)
-
-	// 		}
-
-	// 		// // Marshal the updated LocalState
-	// 		updatedKeyshare, err := json.Marshal(localState)
-
-	// 		Logf("%s Keygen Result Saved\n", localParty)
-
-	// 		encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
-
-	// 		if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
-
-	// 			fmt.Printf("failed to save keyshare for %s: %v", localParty, err)
-
-	// 		}
-
-	// 		var kgR KeygenResponse
-	// 		if err := json.Unmarshal([]byte(result), &kgR); err != nil {
-	// 			fmt.Printf("failed to parse keyshare for %s: %v", localParty, err)
-	// 		}
-	// 	}
-	// }
 }
 
 func nostrFlagPartyKeysignComplete(sessionID string) error {
@@ -1439,7 +1300,7 @@ func NostrMpcTssSetup(relay, nsec1, npub1, npubs, sessionID, sessionKey, chainco
 	largestNpub := GetLexicographicallyFirstNpub(npubsArray)
 	if largestNpub == npub1 {
 		//I am master
-		keyshare, err := JoinKeygen(npub1+".json", npub1, parties, "", "", sessionID, "", chaincode, sessionKey, "nostr", "true")
+		keyshare, err := JoinKeygen(npub1+".json", npub1, parties, "", "", sessionID, "", chaincode, sessionKey, "nostr")
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		}
@@ -1447,7 +1308,7 @@ func NostrMpcTssSetup(relay, nsec1, npub1, npubs, sessionID, sessionKey, chainco
 	} else {
 		//I am not master
 		fmt.Printf("I am not master\n")
-		keyshare, err := JoinKeygen(npub1+".json", npub1, parties, "", "", sessionID, "", chaincode, sessionKey, "nostr", "false")
+		keyshare, err := JoinKeygen(npub1+".json", npub1, parties, "", "", sessionID, "", chaincode, sessionKey, "nostr")
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		}

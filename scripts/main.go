@@ -190,86 +190,6 @@ func main() {
 		select {}
 	}
 
-	// if mode == "nostrKeygen" {
-	// 	// prepare args
-
-	// 	parties := "peer1,peer2,peer3" // All participating parties
-	// 	session := randomSeed(64)      // Generate random session ID
-	// 	sessionKey := randomSeed(64)   // Random session key
-	// 	chainCode := randomSeed(64)
-	// 	server := ""
-
-	// 	net_type := "nostr"
-	// 	peer := "peer1"
-
-	// 	ppmFile := peer + ".json"
-	// 	keyshareFile := peer + ".ks"
-	// 	nostrKeysFile := peer + ".nostr"
-	// 	var err error
-
-	// 	if net_type == "nostr" {
-	// 		net_type = "nostr"
-	// 		localNostrKeys, err := GetNostrKeys(peer)
-	// 		if err != nil {
-	// 			fmt.Printf("Error getting local nostr keys: %v\n", err)
-	// 			return
-	// 		}
-	// 		go tss.NostrListen(peer, nostrRelay, localNostrKeys)
-	// 		time.Sleep(time.Second * 2)
-	// 	}
-
-	// 	// Check if .nostr file exists
-	// 	if _, err := os.Stat(nostrKeysFile); err == nil {
-	// 		fmt.Printf("Existing Nostr keys found for %s\n", peer)
-	// 	}
-
-	// 	//join keygen
-	// 	keyshare, err := tss.JoinKeygen(ppmFile, peer, parties, "", "", session, server, chainCode, sessionKey, net_type, "true")
-	// 	if err != nil {
-	// 		fmt.Printf("Go Error: %v\n", err)
-	// 	} else {
-
-	// 		// Create LocalState with Nostr keys
-	// 		var localState tss.LocalState
-
-	// 		if err := json.Unmarshal([]byte(keyshare), &localState); err != nil {
-	// 			fmt.Printf("Failed to parse keyshare for %s: %v\n", peer, err)
-	// 		}
-
-	// 		// // Marshal the updated LocalState
-	// 		updatedKeyshare, err := json.Marshal(localState)
-	// 		fmt.Printf(peer + " Keygen Result Saved\n")
-	// 		encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
-
-	// 		if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
-	// 			fmt.Printf("Failed to save keyshare for %s: %v\n", peer, err)
-	// 		}
-
-	// 		var kgR tss.KeygenResponse
-	// 		if err := json.Unmarshal([]byte(keyshare), &kgR); err != nil {
-	// 			fmt.Printf("Failed to parse keyshare for %s: %v\n", peer, err)
-	// 		}
-
-	// 		// print out pubkeys and p2pkh address
-	// 		fmt.Printf(peer+" Public Key: %s\n", kgR.PubKey)
-	// 		xPub := kgR.PubKey
-	// 		btcPath := "m/44'/0'/0'/0/0"
-	// 		btcPub, err := tss.GetDerivedPubKey(xPub, chainCode, btcPath, false)
-	// 		if err != nil {
-	// 			fmt.Printf("Failed to generate btc pubkey for %s: %v\n", peer, err)
-	// 		} else {
-	// 			fmt.Printf(peer+" BTC Public Key: %s\n", btcPub)
-	// 			btcP2Pkh, err := tss.ConvertPubKeyToBTCAddress(btcPub, "testnet3")
-	// 			if err != nil {
-	// 				fmt.Printf("Failed to generate btc address for %s: %v\n", peer, err)
-	// 			} else {
-	// 				fmt.Printf(peer+" address btcP2Pkh: %s\n", btcP2Pkh)
-	// 				//fmt.Printf(party+" Nostr Party PubKeys: %s\n", nostrPartyPubKeys)
-	// 			}
-	// 		}
-	// 	}
-	// }
-
 	if mode == "debugNostrKeygen" {
 
 		nostrRelay := "ws://bbw-nostr.xyz"
@@ -285,25 +205,6 @@ func main() {
 		} else {
 			fmt.Printf("Keygen Result: %s\n", result)
 		}
-
-		// for {
-		// 	// sessions, err := tss.GetSessions()
-		// 	// if err != nil {
-		// 	// 	fmt.Printf("Error getting sessions: %v\n", err)
-		// 	// }
-		// 	// for _, session := range sessions {
-		// 	// 	if session.Status == "keygen" {
-		// 	// 		result, err := tss.JoinKeygen(localNsec+".json", localNpub, partyNpubs, "", "", session.SessionID, "", session.ChainCode, session.SessionKey, "nostr", "true")
-		// 	// 		if err != nil {
-		// 	// 			fmt.Printf("Go Error: %v", err)
-		// 	// 		} else {
-		// 	// 			fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
-		// 	// 		}
-		// 	// 	}
-		// 	// }
-		// 	//fmt.Println(sessions)
-		// 	time.Sleep(time.Second * 1)
-		// }
 
 		select {}
 	}
@@ -330,25 +231,6 @@ func main() {
 
 	}
 
-	if mode == "joinPartyNostrKeygen" {
-		if len(os.Args) != 4 {
-			fmt.Println("Usage: go run main.go joinPartyNostrKeygen <sessionId> <peer>")
-			os.Exit(1)
-		}
-		sessionId := os.Args[2]
-		peer := os.Args[3]
-
-		fmt.Printf("Joining Party Nostr Keygen for %s in session %s\n", peer, sessionId)
-		keyshare, err := tss.JoinPartyNostrKeygen(sessionId, peer)
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		} else {
-			fmt.Printf("Keygen Result Saved\n")
-		}
-
-		fmt.Printf("Keygen Result: %s\n", keyshare)
-	}
-
 	if mode == "keygen" {
 		// prepare args
 		server := os.Args[2]
@@ -360,7 +242,6 @@ func main() {
 		decKey := os.Args[8]
 		sessionKey := os.Args[9]
 		net_type := os.Args[10]
-		newSession := os.Args[11]
 
 		if len(sessionKey) > 0 {
 			encKey = ""
@@ -371,7 +252,7 @@ func main() {
 		keyshareFile := party + ".ks"
 
 		//join keygen
-		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, net_type, newSession)
+		keyshare, err := tss.JoinKeygen(ppmFile, party, parties, encKey, decKey, session, server, chainCode, sessionKey, net_type)
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
@@ -576,16 +457,8 @@ func main() {
 		net_type := "nostr"
 		nostrRelay := os.Args[3]
 
-		// localNostrKeys, err := GetNostrKeys(localParty)
-		// if err != nil {
-		// 	fmt.Printf("Error getting local nostr keys: %v\n", err)
-		// 	return
-		// }
-
 		if net_type == "nostr" {
 			go tss.NostrListen(localParty, nostrRelay, "localNostrKeys")
-			//time.Sleep(time.Second * 2)
-			//nostrPing(localParty, recipientNpub)
 			select {}
 		}
 	}
@@ -603,48 +476,12 @@ func main() {
 
 		fmt.Printf("Sending Nostr ping from %s to %s...\n", localParty, recipientNpub)
 
-		// Get local Nostr keys
-		// localNostrKeys, err := GetNostrKeys(localParty)
-		// if err != nil {
-		// 	fmt.Printf("Error getting local nostr keys: %v\n", err)
-		// 	return
-		// }
-
 		// Start Nostr listener in background
 		go tss.NostrListen(localParty, nostrRelay, "localNostrKeys")
 		time.Sleep(time.Second * 2) // Wait for listener to start
 
 		// Send ping
 		nostrPing(localParty, recipientNpub)
-	}
-
-	if mode == "nostrMpcTssSetup" {
-		// Usage: go run main.go nostrMpcTssSetup <relay> <nsec1> <npub1> <npubs> <sessionID> <sessionKey> <chaincode>
-		if len(os.Args) != 9 {
-			fmt.Println("Usage: go run main.go nostrMpcTssSetup <relay> <nsec1> <npub1> <npubs> <sessionID> <sessionKey> <chaincode>")
-			fmt.Println("Example: go run main.go nostrMpcTssSetup ws://bbw-nostr.xyz nsec1... npub1... npub1,npub2,npub3 session123 key123 chain123")
-			os.Exit(1)
-		}
-
-		relay := os.Args[2]
-		nsec1 := os.Args[3]
-		npub1 := os.Args[4]
-		npubs := os.Args[5]
-		sessionID := os.Args[6]
-		sessionKey := os.Args[7]
-		chaincode := os.Args[8]
-
-		fmt.Printf("Starting NostrMpcTssSetup...\n")
-		fmt.Printf("Relay: %s\n", relay)
-		fmt.Printf("Local Private Key: %s\n", nsec1)
-		fmt.Printf("Local Public Key: %s\n", npub1)
-		fmt.Printf("All Party Public Keys: %s\n", npubs)
-		fmt.Printf("Session ID: %s\n", sessionID)
-		fmt.Printf("Session Key: %s\n", sessionKey)
-		fmt.Printf("Chaincode: %s\n", chaincode)
-		fmt.Println("")
-
-		tss.NostrMpcTssSetup(relay, nsec1, npub1, npubs, sessionID, sessionKey, chaincode)
 	}
 }
 
@@ -653,12 +490,7 @@ func nostrPing(localParty, recipientNpub string) {
 	if err != nil {
 		fmt.Printf("Error sending ping: %v\n", err)
 	}
-	// if ping {
-	// 	fmt.Printf("Ping sent to %s\n", recipientNpub)
-	// }
-	// if !ping {
-	// 	fmt.Printf("Peer not responding %s\n", recipientNpub)
-	// }
+
 }
 
 func GetNostrKeys(party string) (tss.NostrKeys, error) {

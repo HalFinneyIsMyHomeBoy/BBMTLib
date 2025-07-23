@@ -165,7 +165,7 @@ func setStatus(session string, status Status) {
 	Hook(SessionState(session))
 }
 
-func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey, net_type, newSession string) (string, error) {
+func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey, net_type string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
 	functionType := "keygen"
 
@@ -210,20 +210,6 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status.SeqNo++
 	status.Index++
 	setStatus(session, status)
-
-	if net_type == "nostr" {
-
-		if newSession == "true" { //This is the master starting the session
-			// fmt.Printf("Master is coordinating nostr keygen session : %v\n", session)
-			// ok, err := initiateNostrHandshake(session, chaincode, sessionKey, key, partiesCSV, functionType, TxRequest{})
-			// if err != nil {
-			// 	return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
-			// }
-			// if !ok {
-			// 	return "", fmt.Errorf("failed to initiate nostr handshake")
-			// }
-		}
-	}
 
 	Logln("BBMTLog", "inbound messenger up...")
 	messenger := &MessengerImp{
