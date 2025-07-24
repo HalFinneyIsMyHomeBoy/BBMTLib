@@ -62,6 +62,7 @@ BIN_NAME="bbmt"
 BUILD_DIR="./bin"
 
 # Ensure build directory exists
+mkdir -p "$BUILD_DIR"
 
 # Build the Go binary
 echo "Building the Go binary..."
@@ -76,8 +77,6 @@ print_success "Application built successfully"
 # Default values for arguments
 parties="${peers[*]}"
 parties="${parties// /,}"
-session="$(go run main.go random)"
-sessionKey="$(go run main.go random)"
 derivePath="m/44'/0'/0'/0/0"
 receiverAddress="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
 amountSatoshi="1000"
@@ -86,8 +85,6 @@ net_type="nostr"
 localTesting="true"
 
 print_status "parties: $parties"
-print_status "session: $session"
-print_status "sessionKey: $sessionKey"
 print_status "derivePath: $derivePath"
 print_status "receiverAddress: $receiverAddress"
 print_status "amountSatoshi: $amountSatoshi"
@@ -98,7 +95,7 @@ print_status "net_type: $net_type"
 PIDS=()
 for peer in "${peers[@]}"; do
     print_status "Starting nostrSendBTC for $peer..."
-    "$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$session" "$sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "$peer" "$net_type" "$localTesting" &
+    "$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "dummy_session" "dummy_sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "$peer" "$net_type" "$localTesting" &
     PIDS+=("$!")
 done
 

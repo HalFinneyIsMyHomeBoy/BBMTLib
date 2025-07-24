@@ -32,41 +32,73 @@ go build -o "$BUILD_DIR/$BIN_NAME" main.go
 echo "Generating Nostr keys for all peers..."
 "$BUILD_DIR/$BIN_NAME" generateNostrKeys $NUM_PEERS
 
+# Rename the generated files to use npub as filename
+echo "Renaming .nostr files to use npub as filename..."
+for i in $(seq 1 $NUM_PEERS); do
+    peer_file="peer$i.nostr"
+    if [ -f "$peer_file" ]; then
+        # Extract npub from the file
+        if command -v jq &> /dev/null; then
+            npub=$(jq -r '.local_nostr_pub_key' "$peer_file")
+        else
+            # Fallback to grep/sed if jq is not available
+            npub=$(grep '"local_nostr_pub_key"' "$peer_file" | sed 's/.*"local_nostr_pub_key": *"\([^"]*\)".*/\1/')
+        fi
+        
+        # Rename the file to use npub as filename
+        new_filename="${npub}.nostr"
+        mv "$peer_file" "$new_filename"
+        echo "Renamed $peer_file to $new_filename"
+    else
+        echo "Error: $peer_file not found after generation."
+        exit 1
+    fi
+done
+
 # Parse the generated .nostr files to extract npubs and nsecs
 echo "Parsing generated Nostr keys..."
 declare -A NPUBS
 declare -A NSECS
+declare -A NPUB_FILES
 
-# Generate peer names dynamically
-for i in $(seq 1 $NUM_PEERS); do
-    peer="peer$i"
-    if [ ! -f "$peer.nostr" ]; then
-        echo "Error: $peer.nostr file not found after generation."
-        exit 1
+# Find all .nostr files and extract npubs and nsecs
+for nostr_file in *.nostr; do
+    if [ -f "$nostr_file" ]; then
+        # Extract npub and nsec using jq (if available) or grep/sed
+        if command -v jq &> /dev/null; then
+            npub=$(jq -r '.local_nostr_pub_key' "$nostr_file")
+            nsec=$(jq -r '.local_nostr_priv_key' "$nostr_file")
+        else
+            # Fallback to grep/sed if jq is not available
+            npub=$(grep '"local_nostr_pub_key"' "$nostr_file" | sed 's/.*"local_nostr_pub_key": *"\([^"]*\)".*/\1/')
+            nsec=$(grep '"local_nostr_priv_key"' "$nostr_file" | sed 's/.*"local_nostr_priv_key": *"\([^"]*\)".*/\1/')
+        fi
+        
+        # Store the npub and nsec with the filename as key
+        NPUBS["$nostr_file"]="$npub"
+        NSECS["$nostr_file"]="$nsec"
+        NPUB_FILES["$nostr_file"]="$nostr_file"
+        
+        echo "Found $nostr_file - npub: $npub"
+        echo "Found $nostr_file - nsec: $nsec"
     fi
-    
-    # Extract npub and nsec using jq (if available) or grep/sed
-    if command -v jq &> /dev/null; then
-        NPUBS[$peer]=$(jq -r '.local_nostr_pub_key' "$peer.nostr")
-        NSECS[$peer]=$(jq -r '.local_nostr_priv_key' "$peer.nostr")
-    else
-        # Fallback to grep/sed if jq is not available
-        NPUBS[$peer]=$(grep '"local_nostr_pub_key"' "$peer.nostr" | sed 's/.*"local_nostr_pub_key": *"\([^"]*\)".*/\1/')
-        NSECS[$peer]=$(grep '"local_nostr_priv_key"' "$peer.nostr" | sed 's/.*"local_nostr_priv_key": *"\([^"]*\)".*/\1/')
-    fi
-    
-    echo "Found $peer - npub: ${NPUBS[$peer]}"
-    echo "Found $peer - nsec: ${NSECS[$peer]}"
 done
+
+# Verify we have the expected number of files
+actual_count=${#NPUBS[@]}
+if [ "$actual_count" -ne "$NUM_PEERS" ]; then
+    echo "Error: Expected $NUM_PEERS .nostr files, but found $actual_count"
+    exit 1
+fi
 
 # Create comma-separated list of all npubs for partyNpubs parameter
 ALL_NPUBS=""
-for i in $(seq 1 $NUM_PEERS); do
-    peer="peer$i"
+for nostr_file in "${!NPUBS[@]}"; do
+    npub="${NPUBS[$nostr_file]}"
     if [ -z "$ALL_NPUBS" ]; then
-        ALL_NPUBS="${NPUBS[$peer]}"
+        ALL_NPUBS="$npub"
     else
-        ALL_NPUBS="$ALL_NPUBS,${NPUBS[$peer]}"
+        ALL_NPUBS="$ALL_NPUBS,$npub"
     fi
 done
 
@@ -96,18 +128,29 @@ echo ""
 
 # Array to store all keygen process PIDs
 declare -a PIDS
+declare -a OUTPUT_FILES
 
 # Start keygen processes for all peers
-for i in $(seq 1 $NUM_PEERS); do
-    peer="peer$i"
-    echo "Starting JoinKeygen for $peer..."
-    "$BUILD_DIR/$BIN_NAME" nostrKeygen "$NOSTR_RELAY" "${NSECS[$peer]}" "${NPUBS[$peer]}" "$ALL_NPUBS" "$SESSION_ID" "$SESSION_KEY" "$CHAIN_CODE" "$LOCAL_TESTING" &
-    PIDS[$i]=$!
+peer_index=1
+for nostr_file in "${!NPUBS[@]}"; do
+    npub="${NPUBS[$nostr_file]}"
+    nsec="${NSECS[$nostr_file]}"
+    output_file="${npub}.ks"
+    
+    echo "Starting JoinKeygen for $nostr_file (npub: $npub)..."
+    echo "Output will be saved to: $output_file"
+    
+    # Start the process and capture output to a temporary file while also showing it in terminal
+    temp_output="/tmp/nostr_keygen_${npub}_$$.log"
+    "$BUILD_DIR/$BIN_NAME" nostrKeygen "$NOSTR_RELAY" "$nsec" "$npub" "$ALL_NPUBS" "$SESSION_ID" "$SESSION_KEY" "$CHAIN_CODE" "$LOCAL_TESTING" 2>&1 | tee "$temp_output" &
+    PIDS[$peer_index]=$!
+    OUTPUT_FILES[$peer_index]=$temp_output
     
     # Small delay between starting peers
-    if [ $i -lt $NUM_PEERS ]; then
+    if [ $peer_index -lt $NUM_PEERS ]; then
         sleep 1
     fi
+    ((peer_index++))
 done
 
 # Build the kill command for all PIDs
@@ -120,10 +163,55 @@ for i in $(seq 1 $NUM_PEERS); do
     fi
 done
 
-trap "echo 'Stopping processes...'; kill $KILL_CMD; exit" SIGINT SIGTERM
+trap "echo 'Stopping processes...'; kill $KILL_CMD; rm -f /tmp/nostr_keygen_*_$$.log; exit" SIGINT SIGTERM
 
 # Wait for all processes
+echo "Waiting for all keygen processes to complete..."
 wait
+
+# Process the output files and extract keyshare results
+echo ""
+echo "Processing keygen results..."
+peer_index=1
+for nostr_file in "${!NPUBS[@]}"; do
+    npub="${NPUBS[$nostr_file]}"
+    output_file="${npub}.ks"
+    temp_output="${OUTPUT_FILES[$peer_index]}"
+    
+    echo "Processing output for $nostr_file..."
+    
+    if [ -f "$temp_output" ]; then
+        # Look for the "Keygen Result:" line and extract the keyshare
+        keyshare_result=$(grep "Keygen Result:" "$temp_output" | sed 's/.*Keygen Result: //')
+        
+        if [ -n "$keyshare_result" ]; then
+            echo "Found keyshare result for $nostr_file"
+            echo "$keyshare_result" > "$output_file"
+            echo "Keyshare saved to: $output_file"
+        else
+            echo "Warning: No keyshare result found for $nostr_file"
+            echo "Output file contents:"
+            cat "$temp_output"
+        fi
+        
+        # Clean up temporary file
+        rm -f "$temp_output"
+    else
+        echo "Error: Temporary output file not found for $nostr_file"
+    fi
+    ((peer_index++))
+done
+
+echo ""
+echo "Nostr keygen completed!"
+echo "Keyshare files created:"
+for nostr_file in "${!NPUBS[@]}"; do
+    npub="${NPUBS[$nostr_file]}"
+    output_file="${npub}.ks"
+    if [ -f "$output_file" ]; then
+        echo "  - $output_file"
+    fi
+done
 
 
 

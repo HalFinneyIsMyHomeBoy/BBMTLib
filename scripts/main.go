@@ -225,6 +225,15 @@ func main() {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
 			fmt.Printf("Keygen Result: %s\n", result)
+
+			// Save result to file with npub as filename and .ks extension
+			filename := localNpub + ".ks"
+			encodedResult := base64.StdEncoding.EncodeToString([]byte(result))
+			if err := os.WriteFile(filename, []byte(encodedResult), 0644); err != nil {
+				fmt.Printf("Failed to save keyshare to %s: %v\n", filename, err)
+			} else {
+				fmt.Printf("Keyshare saved to %s\n", filename)
+			}
 		}
 
 		select {}
@@ -344,8 +353,6 @@ func main() {
 			os.Exit(1)
 		}
 		parties := os.Args[2]
-		session := os.Args[3]
-		sessionKey := os.Args[4]
 		derivePath := os.Args[5]
 		receiverAddress := os.Args[6]
 		amountSatoshi, err := strconv.ParseInt(os.Args[7], 10, 64)
@@ -359,28 +366,11 @@ func main() {
 			return
 		}
 		peer := os.Args[9]
-		net_type := os.Args[10]
 
 		fmt.Println("InitiateNostrSendBTC called")
-		if net_type == "nostr" {
-			net_type = "nostr"
-			// localNostrKeys, err := GetNostrKeys(peer)
-			// if err != nil {
-			// 	fmt.Printf("Error getting local nostr keys: %v\n", err)
-			// 	return
-			// }
-
-			go tss.NostrListen(peer, nostrRelay, "localNostrKeys")
-			time.Sleep(time.Second * 2)
-		} else {
-			go tss.RunRelay("55055")
-			time.Sleep(time.Second)
-		}
-
-		fmt.Printf("Processing peer: %s\n", peer)
-		keyshareFile := peer + ".ks"
 
 		// Read and decode keyshare file for this peer
+		keyshareFile := peer + ".ks"
 		keyshare, err := os.ReadFile(keyshareFile)
 		if err != nil {
 			fmt.Printf("Error reading keyshare file for %s: %v\n", peer, err)
@@ -415,38 +405,30 @@ func main() {
 
 		fmt.Printf("Successfully processed keyshare for %s\n", peer)
 
-		fmt.Println("Testing...")
-		// prepare args
-		server := "http://127.0.0.1:55055" // Default relay server
-
-		// Generate keypair for encryption/decryption
-		keypair, err := tss.GenerateKeyPair()
+		// Get local nostr keys
+		localNostrKeys, err := GetNostrKeys(peer)
 		if err != nil {
-			fmt.Printf("Error generating keypair: %v\n", err)
+			fmt.Printf("Error getting local nostr keys: %v\n", err)
 			return
 		}
-		var keypairMap map[string]string
-		if err := json.Unmarshal([]byte(keypair), &keypairMap); err != nil {
-			fmt.Printf("Error parsing keypair: %v\n", err)
-			return
-		}
-		encKey := keypairMap["PublicKey"]  // Public key for encryption
-		decKey := keypairMap["PrivateKey"] // Private key for decryption
 
-		derivePath = "m/44'/0'/0'/0/0" // Standard BTC derivation path
-
-		if len(sessionKey) > 0 {
-			encKey = ""
-			decKey = ""
+		// Create TxRequest struct
+		txRequest := tss.TxRequest{
+			SenderAddress:   senderAddress,
+			ReceiverAddress: receiverAddress,
+			AmountSatoshi:   amountSatoshi,
+			FeeSatoshi:      estimatedFee,
+			DerivePath:      derivePath,
+			BtcPub:          btcPub,
 		}
 
-		result, err := tss.MpcSendBTC(server, peer, parties, session, sessionKey, encKey, decKey, string(keyshare), derivePath, btcPub, senderAddress, receiverAddress, int64(amountSatoshi), int64(estimatedFee), net_type, "true")
+		// Use nostrSpend function
+		result, err := tss.NostrSpend(nostrRelay, localNostrKeys.LocalNostrPrivKey, localNostrKeys.LocalNostrPubKey, parties, string(decodedKeyshare), txRequest, "true")
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
-			fmt.Printf("\n [%s] Keysign Result %s\n", peer, result)
+			fmt.Printf("\n [%s] NostrSpend Result %s\n", peer, result)
 		}
-
 	}
 
 	if mode == "ListenNostrMessages" {

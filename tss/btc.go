@@ -388,26 +388,26 @@ func MpcSendBTC(
 			var sigJSON string
 
 			if net_type == "nostr" {
-				txRequest := TxRequest{
-					SenderAddress:   senderAddress,
-					ReceiverAddress: receiverAddress,
-					AmountSatoshi:   amountSatoshi,
-					FeeSatoshi:      estimatedFee,
-					BtcPub:          publicKey,
-					DerivePath:      derivePath,
-				}
+				// txRequest := TxRequest{
+				// 	SenderAddress:   senderAddress,
+				// 	ReceiverAddress: receiverAddress,
+				// 	AmountSatoshi:   amountSatoshi,
+				// 	FeeSatoshi:      estimatedFee,
+				// 	BtcPub:          publicKey,
+				// 	DerivePath:      derivePath,
+				// }
 
-				if newSession == "true" {
-					newSession = "false"
-					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					ok, err := initiateNostrHandshake(session, "", sessionKey, key, partiesCSV, "start_keysign", txRequest)
-					if err != nil {
-						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
-					}
-					if !ok {
-						return "", fmt.Errorf("failed to initiate nostr handshake")
-					}
-				}
+				// if newSession == "true" {
+				// 	newSession = "false"
+				// 	fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
+				// 	ok, err := initiateNostrHandshake(session, "", sessionKey, key, partiesCSV, "start_keysign", txRequest)
+				// 	if err != nil {
+				// 		return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
+				// 	}
+				// 	if !ok {
+				// 		return "", fmt.Errorf("failed to initiate nostr handshake")
+				// 	}
+				// }
 
 				for _, nostrSession := range nostrSessionList {
 					if nostrSession.Status == "start_keysign" && nostrSession.SessionID == session {
@@ -464,26 +464,26 @@ func MpcSendBTC(
 			var sigJSON string
 
 			if net_type == "nostr" {
-				txRequest := TxRequest{
-					SenderAddress:   senderAddress,
-					ReceiverAddress: receiverAddress,
-					AmountSatoshi:   amountSatoshi,
-					FeeSatoshi:      estimatedFee,
-					BtcPub:          publicKey,
-					DerivePath:      derivePath,
-				}
+				// txRequest := TxRequest{
+				// 	SenderAddress:   senderAddress,
+				// 	ReceiverAddress: receiverAddress,
+				// 	AmountSatoshi:   amountSatoshi,
+				// 	FeeSatoshi:      estimatedFee,
+				// 	BtcPub:          publicKey,
+				// 	DerivePath:      derivePath,
+				// }
 
-				if newSession == "true" { //This is the master starting the session
-					newSession = "false"
-					fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-					ok, err := initiateNostrHandshake(session, "", sessionKey, key, partiesCSV, "start_keysign", txRequest)
-					if err != nil {
-						return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
-					}
-					if !ok {
-						return "", fmt.Errorf("failed to initiate nostr handshake")
-					}
-				}
+				// if newSession == "true" { //This is the master starting the session
+				// 	newSession = "false"
+				// 	fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
+				// 	ok, err := initiateNostrHandshake(session, "", sessionKey, key, partiesCSV, "start_keysign", txRequest)
+				// 	if err != nil {
+				// 		return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
+				// 	}
+				// 	if !ok {
+				// 		return "", fmt.Errorf("failed to initiate nostr handshake")
+				// 	}
+				// }
 
 				for _, item := range nostrSessionList {
 					if item.Status == "start_keysign" && item.SessionID == session {
