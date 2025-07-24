@@ -37,7 +37,11 @@ go build -o "$BUILD_DIR/$BIN_NAME" main.go
 PIDS=()
 for peer in "${peers[@]}"; do
     echo "Start listening on $peer..."
-    "$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$peer" "$nostrRelay" "$localTesting" &
+    nsec=$(jq -r '.local_nostr_priv_key' "$peer.nostr")
+    npub=$(jq -r '.local_nostr_pub_key' "$peer.nostr")
+    echo "nsec: $nsec"
+    echo "npub: $npub"
+    "$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$npub" "$nsec" "$nostrRelay" &
     PIDS+=("$!")
 done
 

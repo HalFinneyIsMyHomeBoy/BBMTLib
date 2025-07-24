@@ -435,12 +435,13 @@ func main() {
 		//Used for testing nostr MPCsendBTC
 		//This is to be run first by each party.
 		fmt.Println("ListenNostrMessages called")
-		localParty := os.Args[2]
+		localNpub := os.Args[2]
+		localNsec := os.Args[3]
 		net_type := "nostr"
-		nostrRelay := os.Args[3]
+		nostrRelay := os.Args[4]
 
 		if net_type == "nostr" {
-			go tss.NostrListen(localParty, nostrRelay, "localNostrKeys")
+			go tss.NostrListen(localNpub, localNsec, nostrRelay)
 			select {}
 		}
 	}
