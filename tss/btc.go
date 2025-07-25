@@ -252,7 +252,7 @@ func MpcSendBTC(
 	/* tss */
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath,
 	/* btc */
-	publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, net_type, newSession string) (string, error) {
+	publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, net_type string) (string, error) {
 
 	Logln("BBMTLog", "invoking MpcSendBTC...")
 

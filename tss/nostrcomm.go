@@ -101,6 +101,7 @@ type TxRequest struct {
 	FeeSatoshi      int64  `json:"fee_satoshi"`
 	DerivePath      string `json:"derive_path"`
 	BtcPub          string `json:"btc_pub"`
+	Master          Master `json:"master"`
 }
 
 const (
@@ -517,83 +518,91 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 	return "", nil
 }
 
-func NostrSpend(relay, localNsec, localNpub, partyNpubs, keyShare string, txRequest TxRequest, verbose string) (string, error) {
+func NostrSpend(relay, localNsec, localNpub, partyNpubs, keyShare string, txRequest TxRequest, sessionID, sessionKey, verbose, newSession string) (string, error) {
 
+	// all parties should already be listening
 	go NostrListen(localNpub, localNsec, relay)
 	time.Sleep(2 * time.Second)
 
-	// Find the master npub (peer with largest npub value)
-	peers := strings.Split(partyNpubs, ",")
-	masterNpub := peers[0]
-	for _, npub := range peers[1:] {
-		if npub > masterNpub {
-			masterNpub = npub
-		}
-	}
+	//master is whoever first initiates the spend request
 
-	keyShareJSON, err := json.Marshal(keyShare)
-	if err != nil {
-		Logf("Error marshaling keyshare: %v", err)
-		return "", fmt.Errorf("error marshaling keyshare: %v", err)
-	}
+	// keyShareJSON, err := json.Marshal(keyShare)
+	// if err != nil {
+	// 	Logf("Error marshaling keyshare: %v", err)
+	// 	return "", fmt.Errorf("error marshaling keyshare: %v", err)
+	// }
 
-	if masterNpub == localNpub { //If we are the master, we need to initiate the handshake
-		sessionID := randomSeed(64) //Master generates the sessionID, SessionKey and chaincode
-		sessionKey := randomSeed(64)
-		//chainCode := randomSeed(64)
+	//Set the globalLocalNostrKeys
+	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
+	globalLocalNostrKeys.LocalNostrPrivKey = localNsec
+	globalLocalNostrKeys.LocalNostrPubKey = localNpub
 
-		//Set the globalLocalNostrKeys
-		globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
-		globalLocalNostrKeys.LocalNostrPrivKey = localNsec
-		globalLocalNostrKeys.LocalNostrPubKey = localNpub
+	//initiateNostrHandshake(sessionID, chainCode, sessionKey, localNpub, partyNpubs, "keysign", txRequest)
+	Logf("Starting Master keysign for session: %s", sessionID)
 
-		//initiateNostrHandshake(sessionID, chainCode, sessionKey, localNpub, partyNpubs, "keysign", txRequest)
-		Logf("Starting Master keysign for session: %s", sessionID)
-
-		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", string(keyShareJSON), txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr", "true")
-		if err != nil {
-			fmt.Printf("Go Error: %v", err)
-		} else {
-			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
-		}
-
+	if newSession == "true" {
+		txRequest.Master = Master{MasterPeer: localNpub, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey}
+		initiateNostrHandshake(sessionID, "", sessionKey, localNpub, partyNpubs, "keysign", txRequest)
 	} else {
-		//If we are not the master, we need to join the keygen
-
-		//Set the globalLocalNostrKeys
-		globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
-		globalLocalNostrKeys.LocalNostrPrivKey = localNsec
-		globalLocalNostrKeys.LocalNostrPubKey = localNpub
-
-		sessions, err := WaitForSessions()
-		if err != nil {
-			return "", fmt.Errorf("error getting sessions: %v", err)
-		} else {
-
-			protoMessage := ProtoMessage{
-				SessionID:       sessions[0].SessionID,
-				ChainCode:       sessions[0].ChainCode,
-				SessionKey:      sessions[0].SessionKey,
-				TxRequest:       sessions[0].TxRequest,
-				Master:          sessions[0].Master,
-				FunctionType:    "ack_handshake",
-				From:            localNpub,
-				FromNostrPubKey: localNpub,
-				Recipients:      []string{sessions[0].Master.MasterPubKey},
-				Participants:    []string{localNpub},
-			}
-			AckNostrHandshake(protoMessage, localNpub)
-
-			Logf("Joining Keysign for session: %s", sessions[0].SessionID)
-
-			result, err := MpcSendBTC("", localNpub, partyNpubs, sessions[0].SessionID, sessions[0].SessionKey, "", "", string(keyShareJSON), txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr", "false")
-			if err != nil {
-				fmt.Printf("Go Error: %v", err)
-			} else {
-				fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
-			}
+		protoMessage := ProtoMessage{
+			SessionID:       sessionID,
+			ChainCode:       "",
+			SessionKey:      sessionKey,
+			FunctionType:    "ack_handshake",
+			From:            localNpub,
+			FromNostrPubKey: localNpub,
+			Recipients:      []string{globalLocalNostrKeys.LocalNostrPubKey},
+			Participants:    []string{localNpub},
+			TxRequest:       txRequest,
+			Master:          txRequest.Master,
 		}
+		AckNostrHandshake(protoMessage, localNpub)
 	}
+
+	result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
+	if err != nil {
+		fmt.Printf("Go Error: %v", err)
+	} else {
+		fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+	}
+
+	// } else {
+	// 	//If we are not the master, we need to join the keygen
+
+	// 	//Set the globalLocalNostrKeys
+	// 	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
+	// 	globalLocalNostrKeys.LocalNostrPrivKey = localNsec
+	// 	globalLocalNostrKeys.LocalNostrPubKey = localNpub
+
+	// 	sessions, err := WaitForSessions()
+	// 	if err != nil {
+	// 		return "", fmt.Errorf("error getting sessions: %v", err)
+	// 	} else {
+
+	// 		protoMessage := ProtoMessage{
+	// 			SessionID:       sessions[0].SessionID,
+	// 			ChainCode:       sessions[0].ChainCode,
+	// 			SessionKey:      sessions[0].SessionKey,
+	// 			TxRequest:       sessions[0].TxRequest,
+	// 			Master:          sessions[0].Master,
+	// 			FunctionType:    "ack_handshake",
+	// 			From:            localNpub,
+	// 			FromNostrPubKey: localNpub,
+	// 			Recipients:      []string{sessions[0].Master.MasterPubKey},
+	// 			Participants:    []string{localNpub},
+	// 		}
+	// 		AckNostrHandshake(protoMessage, localNpub)
+
+	// 		Logf("Joining Keysign for session: %s", sessions[0].SessionID)
+
+	// 		result, err := MpcSendBTC("", localNpub, partyNpubs, sessions[0].SessionID, sessions[0].SessionKey, "", "", string(keyShareJSON), txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr", "false")
+	// 		if err != nil {
+	// 			fmt.Printf("Go Error: %v", err)
+	// 		} else {
+	// 			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+	// 		}
+	// 	}
+	// }
 
 	return "", nil
 
@@ -900,7 +909,7 @@ func startPartyNostrSpend(sessionID string, participants []string, localParty st
 
 			peers := strings.Join(item.Participants, ",")
 
-			result, err := MpcSendBTC("", localParty, peers, sessionID, sessionKey, "", "", string(keyShareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr", "false")
+			result, err := MpcSendBTC("", localParty, peers, sessionID, sessionKey, "", "", string(keyShareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr")
 			if err != nil {
 				fmt.Printf("Go Error: %v", err)
 			} else {
