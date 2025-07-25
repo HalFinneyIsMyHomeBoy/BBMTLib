@@ -556,6 +556,7 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 			TxRequest:       txRequest,
 			Master:          txRequest.Master,
 		}
+
 		AckNostrHandshake(protoMessage, localNpub)
 	}
 
@@ -825,7 +826,7 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 		Participants: []string{localParty},
 		TxRequest:    protoMessage.TxRequest,
 		Master:       protoMessage.Master,
-		Status:       "pending",
+		Status:       protoMessage.FunctionType,
 		SessionKey:   protoMessage.SessionKey,
 		ChainCode:    protoMessage.ChainCode,
 	}
