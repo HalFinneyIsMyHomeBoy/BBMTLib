@@ -347,25 +347,25 @@ func main() {
 
 		//This is to be called by the party initiating the session to send BTC
 		//The party to initiate this is the master by default for the session.
-
-		if len(os.Args) != 12 {
-			fmt.Println("Usage: go run main.go nostrSendBTC <parties> <session> <sessionKey> <derivePath> <receiverAddress> <amountSatoshi> <estimatedFee> <peer> <net_type> <localTesting>")
+		fmt.Println(len(os.Args))
+		if len(os.Args) != 8 {
+			fmt.Println("Usage: go run main.go nostrSendBTC <parties> <derivePath> <receiverAddress> <amountSatoshi> <estimatedFee> <peer> <net_type> <localTesting>")
 			os.Exit(1)
 		}
 		parties := os.Args[2]
-		derivePath := os.Args[5]
-		receiverAddress := os.Args[6]
-		amountSatoshi, err := strconv.ParseInt(os.Args[7], 10, 64)
+		derivePath := os.Args[3]
+		receiverAddress := os.Args[4]
+		amountSatoshi, err := strconv.ParseInt(os.Args[5], 10, 64)
 		if err != nil {
 			fmt.Printf("Invalid amountSatoshi: %v\n", err)
 			return
 		}
-		estimatedFee, err := strconv.ParseInt(os.Args[8], 10, 64)
+		estimatedFee, err := strconv.ParseInt(os.Args[6], 10, 64)
 		if err != nil {
 			fmt.Printf("Invalid estimatedFee: %v\n", err)
 			return
 		}
-		peer := os.Args[9]
+		peer := os.Args[7]
 
 		fmt.Println("InitiateNostrSendBTC called")
 
@@ -437,13 +437,11 @@ func main() {
 		fmt.Println("ListenNostrMessages called")
 		localNpub := os.Args[2]
 		localNsec := os.Args[3]
-		net_type := "nostr"
 		nostrRelay := os.Args[4]
 
-		if net_type == "nostr" {
-			go tss.NostrListen(localNpub, localNsec, nostrRelay)
-			select {}
-		}
+		go tss.NostrListen(localNpub, localNsec, nostrRelay)
+		select {}
+
 	}
 
 	if mode == "nostrPing" {

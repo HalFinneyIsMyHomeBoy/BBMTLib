@@ -37,10 +37,19 @@ go build -o "$BUILD_DIR/$BIN_NAME" main.go
 PIDS=()
 for peer in "${peers[@]}"; do
     echo "Start listening on $peer..."
-    nsec=$(jq -r '.local_nostr_priv_key' "$peer.nostr")
+    
+    # Extract npub and nsec from the .nostr file using jq
     npub=$(jq -r '.local_nostr_pub_key' "$peer.nostr")
-    echo "nsec: $nsec"
-    echo "npub: $npub"
+    nsec=$(jq -r '.local_nostr_priv_key' "$peer.nostr")
+    
+    if [ "$npub" = "null" ] || [ "$nsec" = "null" ]; then
+        echo "[ERROR] Failed to extract npub or nsec from $peer.nostr"
+        exit 1
+    fi
+    
+    echo "[INFO] Loaded npub: $npub"
+    echo "[INFO] Loaded nsec: ${nsec:0:10}..." # Only show first 10 chars for security
+    
     "$BUILD_DIR/$BIN_NAME" ListenNostrMessages "$npub" "$nsec" "$nostrRelay" &
     PIDS+=("$!")
 done

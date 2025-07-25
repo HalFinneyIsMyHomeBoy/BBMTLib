@@ -95,7 +95,7 @@ print_status "net_type: $net_type"
 PIDS=()
 for peer in "${peers[@]}"; do
     print_status "Starting nostrSendBTC for $peer..."
-    "$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "dummy_session" "dummy_sessionKey" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "$peer" "$net_type" "$localTesting" &
+    "$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "$peer" &
     PIDS+=("$!")
 done
 
