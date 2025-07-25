@@ -518,7 +518,7 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 	return "", nil
 }
 
-func NostrSpend(relay, localNsec, localNpub, partyNpubs, keyShare string, txRequest TxRequest, sessionID, sessionKey, verbose, newSession string) (string, error) {
+func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequest TxRequest, sessionID, sessionKey, verbose, newSession string) (string, error) {
 
 	// all parties should already be listening
 	go NostrListen(localNpub, localNsec, relay)
@@ -723,7 +723,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 
 	nostrSession := NostrSession{
 		SessionID:    SessionID,
-		Participants: []string{localParty},
+		Participants: strings.Split(partyNpubs, ","),
 		TxRequest:    protoMessage.TxRequest,
 		Master:       protoMessage.Master,
 		Status:       "pending",
@@ -1353,7 +1353,7 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 	for i, existingSession := range nostrSessionList {
 		if existingSession.SessionID == protoMessage.SessionID { //Session exists, update it
 			existingSession.Status = protoMessage.FunctionType
-			existingSession.Participants = protoMessage.Participants
+			existingSession.Participants = protoMessage.Recipients
 			existingSession.TxRequest = protoMessage.TxRequest
 			existingSession.Master = protoMessage.Master
 			existingSession.SessionKey = protoMessage.SessionKey
@@ -1368,7 +1368,7 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 		//Session doesn't exist, add it
 		newSession := NostrSession{
 			SessionID:    protoMessage.SessionID,
-			Participants: protoMessage.Participants,
+			Participants: protoMessage.Recipients,
 			TxRequest:    protoMessage.TxRequest,
 			Master:       protoMessage.Master,
 			SessionKey:   protoMessage.SessionKey,

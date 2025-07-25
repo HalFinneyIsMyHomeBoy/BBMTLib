@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
@@ -557,8 +558,9 @@ func main() {
 					// 	fmt.Printf("Failed to parse keyshare: %v\n", err)
 					// 	return
 					// }
-					fmt.Printf("Running NostrSpend for session: %v\n", sessions[0])
-					tss.NostrSpend(nostrRelay, localNpub, localNsec, sessions[0].Participants[0], string(decodedKeyshare), sessions[0].TxRequest, sessions[0].SessionID, sessions[0].SessionKey, "true", "false")
+					partyNpubs := strings.Join(sessions[0].Participants, ",")
+					fmt.Printf("Running NostrSpend for session: %v\n", partyNpubs)
+					tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), sessions[0].TxRequest, sessions[0].SessionID, sessions[0].SessionKey, "true", "false")
 				}
 			}
 			time.Sleep(2 * time.Second)
