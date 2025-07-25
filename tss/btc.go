@@ -410,7 +410,7 @@ func MpcSendBTC(
 				// }
 
 				for _, nostrSession := range nostrSessionList {
-					if nostrSession.Status == "start_keysign" && nostrSession.SessionID == session {
+					if nostrSession.Status == "keysign" && nostrSession.SessionID == session {
 						sigJSON, err = JoinKeysign(server, key, strings.Join(nostrSession.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 						if err != nil {
 							Logf("Current status: %v", nostrSession.Status)
