@@ -561,6 +561,7 @@ func main() {
 					partyNpubs := strings.Join(sessions[0].Participants, ",")
 					fmt.Printf("Running NostrSpend for session: %v\n", partyNpubs)
 					tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), sessions[0].TxRequest, sessions[0].SessionID, sessions[0].SessionKey, "true", "false")
+					select {}
 				}
 			}
 			time.Sleep(2 * time.Second)

@@ -543,6 +543,14 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 	if newSession == "true" {
 		txRequest.Master = Master{MasterPeer: localNpub, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey}
 		initiateNostrHandshake(sessionID, "", sessionKey, localNpub, partyNpubs, "keysign", txRequest)
+		time.Sleep(1 * time.Second)
+		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
+		if err != nil {
+			fmt.Printf("Go Error: %v", err)
+		} else {
+			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+		}
+
 	} else {
 		protoMessage := ProtoMessage{
 			SessionID:       sessionID,
@@ -558,13 +566,13 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 		}
 
 		AckNostrHandshake(protoMessage, localNpub)
-	}
-
-	result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
-	if err != nil {
-		fmt.Printf("Go Error: %v", err)
-	} else {
-		fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+		time.Sleep(1 * time.Second)
+		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
+		if err != nil {
+			fmt.Printf("Go Error: %v", err)
+		} else {
+			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+		}
 	}
 
 	// } else {
