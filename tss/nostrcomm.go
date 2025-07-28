@@ -733,7 +733,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 
 	nostrSession := NostrSession{
 		SessionID:    SessionID,
-		Participants: strings.Split(partyNpubs, ","),
+		Participants: []string{localParty},
 		TxRequest:    protoMessage.TxRequest,
 		Master:       protoMessage.Master,
 		Status:       "pending",
@@ -842,6 +842,11 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 
 	if !contains(nostrSession.Participants, nostrSession.Master.MasterPeer) {
 		nostrSession.Participants = append(nostrSession.Participants, nostrSession.Master.MasterPeer)
+		for i, item := range nostrSessionList {
+			if item.SessionID == nostrSession.SessionID {
+				nostrSessionList[i] = nostrSession
+			}
+		}
 	}
 
 	if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {

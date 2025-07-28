@@ -410,7 +410,7 @@ func MpcSendBTC(
 				// }
 
 				for _, nostrSession := range nostrSessionList {
-					if nostrSession.Status == "keysign" && nostrSession.SessionID == session {
+					if nostrSession.SessionID == session {
 						sigJSON, err = JoinKeysign(server, key, strings.Join(nostrSession.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 						if err != nil {
 							Logf("Current status: %v", nostrSession.Status)
@@ -486,7 +486,7 @@ func MpcSendBTC(
 				// }
 
 				for _, item := range nostrSessionList {
-					if item.Status == "keysign" && item.SessionID == session {
+					if item.SessionID == session {
 						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 						if err != nil {
 							Logf("Current status: %v", item.Status)
@@ -570,7 +570,7 @@ func MpcSendBTC(
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
 	Logln("Raw Transaction:", rawTx)
-
+	select {}
 	txid, err := PostTx(rawTx)
 	if err != nil {
 		Logf("Error broadcasting transaction: %v", err)
