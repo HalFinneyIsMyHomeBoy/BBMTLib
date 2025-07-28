@@ -194,10 +194,10 @@ func main() {
 	if mode == "debugNostrKeygen" {
 
 		nostrRelay := "ws://bbw-nostr.xyz"
-		localNpub := "npub18rkqkh0ppdu2pjc3y6dg2myg9k5nz6e5m8gm7xte9jhxrt35dmeqcxj55x"
-		localNsec := "nsec12p2mh25m5frvncwwmglrrjt3t2mrpctl4x6kpzkl6nr2g5gw806sjhefv6"
+		localNpub := "npub1dez6tr8jl02ympvl5q5uhac6up92e9xy3tad6hazqgc8twslenvscyvq7q"
+		localNsec := "nsec1q9jgu6wmqkswmpxduke6t60vwdaj73v79m0mvm8505y5gqm33ryq4h3k5d"
 		//remote "nsec12p2mh25m5frvncwwmglrrjt3t2mrpctl4x6kpzkl6nr2g5gw806sjhefv6"
-		partyNpubs := "npub18rkqkh0ppdu2pjc3y6dg2myg9k5nz6e5m8gm7xte9jhxrt35dmeqcxj55x,npub13jg6w8gd4zz8zp60sf8t52wp3mwu7kxgvmgkthl82rddgchzstmsn2af7m"
+		partyNpubs := "npub1dez6tr8jl02ympvl5q5uhac6up92e9xy3tad6hazqgc8twslenvscyvq7q,npub19k20weeynfk3fs457qre42vplps83ey6eu3jf607j8tcs2lmnjhs7u7wad,npub1mtq2lla3tzuz4rs8asshp9cwrd2rcu92p0j6dssy7cwsawhdumgqsfy2cz"
 		verbose := "true"
 
 		result, err := tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
@@ -347,10 +347,11 @@ func main() {
 	if mode == "debugNostrSpend" {
 
 		nostrRelay := "ws://bbw-nostr.xyz"
-		localNpub := "npub1aqx7r0mpldgsj6dtj6zdpy9vj2p2weft0lhp7nyu9hd4vtdclj8q4vx6k9"
-		localNsec := "nsec1jk5tfdsx5f905u5qvcn56wk507yyglxjc2ypymeyjgtnpth9htxqzh4z4u"
+		localNpub := "npub1dez6tr8jl02ympvl5q5uhac6up92e9xy3tad6hazqgc8twslenvscyvq7q"
+		localNsec := "nsec1q9jgu6wmqkswmpxduke6t60vwdaj73v79m0mvm8505y5gqm33ryq4h3k5d"
 		//remote "nsec12p2mh25m5frvncwwmglrrjt3t2mrpctl4x6kpzkl6nr2g5gw806sjhefv6"
-		partyNpubs := "npub1aqx7r0mpldgsj6dtj6zdpy9vj2p2weft0lhp7nyu9hd4vtdclj8q4vx6k9,npub1vrt0t6pe3lxvellm60gwuc78g6t9an4etk38krqt25gyp2c6cetqqhpa92,npub102ju8ptw765d2376pp522z93v7cnwylf46w8d5fdw33pwlenxd0s8snk4q"
+		partyNpubs := "npub1dez6tr8jl02ympvl5q5uhac6up92e9xy3tad6hazqgc8twslenvscyvq7q,npub19k20weeynfk3fs457qre42vplps83ey6eu3jf607j8tcs2lmnjhs7u7wad,npub1mtq2lla3tzuz4rs8asshp9cwrd2rcu92p0j6dssy7cwsawhdumgqsfy2cz"
+
 		derivePath := "m/44'/0'/0'/0/0"
 
 		keyshareFile := localNpub + ".ks"

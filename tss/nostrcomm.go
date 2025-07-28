@@ -652,6 +652,7 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 			fmt.Printf("Go Error: %v", err)
 		} else {
 			fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
+			return result, nil
 		}
 
 	} else {
