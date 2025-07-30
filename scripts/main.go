@@ -47,7 +47,7 @@ func main() {
 			return
 		}
 		peerKeys := make(map[string]map[string]string)
-		allPubKeys := make(map[string]string)
+		allPubKeys := make([]string, 0)
 
 		// Generate keys for 3 peers
 		for i := 1; i <= numPeers; i++ {
@@ -79,7 +79,7 @@ func main() {
 				"nsec": nsec,
 				"npub": npub,
 			}
-			allPubKeys[peerName] = npub
+			allPubKeys = append(allPubKeys, npub)
 			fmt.Printf("Successfully generated keys for %s\n", peerName)
 		}
 
@@ -91,9 +91,9 @@ func main() {
 			fmt.Printf("Creating file for %s...\n", peerName)
 
 			nostrConfig := struct {
-				LocalNostrPubKey  string            `json:"local_nostr_pub_key"`
-				LocalNostrPrivKey string            `json:"local_nostr_priv_key"`
-				NostrPartyPubKeys map[string]string `json:"nostr_party_pub_keys"`
+				LocalNostrPubKey  string   `json:"local_nostr_pub_key"`
+				LocalNostrPrivKey string   `json:"local_nostr_priv_key"`
+				NostrPartyPubKeys []string `json:"nostr_party_pub_keys"`
 			}{
 				LocalNostrPubKey:  peerKeys[peerName]["npub"],
 				LocalNostrPrivKey: peerKeys[peerName]["nsec"],
@@ -347,10 +347,10 @@ func main() {
 	if mode == "debugNostrSpend" {
 
 		nostrRelay := "ws://bbw-nostr.xyz"
-		localNpub := "npub1dez6tr8jl02ympvl5q5uhac6up92e9xy3tad6hazqgc8twslenvscyvq7q"
-		localNsec := "nsec1q9jgu6wmqkswmpxduke6t60vwdaj73v79m0mvm8505y5gqm33ryq4h3k5d"
+		localNpub := "npub13mp5ryramhqmu9tt34sy7379k56uajnxsnh5075pg0eg0vzhj2csjz5lkl"
+		localNsec := "nsec19dj6rsdjwqplfys6lpl4sav0r7zjer8egpzfhgsfs4eqk09u4t7sv4kasw"
 		//remote "nsec12p2mh25m5frvncwwmglrrjt3t2mrpctl4x6kpzkl6nr2g5gw806sjhefv6"
-		partyNpubs := "npub1dez6tr8jl02ympvl5q5uhac6up92e9xy3tad6hazqgc8twslenvscyvq7q,npub19k20weeynfk3fs457qre42vplps83ey6eu3jf607j8tcs2lmnjhs7u7wad,npub1mtq2lla3tzuz4rs8asshp9cwrd2rcu92p0j6dssy7cwsawhdumgqsfy2cz"
+		partyNpubs := "npub14gjnhu0d0y9fuy5s7dyt5ewtdyx9kxwkq06cxqefhux4em4l9jfs0sfqkp,npub193tpqncsy8cdcseeqz5pa3lrrnygsneqh4cgf334s5krd2z4d7zsps4j0p,npub13mp5ryramhqmu9tt34sy7379k56uajnxsnh5075pg0eg0vzhj2csjz5lkl"
 
 		derivePath := "m/44'/0'/0'/0/0"
 

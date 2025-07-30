@@ -36,8 +36,10 @@ if [ ! -f "main.go" ]; then
 fi
 
 # Usage: ./nostr_spend.sh peer1 peer2 peer3 ...
+# or: ./nostr_spend.sh npub1abc... npub1def... npub1ghi...
 if [ "$#" -lt 1 ]; then
     print_error "Usage: $0 peer1 [peer2 ...]"
+    print_error "   or: $0 npub1abc... [npub1def... ...]"
     exit 1
 fi
 
@@ -45,15 +47,30 @@ peers=("$@")
 
 # Validate required files for each peer
 for peer in "${peers[@]}"; do
-    if [ ! -f "$peer.nostr" ]; then
-        print_error "$peer.nostr file not found. Please generate Nostr keys for $peer."
-        exit 1
+    # Check if the peer argument is already an npub (starts with npub)
+    if [[ "$peer" == npub* ]]; then
+        # It's already an npub, use it directly
+        if [ ! -f "$peer.nostr" ]; then
+            print_error "$peer.nostr file not found. Please generate Nostr keys for $peer."
+            exit 1
+        fi
+        if [ ! -f "$peer.ks" ]; then
+            print_error "$peer.ks file not found. You need to run keygen for $peer."
+            exit 1
+        fi
+        print_success "Found required files for $peer"
+    else
+        # It's a peer name, check for .nostr and .ks files
+        if [ ! -f "$peer.nostr" ]; then
+            print_error "$peer.nostr file not found. Please generate Nostr keys for $peer."
+            exit 1
+        fi
+        if [ ! -f "$peer.ks" ]; then
+            print_error "$peer.ks file not found. You need to run keygen for $peer."
+            exit 1
+        fi
+        print_success "Found required files for $peer"
     fi
-    if [ ! -f "$peer.ks" ]; then
-        print_error "$peer.ks file not found. You need to run keygen for $peer."
-        exit 1
-    fi
-    print_success "Found required files for $peer"
 done
 
 # Build the Go application
@@ -75,8 +92,45 @@ fi
 print_success "Application built successfully"
 
 # Default values for arguments
-parties="${peers[*]}"
-parties="${parties// /,}"
+# Extract ALL Nostr public keys from .nostr files
+nostr_pub_keys=()
+for peer in "${peers[@]}"; do
+    if command -v jq &> /dev/null; then
+        # Extract all party public keys from the .nostr file
+        # First, get the local_nostr_pub_key
+        local_npub=$(jq -r '.local_nostr_pub_key' "$peer.nostr" 2>/dev/null)
+        if [ "$local_npub" != "null" ] && [ -n "$local_npub" ]; then
+            nostr_pub_keys+=("$local_npub")
+            print_status "Extracted local npub for $peer: $local_npub"
+        else
+            print_error "Failed to extract local npub from $peer.nostr"
+            exit 1
+        fi
+        
+        # Extract all party public keys from nostr_party_pub_keys
+        # Handle both map and array formats
+        party_keys=$(jq -r '.nostr_party_pub_keys | if type == "object" then to_entries | .[].value else .[] end' "$peer.nostr" 2>/dev/null)
+        if [ $? -eq 0 ] && [ -n "$party_keys" ]; then
+            while IFS= read -r npub; do
+                if [ -n "$npub" ] && [ "$npub" != "null" ]; then
+                    # Check if this npub is already in our list
+                    if [[ ! " ${nostr_pub_keys[@]} " =~ " ${npub} " ]]; then
+                        nostr_pub_keys+=("$npub")
+                        print_status "Extracted party npub: $npub"
+                    fi
+                fi
+            done <<< "$party_keys"
+        else
+            print_warning "No party public keys found in $peer.nostr"
+        fi
+    else
+        print_error "jq is required to parse .nostr files. Please install jq."
+        exit 1
+    fi
+done
+
+# Join the npub values with commas
+parties=$(IFS=','; echo "${nostr_pub_keys[*]}")
 derivePath="m/44'/0'/0'/0/0"
 receiverAddress="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
 amountSatoshi="1000"
@@ -100,7 +154,17 @@ for peer in "${peers[@]}"; do
 done
 
 # Trap to kill all background processes on exit
-trap "echo 'Stopping nostrSendBTC processes...'; kill ${PIDS[@]} 2>/dev/null; exit" SIGINT SIGTERM
+cleanup() {
+    echo 'Stopping nostrSendBTC processes...'
+    for pid in "${PIDS[@]}"; do
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null
+        fi
+    done
+    exit
+}
+
+trap cleanup SIGINT SIGTERM
 
 echo "nostrSendBTC processes running for peers: ${peers[*]}. Press Ctrl+C to stop."
 

@@ -1,0 +1,9 @@
+{
+  "local_nostr_pub_key": "npub1mm6lpc6v8ax85667l0wf2tw7dzpvlueumycscpqzf3v563xlq3xqtuuaml",
+  "local_nostr_priv_key": "nsec1f5m64n0vv8xqy9x7c5tyfcxg0uczp59k9e8z0m00wv26dvfd73asutvkrx",
+  "nostr_party_pub_keys": {
+    "peer1": "npub1mm6lpc6v8ax85667l0wf2tw7dzpvlueumycscpqzf3v563xlq3xqtuuaml",
+    "peer2": "npub1ggzd9yeay0nh9xtnx7k4y4hww36877slugc7qll4hes9q8pkadusanzcw2",
+    "peer3": "npub1u97jdgd0sdekut8plze0923hartke6qmmx8xct3jljzkltfgq4mst3k99r"
+  }
+}
