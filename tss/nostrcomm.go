@@ -521,8 +521,10 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequest TxRequest, sessionID, sessionKey, verbose, newSession string) (string, error) {
 
 	// all parties should already be listening
-	go NostrListen(localNpub, localNsec, relay)
-	time.Sleep(2 * time.Second)
+	if newSession == "true" {
+		go NostrListen(localNpub, localNsec, relay)
+		time.Sleep(2 * time.Second)
+	}
 
 	//master is whoever first initiates the spend request
 
@@ -749,7 +751,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
 	nostrSend(protoMessage)
 	//==============================COLLECT ACK_HANDSHAKES==============================
-
+	time.Sleep(3 * time.Second)
 	partyCount := len(globalLocalNostrKeys.NostrPartyPubKeys)
 	retryCount := 0
 	maxRetries := KeysignApprovalMaxRetries
@@ -769,7 +771,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 				} else {
 					participantCount := len(item.Participants)
 					participationRatio := float64(participantCount) / float64(partyCount)
-
+					//time.Sleep(3 * time.Second)
 					if participationRatio >= 0.66 {
 						Logf("Enough participants have approved, sending %s for session: %s", functionType, SessionID)
 						if item.Status == "pending" {
@@ -783,7 +785,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 						if retryCount >= maxRetries {
 
 							participationRatio := float64(participantCount) / float64(partyCount)
-
+							//time.Sleep(3 * time.Second)
 							if participationRatio >= 0.66 {
 
 								Logf("We have 2/3 of participants approved, sending %s for session: %s", functionType, SessionID)

@@ -347,11 +347,10 @@ func main() {
 	if mode == "debugNostrSpend" {
 
 		nostrRelay := "ws://bbw-nostr.xyz"
-		localNpub := "npub1dez6tr8jl02ympvl5q5uhac6up92e9xy3tad6hazqgc8twslenvscyvq7q"
-		localNsec := "nsec1q9jgu6wmqkswmpxduke6t60vwdaj73v79m0mvm8505y5gqm33ryq4h3k5d"
-		//remote "nsec12p2mh25m5frvncwwmglrrjt3t2mrpctl4x6kpzkl6nr2g5gw806sjhefv6"
-		partyNpubs := "npub1dez6tr8jl02ympvl5q5uhac6up92e9xy3tad6hazqgc8twslenvscyvq7q,npub19k20weeynfk3fs457qre42vplps83ey6eu3jf607j8tcs2lmnjhs7u7wad,npub1mtq2lla3tzuz4rs8asshp9cwrd2rcu92p0j6dssy7cwsawhdumgqsfy2cz"
+		localNpub := "npub1amd0ktrnmwmqxlddj4046zraxcw9wdk3twpqw4h28wwx9m88sg7qhdz0zh"
+		localNsec := "nsec1dp804sww8v0m02j0cpsfrzdfsfwr9cdrh6l4y2yq0e7fa6xvz2sqr4qt26"
 
+		partyNpubs := "npub1tx3ygzc0lqus4pmajplnens0dctahntuauqeyn23rgncmd0ekvqq452kdd,npub1amd0ktrnmwmqxlddj4046zraxcw9wdk3twpqw4h28wwx9m88sg7qhdz0zh,npub1stcpsz6n60ujwj2jdrlwep2hf295wkruxk7txanlp3nggtqdxdrsluacxk"
 		derivePath := "m/44'/0'/0'/0/0"
 
 		keyshareFile := localNpub + ".ks"
@@ -497,7 +496,7 @@ func main() {
 		sessionKey := randomSeed(64)
 
 		// Use nostrSpend function
-		result, err := tss.NostrSpend(nostrRelay, localNostrKeys.LocalNostrPrivKey, localNostrKeys.LocalNostrPubKey, parties, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "true")
+		result, err := tss.NostrSpend(nostrRelay, localNostrKeys.LocalNostrPubKey, localNostrKeys.LocalNostrPrivKey, parties, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "true")
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
@@ -565,7 +564,7 @@ func main() {
 					select {}
 				}
 			}
-			time.Sleep(2 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 
 		}
 		select {}

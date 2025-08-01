@@ -1,0 +1,25 @@
+
+----------FAILS EVERYTIME---------------------------
+./nostr_run_peers.sh npub1stcpsz6n60ujwj2jdrlwep2hf295wkruxk7txanlp3nggtqdxdrsluacxk npub1tx3ygzc0lqus4pmajplnens0dctahntuauqeyn23rgncmd0ekvqq452kdd
+
+		localNpub := "npub1amd0ktrnmwmqxlddj4046zraxcw9wdk3twpqw4h28wwx9m88sg7qhdz0zh"
+		localNsec := "nsec1dp804sww8v0m02j0cpsfrzdfsfwr9cdrh6l4y2yq0e7fa6xvz2sqr4qt26"
+
+		
+		partyNpubs := "npub1tx3ygzc0lqus4pmajplnens0dctahntuauqeyn23rgncmd0ekvqq452kdd,npub1amd0ktrnmwmqxlddj4046zraxcw9wdk3twpqw4h28wwx9m88sg7qhdz0zh,npub1stcpsz6n60ujwj2jdrlwep2hf295wkruxk7txanlp3nggtqdxdrsluacxk"
+----------------------------------------------------------
+
+
+
+
+Ran tool
+Based on the comparison of the three pubkeys, **peer1** has the largest pubkey.
+
+The three pubkeys in order from smallest to largest are:
+
+1. **peer2**: `npub1amd0ktrnmwmqxlddj4046zraxcw9wdk3twpqw4h28wwx9m88sg7qhdz0zh`
+2. **peer3**: `npub1stcpsz6n60ujwj2jdrlwep2hf295wkruxk7txanlp3nggtqdxdrsluacxk`
+3. **peer1**: `npub1tx3ygzc0lqus4pmajplnens0dctahntuauqeyn23rgncmd0ekvqq452kdd` ← **Largest**
+
+So **peer1** has the largest pubkey among the three.
+
