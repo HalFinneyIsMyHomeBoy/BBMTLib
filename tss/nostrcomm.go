@@ -28,7 +28,7 @@ var (
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
 	globalCtx, _              = context.WithCancel(context.Background())
-	KeysignApprovalTimeout    = 4 * time.Second
+	KeysignApprovalTimeout    = 2 * time.Second
 	KeysignApprovalMaxRetries = 30
 	nostrMutex                sync.Mutex
 	chunkCache                = cache.New(5*time.Minute, 10*time.Minute)
@@ -546,12 +546,7 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 		txRequest.Master = Master{MasterPeer: localNpub, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey}
 		initiateNostrHandshake(sessionID, "", sessionKey, localNpub, partyNpubs, "keysign", txRequest)
 		time.Sleep(1 * time.Second)
-		for _, item := range nostrSessionList {
-			time.Sleep(2 * time.Second)
-			itemJSON, _ := json.MarshalIndent(item, "", "    ")
-			Logf("Session:\n%s", string(itemJSON))
-		}
-		Logf("------SESSION KEY-------------------: %s", sessionKey)
+
 		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
 		if err != nil {
 			fmt.Printf("Go Error: %v", err)
@@ -561,7 +556,6 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 
 	} else {
 
-		Logf("------SESSION KEY-------------------: %s", sessionKey)
 		protoMessage := ProtoMessage{
 			SessionID:       sessionID,
 			ChainCode:       "",
@@ -569,59 +563,34 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 			FunctionType:    "ack_handshake",
 			From:            localNpub,
 			FromNostrPubKey: localNpub,
-			Recipients:      []string{globalLocalNostrKeys.LocalNostrPubKey},
+			Recipients:      []string{txRequest.Master.MasterPubKey},
 			Participants:    []string{localNpub},
 			TxRequest:       txRequest,
 			Master:          txRequest.Master,
 		}
 
 		AckNostrHandshake(protoMessage, localNpub)
-		time.Sleep(1 * time.Second)
-		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
-		if err != nil {
-			fmt.Printf("Go Error: %v", err)
-		} else {
-			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+
+		//time.Sleep(3 * time.Second)   ////THIS WAS THE WHOLE FUCKING PROBLEM, THE ENTIRE DAMN TIME. AFTER ALL THAT WORK....A RACE CONDITION
+		for i := 0; i < 60; i++ {
+			for _, item := range nostrSessionList {
+				if item.SessionID == sessionID {
+					Logf("Session status: %s", item.Status)
+					if item.Status == "keysign" {
+						result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
+						if err != nil {
+							fmt.Printf("Go Error: %v", err)
+						} else {
+							fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+						}
+					} else {
+						Logf("Waiting for master to start session")
+					}
+				}
+				time.Sleep(1 * time.Second)
+			}
 		}
 	}
-
-	// } else {
-	// 	//If we are not the master, we need to join the keygen
-
-	// 	//Set the globalLocalNostrKeys
-	// 	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
-	// 	globalLocalNostrKeys.LocalNostrPrivKey = localNsec
-	// 	globalLocalNostrKeys.LocalNostrPubKey = localNpub
-
-	// 	sessions, err := WaitForSessions()
-	// 	if err != nil {
-	// 		return "", fmt.Errorf("error getting sessions: %v", err)
-	// 	} else {
-
-	// 		protoMessage := ProtoMessage{
-	// 			SessionID:       sessions[0].SessionID,
-	// 			ChainCode:       sessions[0].ChainCode,
-	// 			SessionKey:      sessions[0].SessionKey,
-	// 			TxRequest:       sessions[0].TxRequest,
-	// 			Master:          sessions[0].Master,
-	// 			FunctionType:    "ack_handshake",
-	// 			From:            localNpub,
-	// 			FromNostrPubKey: localNpub,
-	// 			Recipients:      []string{sessions[0].Master.MasterPubKey},
-	// 			Participants:    []string{localNpub},
-	// 		}
-	// 		AckNostrHandshake(protoMessage, localNpub)
-
-	// 		Logf("Joining Keysign for session: %s", sessions[0].SessionID)
-
-	// 		result, err := MpcSendBTC("", localNpub, partyNpubs, sessions[0].SessionID, sessions[0].SessionKey, "", "", string(keyShareJSON), txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr", "false")
-	// 		if err != nil {
-	// 			fmt.Printf("Go Error: %v", err)
-	// 		} else {
-	// 			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
-	// 		}
-	// 	}
-	// }
 
 	return "", nil
 
@@ -759,7 +728,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
 	nostrSend(protoMessage)
 	//==============================COLLECT ACK_HANDSHAKES==============================
-	time.Sleep(3 * time.Second)
+	//time.Sleep(3 * time.Second)
 	partyCount := len(globalLocalNostrKeys.NostrPartyPubKeys)
 	retryCount := 0
 	maxRetries := KeysignApprovalMaxRetries
@@ -845,7 +814,7 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 
 	nostrSession := NostrSession{
 		SessionID:    protoMessage.SessionID,
-		Participants: []string{localParty},
+		Participants: protoMessage.Participants,
 		TxRequest:    protoMessage.TxRequest,
 		Master:       protoMessage.Master,
 		Status:       protoMessage.FunctionType,
@@ -872,12 +841,13 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 		SessionKey:      nostrSession.SessionKey,
 		FunctionType:    "ack_handshake",
 		From:            localParty,
-		FromNostrPubKey: nostrSession.Master.MasterPubKey,
+		FromNostrPubKey: localParty,
 		Recipients:      []string{nostrSession.Master.MasterPeer},
-		Participants:    []string{localParty},
+		Participants:    nostrSession.Participants,
 		TxRequest:       nostrSession.TxRequest,
 		Master:          nostrSession.Master,
 	}
+
 	nostrSend(ackProtoMessage)
 
 }
