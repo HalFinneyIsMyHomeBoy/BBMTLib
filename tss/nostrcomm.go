@@ -458,7 +458,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		}
 	}
 
-	if protoMessage.FunctionType == "start_keysign" && protoMessage.MessageType != "message" {
+	if protoMessage.FunctionType == "keysign" && protoMessage.MessageType != "message" {
 		Logf("start_keysign received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		AddOrAppendNostrSession(protoMessage)
 	}
@@ -469,7 +469,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 	}
 
 	if protoMessage.MessageType == "message" {
-		Logf("message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+		//Logf("message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		key := protoMessage.MessageType + "-" + protoMessage.SessionID
 		nostrMutex.Lock()
 		nostrSetData(key, &protoMessage)
@@ -546,6 +546,12 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 		txRequest.Master = Master{MasterPeer: localNpub, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey}
 		initiateNostrHandshake(sessionID, "", sessionKey, localNpub, partyNpubs, "keysign", txRequest)
 		time.Sleep(1 * time.Second)
+		for _, item := range nostrSessionList {
+			time.Sleep(2 * time.Second)
+			itemJSON, _ := json.MarshalIndent(item, "", "    ")
+			Logf("Session:\n%s", string(itemJSON))
+		}
+		Logf("------SESSION KEY-------------------: %s", sessionKey)
 		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
 		if err != nil {
 			fmt.Printf("Go Error: %v", err)
@@ -554,6 +560,8 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 		}
 
 	} else {
+
+		Logf("------SESSION KEY-------------------: %s", sessionKey)
 		protoMessage := ProtoMessage{
 			SessionID:       sessionID,
 			ChainCode:       "",
@@ -767,6 +775,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 						Logf("All participants have approved, sending %s for session: %s", functionType, SessionID)
 						sessionReady = true
 						startSessionMaster(SessionID, item.Participants, localParty, functionType)
+						break
 					}
 				} else {
 					participantCount := len(item.Participants)
@@ -777,6 +786,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 						if item.Status == "pending" {
 							sessionReady = true
 							startSessionMaster(SessionID, item.Participants, localParty, functionType)
+							break
 						} else {
 							return false, fmt.Errorf("session not ready")
 						}
@@ -791,6 +801,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 								Logf("We have 2/3 of participants approved, sending %s for session: %s", functionType, SessionID)
 								sessionReady = true
 								startSessionMaster(SessionID, item.Participants, localParty, functionType)
+								break
 							} else {
 								Logf("Max retries reached, giving up on session: %s", SessionID)
 								return false, fmt.Errorf("max retries reached")
@@ -1370,7 +1381,7 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 	for i, existingSession := range nostrSessionList {
 		if existingSession.SessionID == protoMessage.SessionID { //Session exists, update it
 			existingSession.Status = protoMessage.FunctionType
-			existingSession.Participants = protoMessage.Recipients
+			existingSession.Participants = protoMessage.Participants
 			existingSession.TxRequest = protoMessage.TxRequest
 			existingSession.Master = protoMessage.Master
 			existingSession.SessionKey = protoMessage.SessionKey

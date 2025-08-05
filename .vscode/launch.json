@@ -10,7 +10,7 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/scripts/main.go",
-            "args": ["MPCSentBTC"],
+            "args": ["debugNostrSpend"],
             "buildFlags": "-v"
         },
         {
@@ -19,7 +19,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "args": ["MPCSentBTC"],
+            "args": ["debugNostrSpend"],
             "buildFlags": "-v"
         }
     ]

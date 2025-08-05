@@ -347,10 +347,10 @@ func main() {
 	if mode == "debugNostrSpend" {
 
 		nostrRelay := "ws://bbw-nostr.xyz"
-		localNpub := "npub1amd0ktrnmwmqxlddj4046zraxcw9wdk3twpqw4h28wwx9m88sg7qhdz0zh"
-		localNsec := "nsec1dp804sww8v0m02j0cpsfrzdfsfwr9cdrh6l4y2yq0e7fa6xvz2sqr4qt26"
+		localNpub := "npub1cth3ap55m833fp57h6t7yfs32dq59ehqsm8dfvj6q74x5xumh6ksjlz7pz"
+		localNsec := "nsec1354cvkfja502qhnkggxf40l33xum4sskfzdn4mmut2zm00mjp7mqkmhnpd"
 
-		partyNpubs := "npub1tx3ygzc0lqus4pmajplnens0dctahntuauqeyn23rgncmd0ekvqq452kdd,npub1amd0ktrnmwmqxlddj4046zraxcw9wdk3twpqw4h28wwx9m88sg7qhdz0zh,npub1stcpsz6n60ujwj2jdrlwep2hf295wkruxk7txanlp3nggtqdxdrsluacxk"
+		partyNpubs := "npub1cth3ap55m833fp57h6t7yfs32dq59ehqsm8dfvj6q74x5xumh6ksjlz7pz,npub1v7flccr3ak4p8ewmalrs0luddphsf0chane9pf36w53pa7rjcn9qhevzrq,npub1eqzf897u88chm9yy67geyxtlp38e6s2rvyw8ejcz0fa0rw5qjwhq4rmaet"
 		derivePath := "m/44'/0'/0'/0/0"
 
 		keyshareFile := localNpub + ".ks"
@@ -606,11 +606,33 @@ func GetNostrKeys(party string) (tss.NostrKeys, error) {
 	data, err := os.ReadFile(party + ".nostr")
 	if err != nil {
 		fmt.Printf("Go Error GetNostrKeys: %v\n", err)
+		return tss.NostrKeys{}, err
 	}
 
-	var nostrKeys tss.NostrKeys
-	if err := json.Unmarshal(data, &nostrKeys); err != nil {
-		fmt.Printf("Go Error Unmarshalling LocalState: %v\n", err)
+	// Create a temporary struct that matches the actual JSON structure
+	type tempNostrKeys struct {
+		LocalNostrPubKey  string            `json:"local_nostr_pub_key"`
+		LocalNostrPrivKey string            `json:"local_nostr_priv_key"`
+		NostrPartyPubKeys map[string]string `json:"nostr_party_pub_keys"`
+	}
+
+	var tempKeys tempNostrKeys
+	if err := json.Unmarshal(data, &tempKeys); err != nil {
+		fmt.Printf("Go Error Unmarshalling tempNostrKeys: %v\n", err)
+		return tss.NostrKeys{}, err
+	}
+
+	// Convert the map values to a slice of strings
+	var partyPubKeys []string
+	for _, value := range tempKeys.NostrPartyPubKeys {
+		partyPubKeys = append(partyPubKeys, value)
+	}
+
+	// Create the proper NostrKeys struct
+	nostrKeys := tss.NostrKeys{
+		LocalNostrPubKey:  tempKeys.LocalNostrPubKey,
+		LocalNostrPrivKey: tempKeys.LocalNostrPrivKey,
+		NostrPartyPubKeys: partyPubKeys,
 	}
 
 	return nostrKeys, nil

@@ -413,7 +413,8 @@ func MpcSendBTC(
 					if nostrSession.SessionID == session {
 						sigJSON, err = JoinKeysign(server, key, strings.Join(nostrSession.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 						if err != nil {
-							Logf("Current status: %v", nostrSession.Status)
+							Logf("Current status1: %v", nostrSession.Status)
+							Logf("session: %v", session)
 							return "", fmt.Errorf("failed to sign transaction: signature is empty")
 						}
 						time.Sleep(1 * time.Second)
@@ -489,7 +490,7 @@ func MpcSendBTC(
 					if item.SessionID == session {
 						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 						if err != nil {
-							Logf("Current status: %v", item.Status)
+							Logf("Current status2: %v", item.Status)
 							return "", fmt.Errorf("failed to sign transaction: signature is empty")
 						}
 						time.Sleep(1 * time.Second)
