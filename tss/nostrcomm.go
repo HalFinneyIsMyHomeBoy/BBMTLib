@@ -27,8 +27,8 @@ var (
 	nostrPingList             []ProtoMessage
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
-	globalCtx, _              = context.WithCancel(context.Background())
-	KeysignApprovalTimeout    = 2 * time.Second
+	globalCtx, _              = context.WithTimeout(context.Background(), 5*time.Minute) // 5 minute timeout for global operations
+	KeysignApprovalTimeout    = 5 * time.Second                                          // Increased from 2 seconds for better handling of slow connections
 	KeysignApprovalMaxRetries = 30
 	nostrMutex                sync.Mutex
 	chunkCache                = cache.New(5*time.Minute, 10*time.Minute)
@@ -38,6 +38,15 @@ var (
 	globalLocalNostrKeys      NostrKeys
 	globalLocalTesting        bool
 	nostrListenCancel         context.CancelFunc
+	// Timeout configurations for better handling of bad internet connections
+	NostrConnectTimeout   = 60 * time.Second  // Extended timeout for relay connection
+	NostrPublishTimeout   = 120 * time.Second // Extended timeout for publishing events
+	NostrSubscribeTimeout = 60 * time.Second  // Extended timeout for subscription operations
+	NostrRetryInterval    = 15 * time.Second  // Extended base retry interval
+	NostrMaxBackoff       = 5 * time.Minute   // Extended maximum backoff for retries
+	// Additional timeout configurations
+	NostrHandshakeTimeout = 60 * time.Second // Extended timeout for handshake operations
+	NostrMessageTimeout   = 90 * time.Second // Extended timeout for message processing
 )
 
 type ProtoMessage struct {
@@ -276,8 +285,7 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 		return
 	}
 
-	retryInterval := 10 * time.Second
-	backoff := retryInterval
+	backoff := NostrRetryInterval
 
 	for {
 		// Check if we should stop
@@ -287,24 +295,25 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 			return
 		default:
 		}
-		// Create a new context for this connection attempt
-		ctxLoop, cancelLoop := context.WithCancel(ctx)
 
-		// Connect to relay
+		// Create a new context with extended timeout for this connection attempt
+		ctxLoop, cancelLoop := context.WithTimeout(ctx, NostrConnectTimeout)
+
+		// Connect to relay with extended timeout
 		relay, err = nostr.RelayConnect(ctxLoop, nostrRelay)
 		if err != nil {
 			log.Printf("Connection failed: %v, retrying in %v...\n", err, backoff)
 			cancelLoop()
 			time.Sleep(backoff)
-			// Exponential backoff with max of 30 seconds
-			backoff = time.Duration(math.Min(float64(backoff*2), 30)) * time.Second
+			// Exponential backoff with max of NostrMaxBackoff
+			backoff = time.Duration(math.Min(float64(backoff*2), float64(NostrMaxBackoff)))
 			continue
 		}
 
 		// Reset backoff on successful connection
-		backoff = retryInterval
+		backoff = NostrRetryInterval
 
-		since := nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
+		since := nostr.Timestamp(time.Now().Add(-30 * time.Second).Unix())
 
 		filters := []nostr.Filter{{
 			Kinds: []int{1059}, // Subscribe to NIP-44 messages
@@ -312,9 +321,12 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 			Since: &since,
 		}}
 
-		sub, err := relay.Subscribe(ctxLoop, filters)
+		// Create subscription context with extended timeout
+		subCtx, subCancel := context.WithTimeout(ctx, NostrSubscribeTimeout)
+		sub, err := relay.Subscribe(subCtx, filters)
 		if err != nil {
 			log.Printf("Subscription failed: %v, retrying in %v...\n", err, backoff)
+			subCancel()
 			cancelLoop()
 			time.Sleep(backoff)
 			continue
@@ -353,6 +365,7 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 
 		// Wait for reconnect signal
 		<-reconnect
+		subCancel()
 		cancelLoop()
 
 		// Clean up the subscription
@@ -676,9 +689,9 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 	return "", nil
 }
 
-// WaitForSessions polls GetSessions() every second for up to 2 minutes until it returns a non-empty result
+// WaitForSessions polls GetSessions() every second for up to 5 minutes until it returns a non-empty result
 func WaitForSessions() ([]NostrSession, error) {
-	for i := 0; i < 120; i++ { // 2 minutes = 120 seconds
+	for i := 0; i < 300; i++ { // 5 minutes = 300 seconds (increased from 2 minutes)
 		sessions, err := GetSessions()
 		if err != nil {
 			return nil, err
@@ -687,9 +700,9 @@ func WaitForSessions() ([]NostrSession, error) {
 			return sessions, nil
 		}
 		time.Sleep(1 * time.Second)
-		Logf("Waiting for sessions...")
+		Logf("Waiting for sessions... (attempt %d/300)", i+1)
 	}
-	return nil, fmt.Errorf("timeout waiting for sessions")
+	return nil, fmt.Errorf("timeout waiting for sessions after 5 minutes")
 }
 
 func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyNpubs, functionType string, txRequest TxRequest) (bool, error) {
@@ -728,7 +741,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
 	nostrSend(protoMessage)
 	//==============================COLLECT ACK_HANDSHAKES==============================
-	//time.Sleep(3 * time.Second)
+	time.Sleep(5 * time.Second)
 	partyCount := len(globalLocalNostrKeys.NostrPartyPubKeys)
 	retryCount := 0
 	maxRetries := KeysignApprovalMaxRetries
@@ -1026,9 +1039,8 @@ func nostrSend(protoMessage ProtoMessage) error {
 					return fmt.Errorf("failed to create wrap: %w", err)
 				}
 
-				// Publish chunk
-				err = relay.Publish(globalCtx, *event)
-				if err != nil {
+				// Publish chunk with timeout and retry logic
+				if err := publishWithRetry(event, fmt.Sprintf("chunk %d", i)); err != nil {
 					log.Printf("Error publishing chunk %d: %v", i, err)
 					return err
 				}
@@ -1068,14 +1080,41 @@ func nostrSend(protoMessage ProtoMessage) error {
 		if event == nil {
 			return fmt.Errorf("failed to create event")
 		}
-		err = relay.Publish(globalCtx, *event)
 
-		if err != nil {
+		// Publish event with timeout and retry logic
+		if err := publishWithRetry(event, "event"); err != nil {
 			log.Printf("Error publishing event: %v", err)
 			return err
 		}
 	}
 	return nil
+}
+
+// publishWithRetry publishes an event with timeout and retry logic
+func publishWithRetry(event *nostr.Event, eventType string) error {
+	maxRetries := 3
+	backoff := 1 * time.Second
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// Create context with timeout for publishing
+		ctx, cancel := createTimeoutContext(NostrPublishTimeout)
+
+		err := relay.Publish(ctx, *event)
+		cancel()
+
+		if err == nil {
+			return nil // Success
+		}
+
+		log.Printf("Publish attempt %d failed for %s: %v", attempt+1, eventType, err)
+
+		if attempt < maxRetries-1 {
+			time.Sleep(backoff)
+			backoff *= 2 // Exponential backoff
+		}
+	}
+
+	return fmt.Errorf("failed to publish %s after %d attempts", eventType, maxRetries)
 }
 
 func nostrGetData(key string) (interface{}, bool) {
@@ -1416,4 +1455,9 @@ func GetLexicographicallyFirstNpub(npubs []string) string {
 
 	// Return the first one (which will be lexicographically first)
 	return npubs[0]
+}
+
+// createTimeoutContext creates a new context with the specified timeout
+func createTimeoutContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), timeout)
 }
