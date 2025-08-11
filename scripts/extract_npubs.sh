@@ -14,52 +14,56 @@ echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go
 
 
-        # Find the first .nostr file
-        nostr_file=$(find . -name "*.nostr" -type f | head -n 1)
+# Find the first .nostr file
+nostr_file=$(find . -name "*.nostr" -type f | head -n 1)
 
-        if [ -z "$nostr_file" ]; then
-            echo "No .nostr file found in current directory or subdirectories"
-            exit 1
-        fi
+if [ -z "$nostr_file" ]; then
+    echo "No .nostr file found in current directory or subdirectories"
+    exit 1
+fi
 
-        echo "Found .nostr file: $nostr_file"
+echo "Found .nostr file: $nostr_file"
 
-        # Extract all npubs from nostr_party_pub_keys using jq
-        # This gets all values from the nostr_party_pub_keys object and joins them with commas
-        npubs=$(jq -r '.nostr_party_pub_keys | to_entries | map(.value) | join(",")' "$nostr_file")
-        echo "npubs: $npubs"
-        if [ $? -eq 0 ] && [ -n "$npubs" ]; then
-            echo "Extracted npubs:"
-            echo "$npubs"
-        else
-            echo "Failed to extract npubs from $nostr_file"
-            echo "Make sure the file contains a valid JSON with 'nostr_party_pub_keys' field"
-            exit 1
-        fi 
+# Extract all npubs from nostr_party_pub_keys using jq
+# This gets all values from the nostr_party_pub_keys object and joins them with commas
+npubs=$(jq -r '.nostr_party_pub_keys | to_entries | map(.value) | join(",")' "$nostr_file")
+echo "npubs: $npubs"
+if [ $? -eq 0 ] && [ -n "$npubs" ]; then
+    echo "Extracted npubs:"
+    echo "$npubs"
+else
+    echo "Failed to extract npubs from $nostr_file"
+    echo "Make sure the file contains a valid JSON with 'nostr_party_pub_keys' field"
+    exit 1
+fi 
 
-        # Get the local party's npub and nsec
-        local_npub=$(jq -r '.local_nostr_pub_key' "$nostr_file")
-        local_nsec=$(jq -r '.local_nostr_priv_key' "$nostr_file")
+# Get the local party's npub and nsec
+local_npub=$(jq -r '.local_nostr_pub_key' "$nostr_file")
+local_nsec=$(jq -r '.local_nostr_priv_key' "$nostr_file")
 
-        if [ -z "$local_npub" ] || [ "$local_npub" = "null" ] || [ -z "$local_nsec" ] || [ "$local_nsec" = "null" ]; then
-            echo "Failed to extract local party keys from $nostr_file"
-            echo "local_npub: '$local_npub'"
-            echo "local_nsec: '$local_nsec'"
-            exit 1
-        fi
+if [ -z "$local_npub" ] || [ "$local_npub" = "null" ] || [ -z "$local_nsec" ] || [ "$local_nsec" = "null" ]; then
+    echo "Failed to extract local party keys from $nostr_file"
+    echo "local_npub: '$local_npub'"
+    echo "local_nsec: '$local_nsec'"
+    exit 1
+fi
 
-        echo "Local party npub: $local_npub"
-        echo "Local party nsec: $local_nsec"
+echo "Local party npub: $local_npub"
+echo "Local party nsec: $local_nsec"
 
-        # Convert comma-separated string to array
-        IFS=',' read -ra NPUBS <<< "$npubs"
+echo "----------------------------------------"
+echo "npubs: $npubs"
+echo "----------------------------------------"
+
+# Convert comma-separated string to array
+IFS=',' read -ra NPUBS <<< "$npubs"
 
 # Get other required arguments
 derivePath="m/44'/0'/0'/0/0"
 receiverAddress="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
 amountSatoshi="1000"
 estimatedFee="600"
-nostrRelay="http://100.85.175.113"
+nostrRelay="ws://bbw-nostr.xyz"
 
 # Generate session parameters once for all processes
 sessionID=$("$BUILD_DIR/$BIN_NAME" random)
@@ -68,8 +72,19 @@ sessionKey=$("$BUILD_DIR/$BIN_NAME" random)
 echo "Generated session ID: $sessionID"
 echo "Generated session key: $sessionKey"
 echo 
+
+# Initialize array to store PIDs
+declare -a PIDS=()
+# Initialize counter
+i=0
+masterNpub=""
 # Loop through each npub (each party)
-for npub in "${NPUBS[@]}"; do
+for i in "${!NPUBS[@]}"; do
+    npub="${NPUBS[$i]}"
+    if [ $i -eq 0 ]; then
+        masterNpub="$npub"
+    fi
+    echo "----------------------------------------"
     echo "Processing party with npub: $npub"
     
     # Find the .nostr file for this specific npub
@@ -98,8 +113,12 @@ for npub in "${NPUBS[@]}"; do
     
     # For each party, we'll use their own npub and nsec from their .nostr file
     # The npubs parameter should contain all party public keys
-    echo "Calling nostrSpend for party: $npub"
-    echo "Using nsec: $nsec"
+    echo "----------------------------------------"
+    echo "PID: $i"
+    echo "----------------------------------------"
+    
+    echo "npub: $npub"
+    echo "nsec: $nsec"
     echo "All party npubs: $npubs"
     echo "nostrRelay: $nostrRelay"
     echo "sessionID: $sessionID"
@@ -107,15 +126,28 @@ for npub in "${NPUBS[@]}"; do
     echo "receiverAddress: $receiverAddress"
     echo "derivePath: $derivePath"
     echo "----------------------------------------"
-    
-    go run main.go nostrSpend "$npub" "$nsec" "$npubs" "$nostrRelay" "$sessionID" "$sessionKey" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee"
-    sleep 3
-    
-    if [ $? -eq 0 ]; then
-        echo "Successfully processed party: $npub"
-    else
-        echo "Failed to process party: $npub"
-    fi
+    echo "----------------------------------------"
+        echo "----------------------------------------"
+    "$BUILD_DIR/$BIN_NAME" nostrSpend "$npub" "$nsec" "$npubs" "$nostrRelay" "$sessionID" "$sessionKey" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$i" "$masterNpub" &
+    PIDS[$i]=$!
+    echo "Started process with PID: ${PIDS[$i]}"
+    sleep 1
+
+    echo "----------------------------------------"
     
     echo "----------------------------------------"
+    i=$((i+1))
+done
+
+# Set up trap to kill all processes when script is interrupted
+trap 'echo "Stopping all processes..."; for pid in "${PIDS[@]}"; do if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "Killing PID: $pid"; kill "$pid"; fi; done; exit' SIGINT SIGTERM
+
+echo "All processes started. PIDs: ${PIDS[*]}"
+echo "Press Ctrl+C to stop all processes"
+
+# Wait for all processes to complete
+for pid in "${PIDS[@]}"; do
+    if [ -n "$pid" ]; then
+        wait "$pid"
+    fi
 done

@@ -581,6 +581,12 @@ func main() {
 			fmt.Printf("Invalid estimatedFee: %v\n", err)
 			return
 		}
+		partyIndex, err := strconv.Atoi(os.Args[12])
+		if err != nil {
+			fmt.Printf("Invalid partyIndex: %v\n", err)
+			return
+		}
+		masterNpub := os.Args[13]
 
 		//go tss.NostrListen(localNpub, localNsec, nostrRelay)
 		//time.Sleep(2 * time.Second)
@@ -625,6 +631,8 @@ func main() {
 			AmountSatoshi:   amountSatoshi,
 			FeeSatoshi:      estimatedFee,
 			DerivePath:      derivePath,
+			BtcPub:          btcPub,
+			Master:          tss.Master{MasterPeer: masterNpub, MasterPubKey: masterNpub},
 		}
 
 		// Find the largest npub in the comma-separated list
@@ -648,7 +656,11 @@ func main() {
 		time.Sleep(2 * time.Second)
 		fmt.Printf("NostrListen started for %s\n", localNpub)
 
-		tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "false")
+		if partyIndex == 0 {
+			tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "true")
+		} else {
+			tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "false")
+		}
 
 		select {}
 
