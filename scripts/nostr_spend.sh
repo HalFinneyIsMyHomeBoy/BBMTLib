@@ -1,80 +1,8 @@
 #!/bin/bash
 
-# Script to run the nostrSendBTC mode of the BBMTLib TSS application
-# This script sets up the environment and launches the BTC sending process
+set -e  # Exit on error
+set -o pipefail  # Catch errors in pipes
 
-set -e  # Exit on any error
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Function to print colored output
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Check if we're in the right directory
-if [ ! -f "main.go" ]; then
-    print_error "main.go not found. Please run this script from the scripts directory."
-    exit 1
-fi
-
-# Usage: ./nostr_spend.sh peer1 peer2 peer3 ...
-# or: ./nostr_spend.sh npub1abc... npub1def... npub1ghi...
-if [ "$#" -lt 1 ]; then
-    print_error "Usage: $0 peer1 [peer2 ...]"
-    print_error "   or: $0 npub1abc... [npub1def... ...]"
-    exit 1
-fi
-
-peers=("$@")
-
-# Validate required files for each peer
-for peer in "${peers[@]}"; do
-    # Check if the peer argument is already an npub (starts with npub)
-    if [[ "$peer" == npub* ]]; then
-        # It's already an npub, use it directly
-        if [ ! -f "$peer.nostr" ]; then
-            print_error "$peer.nostr file not found. Please generate Nostr keys for $peer."
-            exit 1
-        fi
-        if [ ! -f "$peer.ks" ]; then
-            print_error "$peer.ks file not found. You need to run keygen for $peer."
-            exit 1
-        fi
-        print_success "Found required files for $peer"
-    else
-        # It's a peer name, check for .nostr and .ks files
-        if [ ! -f "$peer.nostr" ]; then
-            print_error "$peer.nostr file not found. Please generate Nostr keys for $peer."
-            exit 1
-        fi
-        if [ ! -f "$peer.ks" ]; then
-            print_error "$peer.ks file not found. You need to run keygen for $peer."
-            exit 1
-        fi
-        print_success "Found required files for $peer"
-    fi
-done
-
-# Build the Go application
-print_status "Building Go application..."
 BIN_NAME="bbmt"
 BUILD_DIR="./bin"
 
@@ -85,95 +13,113 @@ mkdir -p "$BUILD_DIR"
 echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go
 
-if [ $? -ne 0 ]; then
-    print_error "Failed to build the application"
-    exit 1
-fi
-print_success "Application built successfully"
 
-# Default values for arguments
-# Extract ALL Nostr public keys from .nostr files
-nostr_pub_keys=()
-for peer in "${peers[@]}"; do
-    if command -v jq &> /dev/null; then
-        # Extract all party public keys from the .nostr file
-        # First, get the local_nostr_pub_key
-        local_npub=$(jq -r '.local_nostr_pub_key' "$peer.nostr" 2>/dev/null)
-        if [ "$local_npub" != "null" ] && [ -n "$local_npub" ]; then
-            nostr_pub_keys+=("$local_npub")
-            print_status "Extracted local npub for $peer: $local_npub"
-        else
-            print_error "Failed to extract local npub from $peer.nostr"
-            exit 1
-        fi
-        
-        # Extract all party public keys from nostr_party_pub_keys
-        # Handle both map and array formats
-        party_keys=$(jq -r '.nostr_party_pub_keys | if type == "object" then to_entries | .[].value else .[] end' "$peer.nostr" 2>/dev/null)
-        if [ $? -eq 0 ] && [ -n "$party_keys" ]; then
-            while IFS= read -r npub; do
-                if [ -n "$npub" ] && [ "$npub" != "null" ]; then
-                    # Check if this npub is already in our list
-                    if [[ ! " ${nostr_pub_keys[@]} " =~ " ${npub} " ]]; then
-                        nostr_pub_keys+=("$npub")
-                        print_status "Extracted party npub: $npub"
-                    fi
-                fi
-            done <<< "$party_keys"
-        else
-            print_warning "No party public keys found in $peer.nostr"
-        fi
-    else
-        print_error "jq is required to parse .nostr files. Please install jq."
-        exit 1
-    fi
-done
-
-# Join the npub values with commas
-parties=$(IFS=','; echo "${nostr_pub_keys[*]}")
+# Get other required arguments
 derivePath="m/44'/0'/0'/0/0"
 receiverAddress="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
 amountSatoshi="1000"
 estimatedFee="600"
-net_type="nostr"
-localTesting="true"
+nostrRelay="ws://bbw-nostr.xyz"
 
-print_status "parties: $parties"
-print_status "derivePath: $derivePath"
-print_status "receiverAddress: $receiverAddress"
-print_status "amountSatoshi: $amountSatoshi"
-print_status "estimatedFee: $estimatedFee"
-print_status "net_type: $net_type"
 
-# Start nostrSendBTC for each peer in background
-PIDS=()
-for peer in "${peers[@]}"; do
-    print_status "Starting nostrSendBTC for $peer..."
-    "$BUILD_DIR/$BIN_NAME" nostrSendBTC "$parties" "$derivePath" "$receiverAddress" "$amountSatoshi" "$estimatedFee" "$peer" &
-    PIDS+=("$!")
-done
+# Find the first .nostr file
+nostr_file=$(find . -name "*.nostr" -type f | head -n 1)
 
-# Trap to kill all background processes on exit
-cleanup() {
-    echo 'Stopping nostrSendBTC processes...'
-    for pid in "${PIDS[@]}"; do
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null
-        fi
-    done
-    exit
-}
+if [ -z "$nostr_file" ]; then
+    echo "No .nostr file found in current directory or subdirectories"
+    exit 1
+fi
 
-trap cleanup SIGINT SIGTERM
+echo "Found .nostr file: $nostr_file"
 
-echo "nostrSendBTC processes running for peers: ${peers[*]}. Press Ctrl+C to stop."
-
-wait
-
-if [ $? -eq 0 ]; then
-    print_success "nostrSendBTC completed successfully!"
-    print_status "Check the transaction details above"
+# Extract all npubs from nostr_party_pub_keys using jq
+# This gets all values from the nostr_party_pub_keys object and joins them with commas
+npubs=$(jq -r '.nostr_party_pub_keys | to_entries | map(.value) | join(",")' "$nostr_file")
+echo "npubs: $npubs"
+if [ $? -eq 0 ] && [ -n "$npubs" ]; then
+    echo "Extracted npubs:"
+    echo "$npubs"
 else
-    print_error "nostrSendBTC failed"
+    echo "Failed to extract npubs from $nostr_file"
+    echo "Make sure the file contains a valid JSON with 'nostr_party_pub_keys' field"
     exit 1
 fi 
+
+# Get the local party's npub and nsec
+local_npub=$(jq -r '.local_nostr_pub_key' "$nostr_file")
+local_nsec=$(jq -r '.local_nostr_priv_key' "$nostr_file")
+
+if [ -z "$local_npub" ] || [ "$local_npub" = "null" ] || [ -z "$local_nsec" ] || [ "$local_nsec" = "null" ]; then
+    echo "Failed to extract local party keys from $nostr_file"
+    echo "local_npub: '$local_npub'"
+    echo "local_nsec: '$local_nsec'"
+    exit 1
+fi
+
+
+# Convert comma-separated string to array
+IFS=',' read -ra NPUBS <<< "$npubs"
+
+
+
+# Generate session parameters once for all processes
+sessionID=$("$BUILD_DIR/$BIN_NAME" random)
+sessionKey=$("$BUILD_DIR/$BIN_NAME" random)
+
+echo "Generated session ID: $sessionID"
+echo "Generated session key: $sessionKey"
+
+# Initialize array to store PIDs
+declare -a PIDS=()
+# Initialize counter
+i=0
+masterNpub=""
+# Loop through each npub (each party)
+for i in "${!NPUBS[@]}"; do
+    npub="${NPUBS[$i]}"
+    if [ $i -eq 0 ]; then
+        masterNpub="$npub"
+    fi
+    
+    # Find the .nostr file for this specific npub
+    nostr_file=$(find . -name "$npub.nostr" -type f | head -n 1)
+    echo "Looking for .nostr file: $npub.nostr"
+    
+    if [ -z "$nostr_file" ]; then
+        echo "No .nostr file found for npub: $npub"
+        echo "Expected file: $npub.nostr"
+        continue  # Skip this npub and continue with the next one
+    fi
+    
+    echo "Found .nostr file: $nostr_file"
+    
+    # Get the nsec from this specific .nostr file
+    nsec=$(jq -r '.local_nostr_priv_key' "$nostr_file")
+    
+    if [ -z "$nsec" ] || [ "$nsec" = "null" ]; then
+        echo "Failed to extract nsec from $nostr_file"
+        echo "nsec value: '$nsec'"
+        echo "Make sure the file contains a valid 'local_nostr_priv_key' field"
+        continue  # Skip this npub and continue with the next one
+    fi
+
+
+    "$BUILD_DIR/$BIN_NAME" nostrSpend "$npub" "$nsec" "$npubs" "$nostrRelay" "$sessionID" "$sessionKey" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$i" "$masterNpub" &
+    PIDS[$i]=$!
+    sleep 1
+
+    i=$((i+1))
+done
+
+# Set up trap to kill all processes when script is interrupted
+trap 'echo "Stopping all processes..."; for pid in "${PIDS[@]}"; do if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "Killing PID: $pid"; kill "$pid"; fi; done; exit' SIGINT SIGTERM
+
+echo "All processes started. PIDs: ${PIDS[*]}"
+echo "Press Ctrl+C to stop all processes"
+
+# Wait for all processes to complete
+for pid in "${PIDS[@]}"; do
+    if [ -n "$pid" ]; then
+        wait "$pid"
+    fi
+done

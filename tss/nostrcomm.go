@@ -27,8 +27,8 @@ var (
 	nostrPingList             []ProtoMessage
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
-	globalCtx, _              = context.WithCancel(context.Background())
-	KeysignApprovalTimeout    = 4 * time.Second
+	globalCtx, _              = context.WithTimeout(context.Background(), 5*time.Minute) // 5 minute timeout for global operations
+	KeysignApprovalTimeout    = 5 * time.Second                                          // Increased from 2 seconds for better handling of slow connections
 	KeysignApprovalMaxRetries = 30
 	nostrMutex                sync.Mutex
 	chunkCache                = cache.New(5*time.Minute, 10*time.Minute)
@@ -38,6 +38,15 @@ var (
 	globalLocalNostrKeys      NostrKeys
 	globalLocalTesting        bool
 	nostrListenCancel         context.CancelFunc
+	// Timeout configurations for better handling of bad internet connections
+	NostrConnectTimeout   = 60 * time.Second  // Extended timeout for relay connection
+	NostrPublishTimeout   = 120 * time.Second // Extended timeout for publishing events
+	NostrSubscribeTimeout = 60 * time.Second  // Extended timeout for subscription operations
+	NostrRetryInterval    = 15 * time.Second  // Extended base retry interval
+	NostrMaxBackoff       = 5 * time.Minute   // Extended maximum backoff for retries
+	// Additional timeout configurations
+	NostrHandshakeTimeout = 60 * time.Second // Extended timeout for handshake operations
+	NostrMessageTimeout   = 90 * time.Second // Extended timeout for message processing
 )
 
 type ProtoMessage struct {
@@ -276,8 +285,7 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 		return
 	}
 
-	retryInterval := 10 * time.Second
-	backoff := retryInterval
+	backoff := NostrRetryInterval
 
 	for {
 		// Check if we should stop
@@ -287,22 +295,23 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 			return
 		default:
 		}
-		// Create a new context for this connection attempt
-		ctxLoop, cancelLoop := context.WithCancel(ctx)
 
-		// Connect to relay
+		// Create a new context with extended timeout for this connection attempt
+		ctxLoop, cancelLoop := context.WithTimeout(ctx, NostrConnectTimeout)
+
+		// Connect to relay with extended timeout
 		relay, err = nostr.RelayConnect(ctxLoop, nostrRelay)
 		if err != nil {
 			log.Printf("Connection failed: %v, retrying in %v...\n", err, backoff)
 			cancelLoop()
 			time.Sleep(backoff)
-			// Exponential backoff with max of 30 seconds
-			backoff = time.Duration(math.Min(float64(backoff*2), 30)) * time.Second
+			// Exponential backoff with max of NostrMaxBackoff
+			backoff = time.Duration(math.Min(float64(backoff*2), float64(NostrMaxBackoff)))
 			continue
 		}
 
 		// Reset backoff on successful connection
-		backoff = retryInterval
+		backoff = NostrRetryInterval
 
 		since := nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
 
@@ -312,9 +321,12 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 			Since: &since,
 		}}
 
-		sub, err := relay.Subscribe(ctxLoop, filters)
+		// Create subscription context with extended timeout
+		subCtx, subCancel := context.WithTimeout(ctx, NostrSubscribeTimeout)
+		sub, err := relay.Subscribe(subCtx, filters)
 		if err != nil {
 			log.Printf("Subscription failed: %v, retrying in %v...\n", err, backoff)
+			subCancel()
 			cancelLoop()
 			time.Sleep(backoff)
 			continue
@@ -353,6 +365,7 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 
 		// Wait for reconnect signal
 		<-reconnect
+		subCancel()
 		cancelLoop()
 
 		// Clean up the subscription
@@ -458,7 +471,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		}
 	}
 
-	if protoMessage.FunctionType == "start_keysign" && protoMessage.MessageType != "message" {
+	if protoMessage.FunctionType == "keysign" && protoMessage.MessageType != "message" {
 		Logf("start_keysign received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		AddOrAppendNostrSession(protoMessage)
 	}
@@ -469,7 +482,7 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 	}
 
 	if protoMessage.MessageType == "message" {
-		Logf("message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+		//Logf("message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		key := protoMessage.MessageType + "-" + protoMessage.SessionID
 		nostrMutex.Lock()
 		nostrSetData(key, &protoMessage)
@@ -521,29 +534,18 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequest TxRequest, sessionID, sessionKey, verbose, newSession string) (string, error) {
 
 	// all parties should already be listening
-	go NostrListen(localNpub, localNsec, relay)
-	time.Sleep(2 * time.Second)
 
 	//master is whoever first initiates the spend request
 
-	// keyShareJSON, err := json.Marshal(keyShare)
-	// if err != nil {
-	// 	Logf("Error marshaling keyshare: %v", err)
-	// 	return "", fmt.Errorf("error marshaling keyshare: %v", err)
-	// }
-
-	//Set the globalLocalNostrKeys
 	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
 	globalLocalNostrKeys.LocalNostrPrivKey = localNsec
 	globalLocalNostrKeys.LocalNostrPubKey = localNpub
-
-	//initiateNostrHandshake(sessionID, chainCode, sessionKey, localNpub, partyNpubs, "keysign", txRequest)
-	Logf("Starting Master keysign for session: %s", sessionID)
 
 	if newSession == "true" {
 		txRequest.Master = Master{MasterPeer: localNpub, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey}
 		initiateNostrHandshake(sessionID, "", sessionKey, localNpub, partyNpubs, "keysign", txRequest)
 		time.Sleep(1 * time.Second)
+
 		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
 		if err != nil {
 			fmt.Printf("Go Error: %v", err)
@@ -552,6 +554,7 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 		}
 
 	} else {
+
 		protoMessage := ProtoMessage{
 			SessionID:       sessionID,
 			ChainCode:       "",
@@ -559,59 +562,33 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 			FunctionType:    "ack_handshake",
 			From:            localNpub,
 			FromNostrPubKey: localNpub,
-			Recipients:      []string{globalLocalNostrKeys.LocalNostrPubKey},
+			Recipients:      []string{txRequest.Master.MasterPubKey},
 			Participants:    []string{localNpub},
 			TxRequest:       txRequest,
 			Master:          txRequest.Master,
 		}
 
 		AckNostrHandshake(protoMessage, localNpub)
-		time.Sleep(1 * time.Second)
-		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
-		if err != nil {
-			fmt.Printf("Go Error: %v", err)
-		} else {
-			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+
+		//time.Sleep(3 * time.Second)   ////THIS WAS THE WHOLE FUCKING PROBLEM, THE ENTIRE DAMN TIME. AFTER ALL THAT WORK....A RACE CONDITION
+		for i := 0; i < 60; i++ {
+			for _, item := range nostrSessionList {
+				if item.SessionID == sessionID {
+					if item.Status == "keysign" {
+						result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
+						if err != nil {
+							fmt.Printf("Go Error: %v", err)
+						} else {
+							fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+						}
+					} else {
+						Logf("Waiting for master to start session")
+					}
+				}
+				time.Sleep(1 * time.Second)
+			}
 		}
 	}
-
-	// } else {
-	// 	//If we are not the master, we need to join the keygen
-
-	// 	//Set the globalLocalNostrKeys
-	// 	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
-	// 	globalLocalNostrKeys.LocalNostrPrivKey = localNsec
-	// 	globalLocalNostrKeys.LocalNostrPubKey = localNpub
-
-	// 	sessions, err := WaitForSessions()
-	// 	if err != nil {
-	// 		return "", fmt.Errorf("error getting sessions: %v", err)
-	// 	} else {
-
-	// 		protoMessage := ProtoMessage{
-	// 			SessionID:       sessions[0].SessionID,
-	// 			ChainCode:       sessions[0].ChainCode,
-	// 			SessionKey:      sessions[0].SessionKey,
-	// 			TxRequest:       sessions[0].TxRequest,
-	// 			Master:          sessions[0].Master,
-	// 			FunctionType:    "ack_handshake",
-	// 			From:            localNpub,
-	// 			FromNostrPubKey: localNpub,
-	// 			Recipients:      []string{sessions[0].Master.MasterPubKey},
-	// 			Participants:    []string{localNpub},
-	// 		}
-	// 		AckNostrHandshake(protoMessage, localNpub)
-
-	// 		Logf("Joining Keysign for session: %s", sessions[0].SessionID)
-
-	// 		result, err := MpcSendBTC("", localNpub, partyNpubs, sessions[0].SessionID, sessions[0].SessionKey, "", "", string(keyShareJSON), txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr", "false")
-	// 		if err != nil {
-	// 			fmt.Printf("Go Error: %v", err)
-	// 		} else {
-	// 			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
-	// 		}
-	// 	}
-	// }
 
 	return "", nil
 
@@ -697,9 +674,9 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 	return "", nil
 }
 
-// WaitForSessions polls GetSessions() every second for up to 2 minutes until it returns a non-empty result
+// WaitForSessions polls GetSessions() every second for up to 5 minutes until it returns a non-empty result
 func WaitForSessions() ([]NostrSession, error) {
-	for i := 0; i < 120; i++ { // 2 minutes = 120 seconds
+	for i := 0; i < 300; i++ { // 5 minutes = 300 seconds (increased from 2 minutes)
 		sessions, err := GetSessions()
 		if err != nil {
 			return nil, err
@@ -708,9 +685,9 @@ func WaitForSessions() ([]NostrSession, error) {
 			return sessions, nil
 		}
 		time.Sleep(1 * time.Second)
-		Logf("Waiting for sessions...")
+		Logf("Waiting for sessions... (attempt %d/300)", i+1)
 	}
-	return nil, fmt.Errorf("timeout waiting for sessions")
+	return nil, fmt.Errorf("timeout waiting for sessions after 5 minutes")
 }
 
 func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyNpubs, functionType string, txRequest TxRequest) (bool, error) {
@@ -749,7 +726,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
 	nostrSend(protoMessage)
 	//==============================COLLECT ACK_HANDSHAKES==============================
-
+	time.Sleep(5 * time.Second)
 	partyCount := len(globalLocalNostrKeys.NostrPartyPubKeys)
 	retryCount := 0
 	maxRetries := KeysignApprovalMaxRetries
@@ -765,16 +742,18 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 						Logf("All participants have approved, sending %s for session: %s", functionType, SessionID)
 						sessionReady = true
 						startSessionMaster(SessionID, item.Participants, localParty, functionType)
+						break
 					}
 				} else {
 					participantCount := len(item.Participants)
 					participationRatio := float64(participantCount) / float64(partyCount)
-
+					//time.Sleep(3 * time.Second)
 					if participationRatio >= 0.66 {
 						Logf("Enough participants have approved, sending %s for session: %s", functionType, SessionID)
 						if item.Status == "pending" {
 							sessionReady = true
 							startSessionMaster(SessionID, item.Participants, localParty, functionType)
+							break
 						} else {
 							return false, fmt.Errorf("session not ready")
 						}
@@ -783,12 +762,13 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 						if retryCount >= maxRetries {
 
 							participationRatio := float64(participantCount) / float64(partyCount)
-
+							//time.Sleep(3 * time.Second)
 							if participationRatio >= 0.66 {
 
 								Logf("We have 2/3 of participants approved, sending %s for session: %s", functionType, SessionID)
 								sessionReady = true
 								startSessionMaster(SessionID, item.Participants, localParty, functionType)
+								break
 							} else {
 								Logf("Max retries reached, giving up on session: %s", SessionID)
 								return false, fmt.Errorf("max retries reached")
@@ -832,7 +812,7 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 
 	nostrSession := NostrSession{
 		SessionID:    protoMessage.SessionID,
-		Participants: []string{localParty},
+		Participants: protoMessage.Participants,
 		TxRequest:    protoMessage.TxRequest,
 		Master:       protoMessage.Master,
 		Status:       protoMessage.FunctionType,
@@ -859,12 +839,13 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 		SessionKey:      nostrSession.SessionKey,
 		FunctionType:    "ack_handshake",
 		From:            localParty,
-		FromNostrPubKey: nostrSession.Master.MasterPubKey,
+		FromNostrPubKey: localParty,
 		Recipients:      []string{nostrSession.Master.MasterPeer},
-		Participants:    []string{localParty},
+		Participants:    nostrSession.Participants,
 		TxRequest:       nostrSession.TxRequest,
 		Master:          nostrSession.Master,
 	}
+
 	nostrSend(ackProtoMessage)
 
 }
@@ -894,42 +875,6 @@ func startSessionMaster(sessionID string, participants []string, localParty stri
 				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
 			}
 			nostrSend(startKeysignProtoMessage)
-		}
-	}
-}
-
-func startPartyNostrSpend(sessionID string, participants []string, localParty string, keyShare LocalState) {
-
-	for i, item := range nostrSessionList {
-		if item.SessionID == sessionID {
-
-			nostrSessionList[i].Status = "start_keysign"
-			nostrSessionList[i].Participants = participants
-			sessionKey := nostrSessionList[i].SessionKey
-
-			if globalLocalTesting {
-				var err error
-				keyShare, err = GetKeyShare(localParty)
-				if err != nil {
-					Logf("Error getting keyshare: %v", err)
-					return
-				}
-			}
-
-			keyShareJSON, err := json.Marshal(keyShare)
-			if err != nil {
-				Logf("Error marshaling keyshare: %v", err)
-				return
-			}
-
-			peers := strings.Join(item.Participants, ",")
-
-			result, err := MpcSendBTC("", localParty, peers, sessionID, sessionKey, "", "", string(keyShareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr")
-			if err != nil {
-				fmt.Printf("Go Error: %v", err)
-			} else {
-				fmt.Printf("\n [%s] Keysign Result %s\n", localParty, result)
-			}
 		}
 	}
 }
@@ -1043,9 +988,8 @@ func nostrSend(protoMessage ProtoMessage) error {
 					return fmt.Errorf("failed to create wrap: %w", err)
 				}
 
-				// Publish chunk
-				err = relay.Publish(globalCtx, *event)
-				if err != nil {
+				// Publish chunk with timeout and retry logic
+				if err := publishWithRetry(event, fmt.Sprintf("chunk %d", i)); err != nil {
 					log.Printf("Error publishing chunk %d: %v", i, err)
 					return err
 				}
@@ -1085,14 +1029,41 @@ func nostrSend(protoMessage ProtoMessage) error {
 		if event == nil {
 			return fmt.Errorf("failed to create event")
 		}
-		err = relay.Publish(globalCtx, *event)
 
-		if err != nil {
+		// Publish event with timeout and retry logic
+		if err := publishWithRetry(event, "event"); err != nil {
 			log.Printf("Error publishing event: %v", err)
 			return err
 		}
 	}
 	return nil
+}
+
+// publishWithRetry publishes an event with timeout and retry logic
+func publishWithRetry(event *nostr.Event, eventType string) error {
+	maxRetries := 3
+	backoff := 1 * time.Second
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// Create context with timeout for publishing
+		ctx, cancel := createTimeoutContext(NostrPublishTimeout)
+
+		err := relay.Publish(ctx, *event)
+		cancel()
+
+		if err == nil {
+			return nil // Success
+		}
+
+		log.Printf("Publish attempt %d failed for %s: %v", attempt+1, eventType, err)
+
+		if attempt < maxRetries-1 {
+			time.Sleep(backoff)
+			backoff *= 2 // Exponential backoff
+		}
+	}
+
+	return fmt.Errorf("failed to publish %s after %d attempts", eventType, maxRetries)
 }
 
 func nostrGetData(key string) (interface{}, bool) {
@@ -1368,7 +1339,7 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 	for i, existingSession := range nostrSessionList {
 		if existingSession.SessionID == protoMessage.SessionID { //Session exists, update it
 			existingSession.Status = protoMessage.FunctionType
-			existingSession.Participants = protoMessage.Recipients
+			existingSession.Participants = protoMessage.Participants
 			existingSession.TxRequest = protoMessage.TxRequest
 			existingSession.Master = protoMessage.Master
 			existingSession.SessionKey = protoMessage.SessionKey
@@ -1394,34 +1365,6 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 	}
 }
 
-func NostrMpcTssSetup(relay, nsec1, npub1, npubs, sessionID, sessionKey, chaincode string) {
-
-	npubsArray := strings.Split(npubs, ",")
-
-	parties := strings.Join(npubsArray, ",")
-
-	go NostrListen(npub1, nsec1, relay)
-	time.Sleep(1 * time.Second)
-
-	largestNpub := GetLexicographicallyFirstNpub(npubsArray)
-	if largestNpub == npub1 {
-		//I am master
-		keyshare, err := JoinKeygen(npub1+".json", npub1, parties, "", "", sessionID, "", chaincode, sessionKey, "nostr")
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		}
-		fmt.Printf("Keyshare: %s\n", keyshare)
-	} else {
-		//I am not master
-		fmt.Printf("I am not master\n")
-		keyshare, err := JoinKeygen(npub1+".json", npub1, parties, "", "", sessionID, "", chaincode, sessionKey, "nostr")
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		}
-		fmt.Printf("Keyshare: %s\n", keyshare)
-	}
-}
-
 // GetLexicographicallyFirstNpub takes a list of npubs and returns the one that comes first in lexicographical order
 func GetLexicographicallyFirstNpub(npubs []string) string {
 	if len(npubs) == 0 {
@@ -1433,4 +1376,9 @@ func GetLexicographicallyFirstNpub(npubs []string) string {
 
 	// Return the first one (which will be lexicographically first)
 	return npubs[0]
+}
+
+// createTimeoutContext creates a new context with the specified timeout
+func createTimeoutContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), timeout)
 }
