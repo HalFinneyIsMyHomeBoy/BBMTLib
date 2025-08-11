@@ -14,6 +14,14 @@ echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go
 
 
+# Get other required arguments
+derivePath="m/44'/0'/0'/0/0"
+receiverAddress="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
+amountSatoshi="1000"
+estimatedFee="600"
+nostrRelay="ws://bbw-nostr.xyz"
+
+
 # Find the first .nostr file
 nostr_file=$(find . -name "*.nostr" -type f | head -n 1)
 
@@ -52,12 +60,7 @@ fi
 # Convert comma-separated string to array
 IFS=',' read -ra NPUBS <<< "$npubs"
 
-# Get other required arguments
-derivePath="m/44'/0'/0'/0/0"
-receiverAddress="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
-amountSatoshi="1000"
-estimatedFee="600"
-nostrRelay="ws://bbw-nostr.xyz"
+
 
 # Generate session parameters once for all processes
 sessionID=$("$BUILD_DIR/$BIN_NAME" random)
