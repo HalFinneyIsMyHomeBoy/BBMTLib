@@ -537,19 +537,9 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 
 	//master is whoever first initiates the spend request
 
-	// keyShareJSON, err := json.Marshal(keyShare)
-	// if err != nil {
-	// 	Logf("Error marshaling keyshare: %v", err)
-	// 	return "", fmt.Errorf("error marshaling keyshare: %v", err)
-	// }
-
-	//Set the globalLocalNostrKeys
 	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
 	globalLocalNostrKeys.LocalNostrPrivKey = localNsec
 	globalLocalNostrKeys.LocalNostrPubKey = localNpub
-
-	//initiateNostrHandshake(sessionID, chainCode, sessionKey, localNpub, partyNpubs, "keysign", txRequest)
-	Logf("Starting Master keysign for session: %s", sessionID)
 
 	if newSession == "true" {
 		txRequest.Master = Master{MasterPeer: localNpub, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey}
@@ -1372,34 +1362,6 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 			Status:       protoMessage.FunctionType,
 		}
 		nostrSessionList = append(nostrSessionList, newSession)
-	}
-}
-
-func NostrMpcTssSetup(relay, nsec1, npub1, npubs, sessionID, sessionKey, chaincode string) {
-
-	npubsArray := strings.Split(npubs, ",")
-
-	parties := strings.Join(npubsArray, ",")
-
-	go NostrListen(npub1, nsec1, relay)
-	time.Sleep(1 * time.Second)
-
-	largestNpub := GetLexicographicallyFirstNpub(npubsArray)
-	if largestNpub == npub1 {
-		//I am master
-		keyshare, err := JoinKeygen(npub1+".json", npub1, parties, "", "", sessionID, "", chaincode, sessionKey, "nostr")
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		}
-		fmt.Printf("Keyshare: %s\n", keyshare)
-	} else {
-		//I am not master
-		fmt.Printf("I am not master\n")
-		keyshare, err := JoinKeygen(npub1+".json", npub1, parties, "", "", sessionID, "", chaincode, sessionKey, "nostr")
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		}
-		fmt.Printf("Keyshare: %s\n", keyshare)
 	}
 }
 

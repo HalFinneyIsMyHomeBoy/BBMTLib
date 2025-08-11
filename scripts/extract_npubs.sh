@@ -48,12 +48,6 @@ if [ -z "$local_npub" ] || [ "$local_npub" = "null" ] || [ -z "$local_nsec" ] ||
     exit 1
 fi
 
-echo "Local party npub: $local_npub"
-echo "Local party nsec: $local_nsec"
-
-echo "----------------------------------------"
-echo "npubs: $npubs"
-echo "----------------------------------------"
 
 # Convert comma-separated string to array
 IFS=',' read -ra NPUBS <<< "$npubs"
@@ -71,7 +65,6 @@ sessionKey=$("$BUILD_DIR/$BIN_NAME" random)
 
 echo "Generated session ID: $sessionID"
 echo "Generated session key: $sessionKey"
-echo 
 
 # Initialize array to store PIDs
 declare -a PIDS=()
@@ -84,8 +77,6 @@ for i in "${!NPUBS[@]}"; do
     if [ $i -eq 0 ]; then
         masterNpub="$npub"
     fi
-    echo "----------------------------------------"
-    echo "Processing party with npub: $npub"
     
     # Find the .nostr file for this specific npub
     nostr_file=$(find . -name "$npub.nostr" -type f | head -n 1)
@@ -108,34 +99,12 @@ for i in "${!NPUBS[@]}"; do
         echo "Make sure the file contains a valid 'local_nostr_priv_key' field"
         continue  # Skip this npub and continue with the next one
     fi
-    
-    echo "Extracted nsec: $nsec"
-    
-    # For each party, we'll use their own npub and nsec from their .nostr file
-    # The npubs parameter should contain all party public keys
-    echo "----------------------------------------"
-    echo "PID: $i"
-    echo "----------------------------------------"
-    
-    echo "npub: $npub"
-    echo "nsec: $nsec"
-    echo "All party npubs: $npubs"
-    echo "nostrRelay: $nostrRelay"
-    echo "sessionID: $sessionID"
-    echo "sessionKey: $sessionKey"
-    echo "receiverAddress: $receiverAddress"
-    echo "derivePath: $derivePath"
-    echo "----------------------------------------"
-    echo "----------------------------------------"
-        echo "----------------------------------------"
+
+
     "$BUILD_DIR/$BIN_NAME" nostrSpend "$npub" "$nsec" "$npubs" "$nostrRelay" "$sessionID" "$sessionKey" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$i" "$masterNpub" &
     PIDS[$i]=$!
-    echo "Started process with PID: ${PIDS[$i]}"
     sleep 1
 
-    echo "----------------------------------------"
-    
-    echo "----------------------------------------"
     i=$((i+1))
 done
 
