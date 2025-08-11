@@ -313,7 +313,7 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 		// Reset backoff on successful connection
 		backoff = NostrRetryInterval
 
-		since := nostr.Timestamp(time.Now().Add(-30 * time.Second).Unix())
+		since := nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
 
 		filters := []nostr.Filter{{
 			Kinds: []int{1059}, // Subscribe to NIP-44 messages
@@ -534,10 +534,6 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequest TxRequest, sessionID, sessionKey, verbose, newSession string) (string, error) {
 
 	// all parties should already be listening
-	if newSession == "true" {
-		go NostrListen(localNpub, localNsec, relay)
-		time.Sleep(2 * time.Second)
-	}
 
 	//master is whoever first initiates the spend request
 
@@ -588,7 +584,6 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 		for i := 0; i < 60; i++ {
 			for _, item := range nostrSessionList {
 				if item.SessionID == sessionID {
-					Logf("Session status: %s", item.Status)
 					if item.Status == "keysign" {
 						result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
 						if err != nil {
@@ -890,42 +885,6 @@ func startSessionMaster(sessionID string, participants []string, localParty stri
 				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
 			}
 			nostrSend(startKeysignProtoMessage)
-		}
-	}
-}
-
-func startPartyNostrSpend(sessionID string, participants []string, localParty string, keyShare LocalState) {
-
-	for i, item := range nostrSessionList {
-		if item.SessionID == sessionID {
-
-			nostrSessionList[i].Status = "start_keysign"
-			nostrSessionList[i].Participants = participants
-			sessionKey := nostrSessionList[i].SessionKey
-
-			if globalLocalTesting {
-				var err error
-				keyShare, err = GetKeyShare(localParty)
-				if err != nil {
-					Logf("Error getting keyshare: %v", err)
-					return
-				}
-			}
-
-			keyShareJSON, err := json.Marshal(keyShare)
-			if err != nil {
-				Logf("Error marshaling keyshare: %v", err)
-				return
-			}
-
-			peers := strings.Join(item.Participants, ",")
-
-			result, err := MpcSendBTC("", localParty, peers, sessionID, sessionKey, "", "", string(keyShareJSON), item.TxRequest.DerivePath, item.TxRequest.BtcPub, item.TxRequest.SenderAddress, item.TxRequest.ReceiverAddress, int64(item.TxRequest.AmountSatoshi), int64(item.TxRequest.FeeSatoshi), "nostr")
-			if err != nil {
-				fmt.Printf("Go Error: %v", err)
-			} else {
-				fmt.Printf("\n [%s] Keysign Result %s\n", localParty, result)
-			}
 		}
 	}
 }

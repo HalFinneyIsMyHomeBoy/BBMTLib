@@ -527,18 +527,6 @@ func main() {
 				fmt.Printf("Sessions: %v\n", sessions[0].Status)
 				if sessions[0].Status == "init_handshake" {
 
-					// protoMessage := tss.ProtoMessage{
-					// 	SessionID:       sessions[0].SessionID,
-					// 	ChainCode:       sessions[0].ChainCode,
-					// 	SessionKey:      sessions[0].SessionKey,
-					// 	TxRequest:       sessions[0].TxRequest,
-					// 	Master:          sessions[0].Master,
-					// 	FunctionType:    "ack_handshake",
-					// 	From:            localNpub,
-					// 	FromNostrPubKey: localNpub,
-					// 	Recipients:      []string{sessions[0].Master.MasterPubKey},
-					// 	Participants:    []string{localNpub},
-					// }
 					keyshareFile := localNpub + ".ks"
 					fmt.Printf("Keyshare file: %s\n", keyshareFile)
 					keyshare, err := os.ReadFile(keyshareFile)
@@ -571,6 +559,100 @@ func main() {
 
 	}
 
+	if mode == "nostrSpend" {
+		//Used for testing nostr MPCsendBTC
+		//This is to be run first by each party.
+		fmt.Println("nostrSpend called")
+		localNpub := os.Args[2]
+		localNsec := os.Args[3]
+		partyNpubs := os.Args[4]
+		nostrRelay := os.Args[5]
+		sessionID := os.Args[6]
+		sessionKey := os.Args[7]
+		receiverAddress := os.Args[8]
+		derivePath := os.Args[9]
+		amountSatoshi, err := strconv.ParseInt(os.Args[10], 10, 64)
+		if err != nil {
+			fmt.Printf("Invalid amountSatoshi: %v\n", err)
+			return
+		}
+		estimatedFee, err := strconv.ParseInt(os.Args[11], 10, 64)
+		if err != nil {
+			fmt.Printf("Invalid estimatedFee: %v\n", err)
+			return
+		}
+
+		//go tss.NostrListen(localNpub, localNsec, nostrRelay)
+		//time.Sleep(2 * time.Second)
+
+		keyshareFile := localNpub + ".ks"
+		fmt.Printf("Keyshare file: %s\n", keyshareFile)
+		keyshare, err := os.ReadFile(keyshareFile)
+		if err != nil {
+			fmt.Printf("Error reading keyshare file for %s: %v\n", localNpub, err)
+			return
+		}
+		decodedKeyshare, err := base64.StdEncoding.DecodeString(string(keyshare))
+		if err != nil {
+			fmt.Printf("Failed to decode base64 keyshare: %v\n", err)
+			return
+		}
+
+		// Get the public key and chain code from keyshare
+		var localState tss.LocalState
+		if err := json.Unmarshal(decodedKeyshare, &localState); err != nil {
+			fmt.Printf("Failed to parse keyshare: %v\n", err)
+			return
+		}
+
+		// Get the derived public key using chain code from keyshare
+		btcPub, err := tss.GetDerivedPubKey(localState.PubKey, localState.ChainCodeHex, derivePath, false)
+		if err != nil {
+			fmt.Printf("Failed to get derived public key: %v\n", err)
+			return
+		}
+
+		// Get the sender address
+		senderAddress, err := tss.ConvertPubKeyToBTCAddress(btcPub, "testnet3")
+		if err != nil {
+			fmt.Printf("Failed to get sender address: %v\n", err)
+			return
+		}
+
+		txRequest := tss.TxRequest{
+			SenderAddress:   senderAddress,
+			ReceiverAddress: receiverAddress,
+			AmountSatoshi:   amountSatoshi,
+			FeeSatoshi:      estimatedFee,
+			DerivePath:      derivePath,
+		}
+
+		// Find the largest npub in the comma-separated list
+		npubs := strings.Split(partyNpubs, ",")
+		largestNpub := npubs[0]
+		for _, npub := range npubs {
+			if npub > largestNpub {
+				largestNpub = npub
+			}
+		}
+		fmt.Printf("Largest npub: %s\n", largestNpub) //largest npub will initiate the session, and thus be the master
+
+		// Get the public key and chain code from keyshare
+		// var localState tss.LocalState
+		// if err := json.Unmarshal(decodedKeyshare, &localState); err != nil {
+		// 	fmt.Printf("Failed to parse keyshare: %v\n", err)
+		// 	return
+		// }
+
+		go tss.NostrListen(localNpub, localNsec, nostrRelay)
+		time.Sleep(2 * time.Second)
+		fmt.Printf("NostrListen started for %s\n", localNpub)
+
+		tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "false")
+
+		select {}
+
+	}
 	if mode == "nostrPing" {
 		// Usage: go run main.go nostrPing <localParty> <recipientNpub>
 		if len(os.Args) != 4 {
