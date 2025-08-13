@@ -399,7 +399,6 @@ func main() {
 			BtcPub:          btcPub,
 			Master:          tss.Master{MasterPeer: localNpub, MasterPubKey: localNpub},
 		}
-		//verbose := "true"
 
 		sessionID := "8dd15291d0d60b2c0c4891e91d5f2832431fd21b49a5b9b6e06e228dc22c3b88"
 		sessionKey := "7dd15291d0d60b2c0c4891e91d5f2832431fd21b49a5b9b6e06e228dc22c3b87"
@@ -516,7 +515,7 @@ func main() {
 			//Master party is the first party to initiate the session, so newSession is passed as true.
 			tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "true")
 		} else {
-			//Non-master parties are passed newSession as false if they approve the session.
+			//Non-master parties are passing newSession as false if they approve the session.
 			tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "false")
 		}
 

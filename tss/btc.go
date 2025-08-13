@@ -388,26 +388,6 @@ func MpcSendBTC(
 			var sigJSON string
 
 			if net_type == "nostr" {
-				// txRequest := TxRequest{
-				// 	SenderAddress:   senderAddress,
-				// 	ReceiverAddress: receiverAddress,
-				// 	AmountSatoshi:   amountSatoshi,
-				// 	FeeSatoshi:      estimatedFee,
-				// 	BtcPub:          publicKey,
-				// 	DerivePath:      derivePath,
-				// }
-
-				// if newSession == "true" {
-				// 	newSession = "false"
-				// 	fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-				// 	ok, err := initiateNostrHandshake(session, "", sessionKey, key, partiesCSV, "start_keysign", txRequest)
-				// 	if err != nil {
-				// 		return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
-				// 	}
-				// 	if !ok {
-				// 		return "", fmt.Errorf("failed to initiate nostr handshake")
-				// 	}
-				// }
 
 				for _, nostrSession := range nostrSessionList {
 					if nostrSession.SessionID == session {
@@ -465,26 +445,6 @@ func MpcSendBTC(
 			var sigJSON string
 
 			if net_type == "nostr" {
-				// txRequest := TxRequest{
-				// 	SenderAddress:   senderAddress,
-				// 	ReceiverAddress: receiverAddress,
-				// 	AmountSatoshi:   amountSatoshi,
-				// 	FeeSatoshi:      estimatedFee,
-				// 	BtcPub:          publicKey,
-				// 	DerivePath:      derivePath,
-				// }
-
-				// if newSession == "true" { //This is the master starting the session
-				// 	newSession = "false"
-				// 	fmt.Printf("Master is coordinating nostr session : %v\n", utxoSession)
-				// 	ok, err := initiateNostrHandshake(session, "", sessionKey, key, partiesCSV, "start_keysign", txRequest)
-				// 	if err != nil {
-				// 		return "", fmt.Errorf("failed to initiate nostr handshake: %w", err)
-				// 	}
-				// 	if !ok {
-				// 		return "", fmt.Errorf("failed to initiate nostr handshake")
-				// 	}
-				// }
 
 				for _, item := range nostrSessionList {
 					if item.SessionID == session {
@@ -571,7 +531,7 @@ func MpcSendBTC(
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
 	Logln("Raw Transaction:", rawTx)
-	select {}
+
 	txid, err := PostTx(rawTx)
 	if err != nil {
 		Logf("Error broadcasting transaction: %v", err)
