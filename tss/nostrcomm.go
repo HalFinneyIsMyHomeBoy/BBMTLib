@@ -42,7 +42,7 @@ var (
 	NostrConnectTimeout   = 60 * time.Second  // Extended timeout for relay connection
 	NostrPublishTimeout   = 120 * time.Second // Extended timeout for publishing events
 	NostrSubscribeTimeout = 60 * time.Second  // Extended timeout for subscription operations
-	NostrRetryInterval    = 15 * time.Second  // Extended base retry interval
+	NostrRetryInterval    = 3 * time.Second   // Extended base retry interval
 	NostrMaxBackoff       = 5 * time.Minute   // Extended maximum backoff for retries
 	// Additional timeout configurations
 	NostrHandshakeTimeout = 60 * time.Second // Extended timeout for handshake operations
@@ -549,8 +549,10 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
 		if err != nil {
 			fmt.Printf("Go Error: %v", err)
+			return "", err
 		} else {
 			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+			return result, nil
 		}
 
 	} else {
@@ -570,7 +572,6 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 
 		AckNostrHandshake(protoMessage, localNpub)
 
-		//time.Sleep(3 * time.Second)   ////THIS WAS THE WHOLE FUCKING PROBLEM, THE ENTIRE DAMN TIME. AFTER ALL THAT WORK....A RACE CONDITION
 		for i := 0; i < 60; i++ {
 			for _, item := range nostrSessionList {
 				if item.SessionID == sessionID {
@@ -578,11 +579,13 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 						result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
 						if err != nil {
 							fmt.Printf("Go Error: %v", err)
+							return "", err
 						} else {
 							fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+							return result, nil
 						}
 					} else {
-						Logf("Waiting for master to start session")
+						Logf("%s is waiting for master to start session", localNpub)
 					}
 				}
 				time.Sleep(1 * time.Second)
@@ -627,6 +630,7 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 		result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr")
 		if err != nil {
 			fmt.Printf("Go Error: %v", err)
+			return "", err
 		} else {
 			fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
 			return result, nil
@@ -665,13 +669,14 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 			result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessions[0].SessionID, "", sessions[0].ChainCode, sessions[0].SessionKey, "nostr")
 			if err != nil {
 				fmt.Printf("Go Error: %v", err)
+				return "", err
 			} else {
+				fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
 				return result, nil
 			}
 		}
 	}
 
-	return "", nil
 }
 
 // WaitForSessions polls GetSessions() every second for up to 5 minutes until it returns a non-empty result
@@ -726,7 +731,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
 	nostrSend(protoMessage)
 	//==============================COLLECT ACK_HANDSHAKES==============================
-	time.Sleep(5 * time.Second)
+	//time.Sleep(5 * time.Second)
 	partyCount := len(globalLocalNostrKeys.NostrPartyPubKeys)
 	retryCount := 0
 	maxRetries := KeysignApprovalMaxRetries
@@ -748,7 +753,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 					participantCount := len(item.Participants)
 					participationRatio := float64(participantCount) / float64(partyCount)
 					//time.Sleep(3 * time.Second)
-					if participationRatio >= 0.66 {
+					if participationRatio >= 0.66 && item.Status == "pending" {
 						Logf("Enough participants have approved, sending %s for session: %s", functionType, SessionID)
 						if item.Status == "pending" {
 							sessionReady = true
@@ -763,12 +768,13 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 
 							participationRatio := float64(participantCount) / float64(partyCount)
 							//time.Sleep(3 * time.Second)
-							if participationRatio >= 0.66 {
+							if participationRatio >= 0.66 && item.Status == "pending" {
 
 								Logf("We have 2/3 of participants approved, sending %s for session: %s", functionType, SessionID)
 								sessionReady = true
 								startSessionMaster(SessionID, item.Participants, localParty, functionType)
 								break
+
 							} else {
 								Logf("Max retries reached, giving up on session: %s", SessionID)
 								return false, fmt.Errorf("max retries reached")
@@ -792,7 +798,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 func collectAckHandshake(sessionID string, protoMessage ProtoMessage) {
 
 	for i, item := range nostrSessionList {
-		if item.SessionID == sessionID && item.TxRequest == protoMessage.TxRequest {
+		if item.SessionID == sessionID && item.TxRequest == protoMessage.TxRequest && item.Status == "pending" { //This pending status check prevents a late party from interupting the current session if keysign is already in progress
 			if !contains(item.Participants, protoMessage.From) {
 				item.Participants = append(item.Participants, protoMessage.From)
 				nostrSessionList[i] = item

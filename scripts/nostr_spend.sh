@@ -61,10 +61,18 @@ fi
 IFS=',' read -ra NPUBS <<< "$npubs"
 
 
+# Check if first argument is "debug"
+if [ "$1" = "debug" ]; then
+    # Run in debug mode
+    sessionID="8dd15291d0d60b2c0c4891e91d5f2832431fd21b49a5b9b6e06e228dc22c3b88"
+    sessionKey="7dd15291d0d60b2c0c4891e91d5f2832431fd21b49a5b9b6e06e228dc22c3b87"
+else
+    # Set default values
+    # Generate session parameters once for all processes
+    sessionID=$("$BUILD_DIR/$BIN_NAME" random)
+    sessionKey=$("$BUILD_DIR/$BIN_NAME" random)
+fi
 
-# Generate session parameters once for all processes
-sessionID=$("$BUILD_DIR/$BIN_NAME" random)
-sessionKey=$("$BUILD_DIR/$BIN_NAME" random)
 
 echo "Generated session ID: $sessionID"
 echo "Generated session key: $sessionKey"
@@ -103,6 +111,15 @@ for i in "${!NPUBS[@]}"; do
         continue  # Skip this npub and continue with the next one
     fi
 
+    #if [ $i -gt 1 ]; then
+        #echo "$i : Waiting 10 seconds before starting next party..."
+        #sleep 30
+        #"$BUILD_DIR/$BIN_NAME" nostrSpend "$npub" "$nsec" "$npubs" "$nostrRelay" "$sessionID" "$sessionKey" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$i" "$masterNpub" &
+        #PIDS[$i]=$!
+    #else
+        #"$BUILD_DIR/$BIN_NAME" nostrSpend "$npub" "$nsec" "$npubs" "$nostrRelay" "$sessionID" "$sessionKey" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$i" "$masterNpub" &
+        #PIDS[$i]=$!
+    #fi
 
     "$BUILD_DIR/$BIN_NAME" nostrSpend "$npub" "$nsec" "$npubs" "$nostrRelay" "$sessionID" "$sessionKey" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$i" "$masterNpub" &
     PIDS[$i]=$!

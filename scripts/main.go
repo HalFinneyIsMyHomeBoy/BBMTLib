@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
@@ -346,10 +347,10 @@ func main() {
 	if mode == "debugNostrSpend" {
 
 		nostrRelay := "ws://bbw-nostr.xyz"
-		localNpub := "npub1p0dj3g82ff56prwnw4kkvphuv6ej25y9d2nr076795x6kescjefs7d2gqm"
-		localNsec := "nsec1hqneu0zle0tu8hk605hm2v384qxqla7v97qdz8nzqjerzefc0wmqg8fftz"
+		localNpub := "npub15qt3jlzgrek4st5sltuju5z2q5kcrk6p72k8vduv273gc8seg72q6lmnnh"
+		localNsec := "nsec1jwa0mcque2dn6nfx8r92znctxhu960wlzkx0f97hg2at0mxnzvqsssguva"
 
-		partyNpubs := "npub1p0dj3g82ff56prwnw4kkvphuv6ej25y9d2nr076795x6kescjefs7d2gqm,npub132gndqvcqyrvuu2q3lwg363cadmg2l7emqd36lawr3ey068slafqvrmknn,npub1rxnfxtrcfg49u3zptgc30ywf862mjfehn9x0rdu06yef8nr7phksrghwdq"
+		partyNpubs := "npub15qt3jlzgrek4st5sltuju5z2q5kcrk6p72k8vduv273gc8seg72q6lmnnh,npub1u9qehjkswj9jzx2j5ex89h0qsd2pdjg33mde49ujn0e8y0nunp7q3s6msv,npub190szmjnpt6xpu8rxg8xmy2w7g5s7alncl0hgamq9pv9dpskgq8msedy03l"
 		derivePath := "m/44'/0'/0'/0/0"
 
 		keyshareFile := localNpub + ".ks"
@@ -396,17 +397,41 @@ func main() {
 			FeeSatoshi:      600,
 			DerivePath:      "m/44'/0'/0'/0/0",
 			BtcPub:          btcPub,
+			Master:          tss.Master{MasterPeer: localNpub, MasterPubKey: localNpub},
 		}
 		//verbose := "true"
 
-		sessionID := randomSeed(64)
-		sessionKey := randomSeed(64)
+		sessionID := "8dd15291d0d60b2c0c4891e91d5f2832431fd21b49a5b9b6e06e228dc22c3b88"
+		sessionKey := "7dd15291d0d60b2c0c4891e91d5f2832431fd21b49a5b9b6e06e228dc22c3b87"
 
-		result, err := tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(keyshare), txRequest, sessionID, sessionKey, "true", "true")
+		go tss.NostrListen(localNpub, localNsec, nostrRelay)
+		time.Sleep(2 * time.Second)
+		fmt.Printf("NostrListen started for %s\n", localNpub)
+
+		sessions, err := tss.WaitForSessions()
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
-			fmt.Printf("Keygen Result: %s\n", result)
+			fmt.Printf("Sessions: %v\n", sessions)
+			sessionID = sessions[0].SessionID
+			sessionKey = sessions[0].SessionKey
+			partyNpubs = strings.Join(sessions[0].Participants, ",")
+			txRequest.Master.MasterPeer = sessions[0].Master.MasterPeer
+			txRequest.Master.MasterPubKey = sessions[0].Master.MasterPubKey
+			txRequest.DerivePath = sessions[0].TxRequest.DerivePath
+			txRequest.BtcPub = sessions[0].TxRequest.BtcPub
+			txRequest.SenderAddress = sessions[0].TxRequest.SenderAddress
+			txRequest.ReceiverAddress = sessions[0].TxRequest.ReceiverAddress
+			txRequest.AmountSatoshi = sessions[0].TxRequest.AmountSatoshi
+			txRequest.FeeSatoshi = sessions[0].TxRequest.FeeSatoshi
+
+			result, err := tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(keyshare), txRequest, sessionID, sessionKey, "true", "true")
+			if err != nil {
+				fmt.Printf("Go Error: %v\n", err)
+			} else {
+				fmt.Printf("Keygen Result: %s\n", result)
+			}
+
 		}
 
 		select {}
