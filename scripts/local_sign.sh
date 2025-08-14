@@ -20,8 +20,8 @@ KEYPAIR2=$("$BUILD_DIR/$BIN_NAME" keypair)
 PRIVATE_KEY1=$(echo "$KEYPAIR1" | jq -r '.privateKey')
 PRIVATE_KEY2=$(echo "$KEYPAIR2" | jq -r '.privateKey')
 
-PUBLIC_KEY1=$(echo "$KEYPAIR1" | jq -r '.publicKey')
-PUBLIC_KEY2=$(echo "$KEYPAIR2" | jq -r '.publicKey')
+PUBLIC_KEY1=""
+PUBLIC_KEY2=""
 
 # Generate random session ID and chain code
 SESSION_ID=$("$BUILD_DIR/$BIN_NAME" random)
@@ -31,10 +31,24 @@ MESSAGE=$("$BUILD_DIR/$BIN_NAME" random)
 PORT=55055
 HOST="127.0.0.1"
 SERVER="http://$HOST:$PORT"
+<<<<<<< HEAD:scripts/keysign.sh
 
 PARTY1="peer1"
 PARTY2="peer2"
 PARTIES="$PARTY1,$PARTY2"  # Participants
+=======
+USENOSTR="false"
+NOSTRRELAY="ws://bbw-nostr.xyz"
+NET_TYPE="nostr"
+
+PARTY1="npub1p0dj3g82ff56prwnw4kkvphuv6ej25y9d2nr076795x6kescjefs7d2gqm"
+PARTY2="npub132gndqvcqyrvuu2q3lwg363cadmg2l7emqd36lawr3ey068slafqvrmknn"
+
+PARTY3="npub1rxnfxtrcfg49u3zptgc30ywf862mjfehn9x0rdu06yef8nr7phksrghwdq"
+
+echo "Enough 2 out of 3."
+PARTIES="$PARTY1,$PARTY2,$PARTY3"  # Participants
+>>>>>>> origin/simplified-nostr-branch-experimental:scripts/local_sign.sh
 
 echo "Generated Parameters:"
 
@@ -82,8 +96,19 @@ echo "Starting keysign for PARTY2..."
 "$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$MESSAGE" &
 PID2=$!
 
+<<<<<<< HEAD:scripts/keysign.sh
 # Handle cleanup on exit
 trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2; exit" SIGINT SIGTERM
+=======
+echo "Enough 2 out of 3."
+
+ echo "Starting keysign for PARTY3..."
+ "$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY3" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE3" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "$NET_TYPE" &
+ PID3=$!
+
+# Handle cleanup on exit/ 2 out of 3 
+trap "echo 'Stopping processes...'; kill $PID0 $PID1 $PID2 $PID3; exit" SIGINT SIGTERM
+>>>>>>> origin/simplified-nostr-branch-experimental:scripts/local_sign.sh
 
 echo "keysign processes running. Press Ctrl+C to stop."
 

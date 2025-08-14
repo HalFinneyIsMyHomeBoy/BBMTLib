@@ -30,10 +30,13 @@ type Status struct {
 }
 
 type MessengerImp struct {
-	Server     string
-	SessionID  string
-	SessionKey string
-	Mutex      sync.Mutex
+	Server       string
+	SessionID    string
+	SessionKey   string
+	Mutex        sync.Mutex
+	Net_Type     string
+	Parties      string
+	FunctionType string
 }
 
 type LocalStateAccessorImp struct {
@@ -46,8 +49,8 @@ var (
 	encryptionKey    = ""
 	decryptionKey    = ""
 	localStateMemory = ""
-	keyGenTimeout    = 60
-	keySignTimeout   = 60
+	keyGenTimeout    = 360
+	keySignTimeout   = 120
 	msgFetchTimeout  = 70
 )
 
@@ -162,9 +165,8 @@ func setStatus(session string, status Status) {
 
 func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
-	if len(parties) != 2 {
-		return "", fmt.Errorf("only two parties")
-	}
+	functionType := "keygen"
+
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
@@ -185,8 +187,10 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status.Info = "start joinSession"
 	setStatus(session, status)
 
-	if err := joinSession(server, session, key); err != nil {
-		return "", fmt.Errorf("fail to register session: %w", err)
+	if net_type != "nostr" {
+		if err := joinSession(server, session, key); err != nil {
+			return "", fmt.Errorf("fail to register session: %w", err)
+		}
 	}
 
 	Logln("BBMTLog", "waiting parties...")
@@ -194,9 +198,11 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status.Info = "waiting parties"
 	setStatus(session, status)
 
-	if err := awaitJoiners(parties, server, session); err != nil {
-		Logln("BBMTLog", "fail to wait all parties", "error", err)
-		return "", fmt.Errorf("fail to wait all parties: %w", err)
+	if net_type != "nostr" {
+		if err := awaitJoiners(parties, server, session); err != nil {
+			Logln("BBMTLog", "fail to wait all parties", "error", err)
+			return "", fmt.Errorf("fail to wait all parties: %w", err)
+		}
 	}
 
 	status.SeqNo++
@@ -205,9 +211,11 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 
 	Logln("BBMTLog", "inbound messenger up...")
 	messenger := &MessengerImp{
-		Server:     server,
-		SessionID:  session,
-		SessionKey: sessionKey,
+		Server:       server,
+		SessionID:    session,
+		SessionKey:   sessionKey,
+		Net_Type:     net_type,
+		FunctionType: functionType,
 	}
 
 	localStateAccessor := &LocalStateAccessorImp{
@@ -247,18 +255,32 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	setStatus(session, status)
 
 	time.Sleep(time.Second)
-	if err = endSession(server, session); err != nil {
-		close(endCh)
-		return "", fmt.Errorf("fail to end session: %w", err)
+
+	if net_type != "nostr" {
+		if err = endSession(server, session); err != nil {
+			close(endCh)
+			return "", fmt.Errorf("fail to end session: %w", err)
+		}
 	}
+
 	status.Step++
 	status.Info = "session ended"
 	setStatus(session, status)
 
-	err = flagPartyComplete(server, session, key)
-	if err != nil {
-		Logln("BBMTLog", "Warning: flagPartyComplete", "error", err)
+	if net_type != "nostr" {
+		err = flagPartyComplete(server, session, key)
+		if err != nil {
+			Logln("BBMTLog", "Warning: flagPartyComplete", "error", err)
+		}
 	}
+
+	if net_type == "nostr" {
+		err = nostrFlagPartyKeygenComplete(session)
+		if err != nil {
+			Logln("BBMTLog", "Warning: nostrFlagPartyKeygenComplete", "error", err)
+		}
+	}
+
 	status.Step++
 	status.Info = "local party complete"
 	status.Done = true
@@ -267,16 +289,17 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	close(endCh)
 	wg.Wait()
 
+	if net_type == "nostr" {
+		nostrDeleteSession(session)
+	}
+
 	Logln("========== DONE ==========")
 	return localState, nil
 }
 
 func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message string) (string, error) {
 	parties := strings.Split(partiesCSV, ",")
-	if len(parties) != 2 {
-		return "", fmt.Errorf("only two parties")
-	}
-
+	functionType := "keysign"
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
@@ -317,9 +340,12 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 
 	Logln("BBMTLog", "inbound messenger up...")
 	messenger := &MessengerImp{
-		Server:     server,
-		SessionID:  session,
-		SessionKey: sessionKey,
+		Server:       server,
+		SessionID:    session,
+		SessionKey:   sessionKey,
+		Net_Type:     net_type,
+		Parties:      partiesCSV,
+		FunctionType: functionType,
 	}
 
 	localStateAccessor := &LocalStateAccessorImp{
@@ -480,8 +506,7 @@ func unpadPKCS7(data []byte) []byte {
 	return data[:length-unpadding]
 }
 
-func (m *MessengerImp) Send(from, to, body string) error {
-
+func (m *MessengerImp) Send(from, to, body, parties, functionType string) error {
 	m.Mutex.Lock()
 	defer m.Mutex.Unlock()
 
@@ -531,6 +556,33 @@ func (m *MessengerImp) Send(from, to, body string) error {
 
 	url := m.Server + "/message/" + m.SessionID
 	Logln("BBMTLog", "sending message...")
+
+	if m.Net_Type == "nostr" {
+
+		protoMessage := ProtoMessage{
+			MessageType:  "message",
+			FunctionType: m.FunctionType,
+			SessionID:    m.SessionID,
+			From:         from,
+			To:           to,
+			RawMessage:   requestBody,
+			Recipients:   make([]string, 0, len(globalLocalNostrKeys.NostrPartyPubKeys)),
+			SeqNo:        strconv.Itoa(status.SeqNo),
+		}
+
+		for _, peer := range globalLocalNostrKeys.NostrPartyPubKeys {
+			if peer == to {
+				protoMessage.Recipients = append(protoMessage.Recipients, peer)
+			}
+		}
+
+		err = nostrSend(protoMessage)
+
+		if err != nil {
+			return fmt.Errorf("failed to send nostr message: %w", err)
+		}
+
+	} else if m.Net_Type != "nostr" {
 
 	// Prepare the HTTP request
 	resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))

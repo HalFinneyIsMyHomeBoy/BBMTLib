@@ -156,12 +156,12 @@ func (r KeysignRequest) GetKeysignCommitteeKeys() []string {
 	return strings.Split(r.KeysignCommitteeKeys, ",")
 }
 
-func (s *ServiceImpl) getParties(allPartyKeys []string, localPartyKey string, keyPrefix string) ([]*tss.PartyID, *tss.PartyID) {
+func (s *ServiceImpl) getParties(allPartyKeys []string, localPartyKey string) ([]*tss.PartyID, *tss.PartyID) {
 	var localPartyID *tss.PartyID
 	var unSortedPartiesID []*tss.PartyID
 	sort.Strings(allPartyKeys)
 	for idx, item := range allPartyKeys {
-		key := new(big.Int).SetBytes([]byte(keyPrefix + item))
+		key := new(big.Int).SetBytes([]byte(item))
 		partyID := tss.NewPartyID(strconv.Itoa(idx), item, key)
 		if item == localPartyKey {
 			localPartyID = partyID
@@ -183,7 +183,7 @@ func (s *ServiceImpl) KeygenECDSA(req *KeygenRequest) (*KeygenResponse, error) {
 	if len(chaincode) != 32 {
 		return nil, fmt.Errorf("invalid chain code length")
 	}
-	partyIDs, localPartyID := s.getParties(req.GetAllParties(), req.LocalPartyID, "")
+	partyIDs, localPartyID := s.getParties(req.GetAllParties(), req.LocalPartyID)
 
 	ctx := tss.NewPeerContext(partyIDs)
 	curve := tss.S256()
@@ -254,7 +254,7 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 	ecdsaEndCh <-chan *ecdsaKeygen.LocalPartySaveData,
 	localState *LocalState,
 	sortedPartyIds tss.SortedPartyIDs) (string, error) {
-
+	functionType := "keygen"
 	pubKey := ""
 	errChan := make(chan error, 1)
 
@@ -289,14 +289,14 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 						if item == localState.LocalPartyKey {
 							continue
 						}
-						if _err := s.messenger.Send(r.From.Moniker, item, outboundPayload); _err != nil {
+						if _err := s.messenger.Send(r.From.Moniker, item, outboundPayload, strings.Join(localState.KeygenCommitteeKeys, ","), functionType); _err != nil {
 							errChan <- fmt.Errorf("failed to broadcast message to peer, error: %v", _err)
 							return
 						}
 					}
 				} else {
 					for _, item := range r.To {
-						if _err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); _err != nil {
+						if _err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(localState.KeygenCommitteeKeys, ","), functionType); _err != nil {
 							errChan <- fmt.Errorf("failed to send message to peer, error: %v", _err)
 							return
 						}
@@ -394,7 +394,7 @@ func (s *ServiceImpl) KeysignECDSA(req *KeysignRequest) (*KeysignResponse, error
 	if !Contains(keysignCommittee, localState.LocalPartyKey) {
 		return nil, errors.New("local party not in keysign committee")
 	}
-	keysignPartyIDs, localPartyID := s.getParties(keysignCommittee, localState.LocalPartyKey, localState.ResharePrefix)
+	keysignPartyIDs, localPartyID := s.getParties(keysignCommittee, localState.LocalPartyKey)
 
 	threshold, err := GetThreshold(len(localState.KeygenCommitteeKeys))
 	if err != nil {
@@ -462,6 +462,7 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 	endCh <-chan *common.SignatureData,
 	sortedPartyIds tss.SortedPartyIDs) (*common.SignatureData, error) {
 
+	functionType := "keysign"
 	var signature *common.SignatureData = nil
 	errChan := make(chan error, 1)
 
@@ -496,13 +497,23 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 						if item.Moniker == localParty.PartyID().Moniker {
 							continue
 						}
-						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); err != nil {
+						// Convert sortedPartyIds to []string
+						partyIDStrings := make([]string, len(sortedPartyIds))
+						for i, p := range sortedPartyIds {
+							partyIDStrings[i] = p.Moniker
+						}
+						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(partyIDStrings, ","), functionType); err != nil {
 							errChan <- fmt.Errorf("failed to broadcast message to peer, error: %w", err)
 						}
 					}
 				} else {
 					for _, item := range r.To {
-						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); err != nil {
+						// Convert sortedPartyIds to []string
+						partyIDStrings := make([]string, len(sortedPartyIds))
+						for i, p := range sortedPartyIds {
+							partyIDStrings[i] = p.Moniker
+						}
+						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(partyIDStrings, ","), functionType); err != nil {
 							errChan <- fmt.Errorf("failed to send message to peer, error: %w", err)
 						}
 					}
