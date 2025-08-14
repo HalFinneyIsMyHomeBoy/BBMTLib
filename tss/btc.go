@@ -514,6 +514,11 @@ func MpcSendBTC(
 			return "", fmt.Errorf("script validation failed for input %d: %w", i, err)
 		}
 		Logf("Script validation succeeded for input %d", i)
+		nostrClearSessionCache(utxoSession)
+	}
+
+	if net_type == "nostr" {
+		nostrDeleteSession(session)
 	}
 
 	// Serialize and broadcast
