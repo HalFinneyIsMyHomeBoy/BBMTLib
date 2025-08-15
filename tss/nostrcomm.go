@@ -45,8 +45,9 @@ var (
 	NostrRetryInterval    = 3 * time.Second   // Extended base retry interval
 	NostrMaxBackoff       = 5 * time.Minute   // Extended maximum backoff for retries
 	// Additional timeout configurations
-	NostrHandshakeTimeout = 60 * time.Second // Extended timeout for handshake operations
-	NostrMessageTimeout   = 90 * time.Second // Extended timeout for message processing
+	NostrHandshakeTimeout      = 60 * time.Second // Extended timeout for handshake operations
+	NostrMessageTimeout        = 90 * time.Second // Extended timeout for message processing
+	globalVerbose         bool = false
 )
 
 type ProtoMessage struct {
@@ -251,12 +252,12 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 
 	data, err := os.ReadFile(party + ".nostr")
 	if err != nil {
-		fmt.Printf("Go Error GetNostrKeys: %v", err)
+		Logf("Go Error GetNostrKeys: %v", err)
 	}
 
 	var nostrKeys NostrKeys
 	if err := json.Unmarshal(data, &nostrKeys); err != nil {
-		fmt.Printf("Go Error Unmarshalling LocalState: %v", err)
+		Logf("Go Error Unmarshalling LocalState: %v", err)
 	}
 
 	return nostrKeys, nil
@@ -536,7 +537,7 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 	// all parties should already be listening
 
 	//master is whoever first initiates the spend request
-
+	globalVerbose, _ = strconv.ParseBool(verbose)
 	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
 	globalLocalNostrKeys.LocalNostrPrivKey = localNsec
 	globalLocalNostrKeys.LocalNostrPubKey = localNpub
@@ -548,10 +549,10 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 
 		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
 		if err != nil {
-			fmt.Printf("Go Error: %v", err)
+			Logf("Go Error: %v", err)
 			return "", err
 		} else {
-			fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+			Logf("\n [%s] Keysign Result %s\n", localNpub, result)
 			return result, nil
 		}
 
@@ -578,10 +579,10 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 					if item.Status == "keysign" {
 						result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
 						if err != nil {
-							fmt.Printf("Go Error: %v", err)
+							Logf("Go Error: %v", err)
 							return "", err
 						} else {
-							fmt.Printf("\n [%s] Keysign Result %s\n", localNpub, result)
+							Logf("\n [%s] Keysign Result %s\n", localNpub, result)
 							return result, nil
 						}
 					} else {
@@ -598,6 +599,8 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 }
 
 func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (string, error) {
+
+	globalVerbose, _ = strconv.ParseBool(verbose)
 
 	go NostrListen(localNpub, localNsec, relay)
 	time.Sleep(2 * time.Second)
@@ -629,10 +632,10 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 
 		result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr")
 		if err != nil {
-			fmt.Printf("Go Error: %v", err)
+			Logf("Go Error: %v", err)
 			return "", err
 		} else {
-			fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
+			Logf("\n [%s] Keygen Result %s\n", localNpub, result)
 			return result, nil
 		}
 
@@ -668,10 +671,10 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 
 			result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessions[0].SessionID, "", sessions[0].ChainCode, sessions[0].SessionKey, "nostr")
 			if err != nil {
-				fmt.Printf("Go Error: %v", err)
+				Logf("Go Error: %v", err)
 				return "", err
 			} else {
-				fmt.Printf("\n [%s] Keygen Result %s\n", localNpub, result)
+				Logf("\n [%s] Keygen Result %s\n", localNpub, result)
 				return result, nil
 			}
 		}
@@ -1301,19 +1304,19 @@ func GetKeyShare(party string) (LocalState, error) {
 
 	data, err := os.ReadFile(party + ".ks")
 	if err != nil {
-		fmt.Printf("Go Error GetKeyShare: %v", err)
+		Logf("Go Error GetKeyShare: %v", err)
 	}
 
 	// Decode base64
 	decodedData, err := base64.StdEncoding.DecodeString(string(data))
 	if err != nil {
-		fmt.Printf("Go Error Decoding Base64: %v", err)
+		Logf("Go Error Decoding Base64: %v", err)
 	}
 
 	// Parse JSON into LocalState
 	var keyShare LocalState
 	if err := json.Unmarshal(decodedData, &keyShare); err != nil {
-		fmt.Printf("Go Error Unmarshalling LocalState: %v", err)
+		Logf("Go Error Unmarshalling LocalState: %v", err)
 	}
 
 	return keyShare, nil

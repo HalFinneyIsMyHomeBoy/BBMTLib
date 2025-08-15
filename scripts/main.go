@@ -513,7 +513,7 @@ func main() {
 
 		if partyIndex == 0 {
 			//Master party is the first party to initiate the session, so newSession is passed as true.
-			tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "true")
+			tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), txRequest, sessionID, sessionKey, "false", "true")
 		} else {
 			//Non-master parties are passing newSession as false if they approve the session.
 			tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "false")
