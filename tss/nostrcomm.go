@@ -672,9 +672,11 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 			result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessions[0].SessionID, "", sessions[0].ChainCode, sessions[0].SessionKey, "nostr")
 			if err != nil {
 				Logf("Go Error: %v", err)
+				nostrListenCancel()
 				return "", err
 			} else {
 				Logf("\n [%s] Keygen Result %s\n", localNpub, result)
+				nostrListenCancel()
 				return result, nil
 			}
 		}
