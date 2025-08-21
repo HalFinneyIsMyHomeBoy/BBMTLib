@@ -516,8 +516,6 @@ func main() {
 			tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(decodedKeyshare), txRequest, sessionID, sessionKey, "true", "false")
 		}
 
-		select {}
-
 	}
 	if mode == "nostrPing" {
 		// Usage: go run main.go nostrPing <localParty> <recipientNpub>
