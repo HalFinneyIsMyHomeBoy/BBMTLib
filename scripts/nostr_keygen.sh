@@ -169,49 +169,4 @@ trap "echo 'Stopping processes...'; kill $KILL_CMD; rm -f /tmp/nostr_keygen_*_$$
 echo "Waiting for all keygen processes to complete..."
 wait
 
-# Process the output files and extract keyshare results
-echo ""
-echo "Processing keygen results..."
-peer_index=1
-for nostr_file in "${!NPUBS[@]}"; do
-    npub="${NPUBS[$nostr_file]}"
-    output_file="${npub}.ks"
-    temp_output="${OUTPUT_FILES[$peer_index]}"
-    
-    echo "Processing output for $nostr_file..."
-    
-    if [ -f "$temp_output" ]; then
-        # Look for the "Keygen Result:" line and extract the keyshare
-        keyshare_result=$(grep "Keygen Result:" "$temp_output" | sed 's/.*Keygen Result: //')
-        
-        if [ -n "$keyshare_result" ]; then
-            echo "Found keyshare result for $nostr_file"
-            echo "$keyshare_result" > "$output_file"
-            echo "Keyshare saved to: $output_file"
-        else
-            echo "Warning: No keyshare result found for $nostr_file"
-            echo "Output file contents:"
-            cat "$temp_output"
-        fi
-        
-        # Clean up temporary file
-        rm -f "$temp_output"
-    else
-        echo "Error: Temporary output file not found for $nostr_file"
-    fi
-    ((peer_index++))
-done
-
-echo ""
-echo "Nostr keygen completed!"
-echo "Keyshare files created:"
-for nostr_file in "${!NPUBS[@]}"; do
-    npub="${NPUBS[$nostr_file]}"
-    output_file="${npub}.ks"
-    if [ -f "$output_file" ]; then
-        echo "  - $output_file"
-    fi
-done
-
-
 

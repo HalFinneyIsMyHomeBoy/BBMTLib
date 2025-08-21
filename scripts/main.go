@@ -236,9 +236,6 @@ func main() {
 				fmt.Printf("Keyshare saved to %s\n", filename)
 			}
 		}
-
-		select {}
-
 	}
 
 	if mode == "keygen" {
