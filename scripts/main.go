@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
@@ -191,53 +190,6 @@ func main() {
 		select {}
 	}
 
-	if mode == "debugNostrKeygen" {
-
-		nostrRelay := "ws://bbw-nostr.xyz"
-		localNpub := "npub1p0dj3g82ff56prwnw4kkvphuv6ej25y9d2nr076795x6kescjefs7d2gqm"
-		localNsec := "nsec1hqneu0zle0tu8hk605hm2v384qxqla7v97qdz8nzqjerzefc0wmqg8fftz"
-		//remote "nsec12p2mh25m5frvncwwmglrrjt3t2mrpctl4x6kpzkl6nr2g5gw806sjhefv6"
-		partyNpubs := "npub1p0dj3g82ff56prwnw4kkvphuv6ej25y9d2nr076795x6kescjefs7d2gqm,npub132gndqvcqyrvuu2q3lwg363cadmg2l7emqd36lawr3ey068slafqvrmknn,npub1rxnfxtrcfg49u3zptgc30ywf862mjfehn9x0rdu06yef8nr7phksrghwdq"
-		verbose := "true"
-
-		result, err := tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		} else {
-			fmt.Printf("Keygen Result: %s\n", result)
-		}
-
-		select {}
-	}
-
-	if mode == "nostrKeygen" {
-		if len(os.Args) != 10 {
-			fmt.Println("Usage: go run main.go nostrKeygen <relay> <localNsec> <localNpub> <partyNpubs> <sessionID> <sessionKey> <chainCode> <verbose>")
-			os.Exit(1)
-		}
-		nostrRelay := os.Args[2]
-		localNsec := os.Args[3]
-		localNpub := os.Args[4]
-		partyNpubs := os.Args[5] //all party npubs
-		verbose := os.Args[6]
-
-		result, err := tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
-		if err != nil {
-			fmt.Printf("Go Error: %v\n", err)
-		} else {
-			fmt.Printf("Keygen Result: %s\n", result)
-
-			// Save result to file with npub as filename and .ks extension
-			filename := localNpub + ".ks"
-			encodedResult := base64.StdEncoding.EncodeToString([]byte(result))
-			if err := os.WriteFile(filename, []byte(encodedResult), 0644); err != nil {
-				fmt.Printf("Failed to save keyshare to %s: %v\n", filename, err)
-			} else {
-				fmt.Printf("Keyshare saved to %s\n", filename)
-			}
-		}
-	}
-
 	if mode == "keygen" {
 		// prepare args
 		server := os.Args[2]
@@ -253,6 +205,7 @@ func main() {
 		if len(sessionKey) > 0 {
 			encKey = ""
 			decKey = ""
+			fmt.Printf("Session key used for keygen\n")
 		}
 
 		ppmFile := party + ".json"
@@ -265,16 +218,19 @@ func main() {
 		} else {
 
 			// Create LocalState with Nostr keys
-
 			var localState tss.LocalState
 
 			if err := json.Unmarshal([]byte(keyshare), &localState); err != nil {
 				fmt.Printf("Failed to parse keyshare for %s: %v\n", party, err)
 			}
 
-			// // Marshal the updated LocalState
+			// Marshal the updated LocalState
 			updatedKeyshare, err := json.Marshal(localState)
-			fmt.Printf(party + " Keygen Result Saved\n")
+			if err != nil {
+				fmt.Printf("Failed to marshal keyshare for %s: %v\n", party, err)
+			}
+
+			fmt.Printf("%s Keygen Result Saved\n", party)
 			encodedResult := base64.StdEncoding.EncodeToString(updatedKeyshare)
 
 			if err := os.WriteFile(keyshareFile, []byte(encodedResult), 0644); err != nil {
@@ -324,6 +280,7 @@ func main() {
 		if len(sessionKey) > 0 {
 			encKey = ""
 			decKey = ""
+			fmt.Printf("Session key used for keysign\n")
 		}
 
 		// message hash, base64 encoded
@@ -341,96 +298,32 @@ func main() {
 		}
 	}
 
-	if mode == "debugNostrSpend" {
-
-		nostrRelay := "ws://bbw-nostr.xyz"
-		localNpub := "npub15qt3jlzgrek4st5sltuju5z2q5kcrk6p72k8vduv273gc8seg72q6lmnnh"
-		localNsec := "nsec1jwa0mcque2dn6nfx8r92znctxhu960wlzkx0f97hg2at0mxnzvqsssguva"
-
-		partyNpubs := "npub15qt3jlzgrek4st5sltuju5z2q5kcrk6p72k8vduv273gc8seg72q6lmnnh,npub1u9qehjkswj9jzx2j5ex89h0qsd2pdjg33mde49ujn0e8y0nunp7q3s6msv,npub190szmjnpt6xpu8rxg8xmy2w7g5s7alncl0hgamq9pv9dpskgq8msedy03l"
-		derivePath := "m/44'/0'/0'/0/0"
-
-		keyshareFile := localNpub + ".ks"
-		keyshare, err := os.ReadFile(keyshareFile)
-		if err != nil {
-			fmt.Printf("Error reading keyshare file for %s: %v\n", localNpub, err)
-			return
+	if mode == "nostrKeygen" {
+		if len(os.Args) != 10 {
+			fmt.Println("Usage: go run main.go nostrKeygen <relay> <localNsec> <localNpub> <partyNpubs> <sessionID> <sessionKey> <chainCode> <verbose>")
+			os.Exit(1)
 		}
+		nostrRelay := os.Args[2]
+		localNsec := os.Args[3]
+		localNpub := os.Args[4]
+		partyNpubs := os.Args[5] //all party npubs
+		verbose := os.Args[6]
 
-		decodedKeyshare, err := base64.StdEncoding.DecodeString(string(keyshare))
-		if err != nil {
-			fmt.Printf("Failed to decode base64 keyshare: %v\n", err)
-			return
-		}
-
-		// Get the public key and chain code from keyshare
-		var localState tss.LocalState
-		if err := json.Unmarshal(decodedKeyshare, &localState); err != nil {
-			fmt.Printf("Failed to parse keyshare: %v\n", err)
-			return
-		}
-
-		// Get the derived public key using chain code from keyshare
-		btcPub, err := tss.GetDerivedPubKey(localState.PubKey, localState.ChainCodeHex, derivePath, false)
-		if err != nil {
-			fmt.Printf("Failed to get derived public key: %v\n", err)
-			return
-		}
-
-		// Get the sender address
-		senderAddress, err := tss.ConvertPubKeyToBTCAddress(btcPub, "testnet3")
-		if err != nil {
-			fmt.Printf("Failed to get sender address: %v\n", err)
-			return
-		}
-
-		fmt.Printf("Successfully processed keyshare for %s\n", localNpub)
-
-		// Create TxRequest struct
-		txRequest := tss.TxRequest{
-			SenderAddress:   senderAddress,
-			ReceiverAddress: "mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV",
-			AmountSatoshi:   1000,
-			FeeSatoshi:      600,
-			DerivePath:      "m/44'/0'/0'/0/0",
-			BtcPub:          btcPub,
-			Master:          tss.Master{MasterPeer: localNpub, MasterPubKey: localNpub},
-		}
-
-		sessionID := "8dd15291d0d60b2c0c4891e91d5f2832431fd21b49a5b9b6e06e228dc22c3b88"
-		sessionKey := "7dd15291d0d60b2c0c4891e91d5f2832431fd21b49a5b9b6e06e228dc22c3b87"
-
-		go tss.NostrListen(localNpub, localNsec, nostrRelay)
-		time.Sleep(2 * time.Second)
-		fmt.Printf("NostrListen started for %s\n", localNpub)
-
-		sessions, err := tss.WaitForSessions()
+		result, err := tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
-			fmt.Printf("Sessions: %v\n", sessions)
-			sessionID = sessions[0].SessionID
-			sessionKey = sessions[0].SessionKey
-			partyNpubs = strings.Join(sessions[0].Participants, ",")
-			txRequest.Master.MasterPeer = sessions[0].Master.MasterPeer
-			txRequest.Master.MasterPubKey = sessions[0].Master.MasterPubKey
-			txRequest.DerivePath = sessions[0].TxRequest.DerivePath
-			txRequest.BtcPub = sessions[0].TxRequest.BtcPub
-			txRequest.SenderAddress = sessions[0].TxRequest.SenderAddress
-			txRequest.ReceiverAddress = sessions[0].TxRequest.ReceiverAddress
-			txRequest.AmountSatoshi = sessions[0].TxRequest.AmountSatoshi
-			txRequest.FeeSatoshi = sessions[0].TxRequest.FeeSatoshi
+			fmt.Printf("Keygen Result: %s\n", result)
 
-			result, err := tss.NostrSpend(nostrRelay, localNpub, localNsec, partyNpubs, string(keyshare), txRequest, sessionID, sessionKey, "true", "true")
-			if err != nil {
-				fmt.Printf("Go Error: %v\n", err)
+			// Save result to file with npub as filename and .ks extension
+			filename := localNpub + ".ks"
+			encodedResult := base64.StdEncoding.EncodeToString([]byte(result))
+			if err := os.WriteFile(filename, []byte(encodedResult), 0644); err != nil {
+				fmt.Printf("Failed to save keyshare to %s: %v\n", filename, err)
 			} else {
-				fmt.Printf("Keygen Result: %s\n", result)
+				fmt.Printf("Keyshare saved to %s\n", filename)
 			}
-
 		}
-
-		select {}
 	}
 
 	if mode == "nostrSpend" {
@@ -517,6 +410,7 @@ func main() {
 		}
 
 	}
+
 	if mode == "nostrPing" {
 		// Usage: go run main.go nostrPing <localParty> <recipientNpub>
 		if len(os.Args) != 4 {
