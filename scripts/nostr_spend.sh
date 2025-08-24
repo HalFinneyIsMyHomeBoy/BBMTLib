@@ -13,14 +13,12 @@ mkdir -p "$BUILD_DIR"
 echo "Building the Go binary..."
 go build -o "$BUILD_DIR/$BIN_NAME" main.go
 
-
 # Get other required arguments
 derivePath="m/44'/0'/0'/0/0"
 receiverAddress="mt1KTSEerA22rfhprYAVuuAvVW1e9xTqfV"
 amountSatoshi="1000"
 estimatedFee="600"
 nostrRelay="ws://bbw-nostr.xyz"
-
 
 # Find the first .nostr file
 nostr_file=$(find . -name "*.nostr" -type f | head -n 1)
@@ -35,7 +33,6 @@ echo "Found .nostr file: $nostr_file"
 # Extract all npubs from nostr_party_pub_keys using jq
 # This gets all values from the nostr_party_pub_keys object and joins them with commas
 npubs=$(jq -r '.nostr_party_pub_keys | to_entries | map(.value) | join(",")' "$nostr_file")
-echo "npubs: $npubs"
 if [ $? -eq 0 ] && [ -n "$npubs" ]; then
     echo "Extracted npubs:"
     echo "$npubs"
@@ -56,10 +53,8 @@ if [ -z "$local_npub" ] || [ "$local_npub" = "null" ] || [ -z "$local_nsec" ] ||
     exit 1
 fi
 
-
 # Convert comma-separated string to array
 IFS=',' read -ra NPUBS <<< "$npubs"
-
 
 # Check if first argument is "debug"
 if [ "$1" = "debug" ]; then
@@ -73,15 +68,13 @@ else
     sessionKey=$("$BUILD_DIR/$BIN_NAME" random)
 fi
 
-
 echo "Generated session ID: $sessionID"
 echo "Generated session key: $sessionKey"
 
 # Initialize array to store PIDs
-declare -a PIDS=()
-# Initialize counter
-i=0
+PIDS=()
 masterNpub=""
+
 # Loop through each npub (each party)
 for i in "${!NPUBS[@]}"; do
     npub="${NPUBS[$i]}"
@@ -111,21 +104,14 @@ for i in "${!NPUBS[@]}"; do
         continue  # Skip this npub and continue with the next one
     fi
 
-    #if [ $i -gt 1 ]; then
-        #echo "$i : Waiting 10 seconds before starting next party..."
-        #sleep 30
-        #"$BUILD_DIR/$BIN_NAME" nostrSpend "$npub" "$nsec" "$npubs" "$nostrRelay" "$sessionID" "$sessionKey" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$i" "$masterNpub" &
-        #PIDS[$i]=$!
-    #else
-        #"$BUILD_DIR/$BIN_NAME" nostrSpend "$npub" "$nsec" "$npubs" "$nostrRelay" "$sessionID" "$sessionKey" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$i" "$masterNpub" &
-        #PIDS[$i]=$!
-    #fi
-
+    echo "Starting nostrSpend for party $i (npub: $npub)..."
     "$BUILD_DIR/$BIN_NAME" nostrSpend "$npub" "$nsec" "$npubs" "$nostrRelay" "$sessionID" "$sessionKey" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$i" "$masterNpub" &
-    PIDS[$i]=$!
-    sleep 1
-
-    i=$((i+1))
+    PIDS+=($!)
+    
+    # Small delay between starting parties
+    if [ $i -lt $((${#NPUBS[@]} - 1)) ]; then
+        sleep 1
+    fi
 done
 
 # Set up trap to kill all processes when script is interrupted
@@ -140,3 +126,5 @@ for pid in "${PIDS[@]}"; do
         wait "$pid"
     fi
 done
+
+echo "All nostrSpend processes completed!"
