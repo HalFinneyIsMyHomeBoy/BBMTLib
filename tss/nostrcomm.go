@@ -24,6 +24,7 @@ import (
 // Global variables
 var (
 	nostrSessionList          []NostrSession
+	nostrSentEventsList       []SentEvent
 	nostrPingList             []ProtoMessage
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
@@ -87,6 +88,11 @@ type NostrKeys struct {
 type Master struct {
 	MasterPeer   string `json:"master_peer"`
 	MasterPubKey string `json:"master_pubkey"`
+}
+
+type SentEvent struct {
+	EventID      string `json:"event_id"`
+	SenderPubKey string `json:"sender_pubkey"`
 }
 
 type NostrStatus struct {
@@ -481,6 +487,10 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		AddOrAppendNostrSession(protoMessage)
 	}
+	if protoMessage.FunctionType == "keygen_status" && protoMessage.MessageType != "message" {
+		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+		AddOrAppendNostrSession(protoMessage)
+	}
 
 	if protoMessage.MessageType == "message" {
 		//Logf("message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
@@ -681,6 +691,27 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 			}
 		}
 	}
+
+}
+
+func publishNostrKeygenStatus(sessionID string, localNpub string) {
+
+	session, err := GetSession(sessionID)
+	if err != nil {
+		Logf("Error getting session: %v", err)
+		return
+	}
+
+	protoMessage := ProtoMessage{
+		SessionID:       sessionID,
+		FunctionType:    "keygen_status",
+		From:            localNpub,
+		FromNostrPubKey: localNpub,
+		Recipients:      []string{sessions[0].Master.MasterPubKey},
+		Participants:    []string{localNpub},
+	}
+
+	nostrSend(protoMessage)
 
 }
 
@@ -1004,6 +1035,7 @@ func nostrSend(protoMessage ProtoMessage) error {
 					log.Printf("Error publishing chunk %d: %v", i, err)
 					return err
 				}
+				nostrSentEventsList = append(nostrSentEventsList, SentEvent{EventID: event.ID, SenderPubKey: senderPubkey})
 			}
 			return nil // Return after sending all chunks
 		} else {
@@ -1035,6 +1067,7 @@ func nostrSend(protoMessage ProtoMessage) error {
 			if err != nil {
 				return fmt.Errorf("failed to create wrap: %w", err)
 			}
+			nostrSentEventsList = append(nostrSentEventsList, SentEvent{EventID: event.ID, SenderPubKey: senderPubkey})
 		}
 
 		if event == nil {
@@ -1045,6 +1078,16 @@ func nostrSend(protoMessage ProtoMessage) error {
 		if err := publishWithRetry(event, "event"); err != nil {
 			log.Printf("Error publishing event: %v", err)
 			return err
+		}
+
+	}
+	return nil
+}
+
+func publishDeleteEvent(eventID string, senderPubKey string) error {
+	for i, item := range nostrSentEventsList {
+		if item.EventID == eventID && item.SenderPubKey == senderPubKey {
+			nostrSentEventsList = append(nostrSentEventsList[:i], nostrSentEventsList[i+1:]...)
 		}
 	}
 	return nil
