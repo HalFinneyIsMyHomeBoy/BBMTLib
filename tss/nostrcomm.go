@@ -593,6 +593,7 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 							return "", err
 						} else {
 							Logf("\n [%s] Keysign Result %s\n", localNpub, result)
+							Logf("EVENTLIST: %v", nostrSentEventsList)
 							return result, nil
 						}
 					} else {
@@ -694,26 +695,26 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 
 }
 
-func publishNostrKeygenStatus(sessionID string, localNpub string) {
+// func publishNostrKeygenStatus(sessionID string, localNpub string) {
 
-	session, err := GetSession(sessionID)
-	if err != nil {
-		Logf("Error getting session: %v", err)
-		return
-	}
+// 	session, err := GetSession(sessionID)
+// 	if err != nil {
+// 		Logf("Error getting session: %v", err)
+// 		return
+// 	}
 
-	protoMessage := ProtoMessage{
-		SessionID:       sessionID,
-		FunctionType:    "keygen_status",
-		From:            localNpub,
-		FromNostrPubKey: localNpub,
-		Recipients:      []string{sessions[0].Master.MasterPubKey},
-		Participants:    []string{localNpub},
-	}
+// 	protoMessage := ProtoMessage{
+// 		SessionID:       sessionID,
+// 		FunctionType:    "keygen_status",
+// 		From:            localNpub,
+// 		FromNostrPubKey: localNpub,
+// 		Recipients:      []string{sessions[0].Master.MasterPubKey},
+// 		Participants:    []string{localNpub},
+// 	}
 
-	nostrSend(protoMessage)
+// 	nostrSend(protoMessage, true)
 
-}
+// }
 
 // WaitForSessions polls GetSessions() every second for up to 5 minutes until it returns a non-empty result
 func WaitForSessions() ([]NostrSession, error) {
@@ -765,7 +766,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 
 	//==============================SEND (INIT_HANDSHAKE) TO ALL PARTIES========================
 	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
-	nostrSend(protoMessage)
+	nostrSend(protoMessage, true)
 	//==============================COLLECT ACK_HANDSHAKES==============================
 	//time.Sleep(5 * time.Second)
 	partyCount := len(globalLocalNostrKeys.NostrPartyPubKeys)
@@ -888,7 +889,7 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 		Master:          nostrSession.Master,
 	}
 
-	nostrSend(ackProtoMessage)
+	nostrSend(ackProtoMessage, true)
 
 }
 
@@ -916,7 +917,7 @@ func startSessionMaster(sessionID string, participants []string, localParty stri
 				TxRequest:    item.TxRequest,
 				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
 			}
-			nostrSend(startKeysignProtoMessage)
+			nostrSend(startKeysignProtoMessage, true)
 		}
 	}
 }
@@ -947,6 +948,7 @@ func nostrDeleteSession(sessionID string) {
 			nostrSessionList = append(nostrSessionList[:i], nostrSessionList[i+1:]...)
 		}
 	}
+	publishDeleteEvent()
 	Logf("Nostr Session Deleted: %s", sessionID)
 }
 
@@ -960,7 +962,7 @@ func nostrSessionAlreadyExists(list []NostrSession, nostrSession NostrSession) b
 	return false
 }
 
-func nostrSend(protoMessage ProtoMessage) error {
+func nostrSend(protoMessage ProtoMessage, deleteEvent bool) error {
 
 	for _, recipient := range protoMessage.Recipients {
 		protoMessageJSON, err := json.Marshal(protoMessage)
@@ -980,6 +982,7 @@ func nostrSend(protoMessage ProtoMessage) error {
 				return fmt.Errorf("invalid sender nsec: %w", err)
 			}
 			senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
+			Logf("Sender Pubkey: %s", senderPubkey)
 			if err != nil {
 				return fmt.Errorf("failed to derive sender pubkey: %w", err)
 			}
@@ -1031,11 +1034,14 @@ func nostrSend(protoMessage ProtoMessage) error {
 				}
 
 				// Publish chunk with timeout and retry logic
-				if err := publishWithRetry(event, fmt.Sprintf("chunk %d", i)); err != nil {
+				if err := publishWithRetry(event); err != nil {
 					log.Printf("Error publishing chunk %d: %v", i, err)
 					return err
 				}
-				nostrSentEventsList = append(nostrSentEventsList, SentEvent{EventID: event.ID, SenderPubKey: senderPubkey})
+
+				if deleteEvent {
+					nostrSentEventsList = append(nostrSentEventsList, SentEvent{EventID: event.ID, SenderPubKey: senderPubkey})
+				}
 			}
 			return nil // Return after sending all chunks
 		} else {
@@ -1045,6 +1051,8 @@ func nostrSend(protoMessage ProtoMessage) error {
 				return fmt.Errorf("invalid sender nsec: %w", err)
 			}
 			senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
+			Logf("Sender Pubkey: %s", senderPubkey)
+
 			if err != nil {
 				return fmt.Errorf("failed to derive sender pubkey: %w", err)
 			}
@@ -1067,7 +1075,10 @@ func nostrSend(protoMessage ProtoMessage) error {
 			if err != nil {
 				return fmt.Errorf("failed to create wrap: %w", err)
 			}
-			nostrSentEventsList = append(nostrSentEventsList, SentEvent{EventID: event.ID, SenderPubKey: senderPubkey})
+
+			if deleteEvent {
+				nostrSentEventsList = append(nostrSentEventsList, SentEvent{EventID: event.ID, SenderPubKey: senderPubkey})
+			}
 		}
 
 		if event == nil {
@@ -1075,7 +1086,7 @@ func nostrSend(protoMessage ProtoMessage) error {
 		}
 
 		// Publish event with timeout and retry logic
-		if err := publishWithRetry(event, "event"); err != nil {
+		if err := publishWithRetry(event); err != nil {
 			log.Printf("Error publishing event: %v", err)
 			return err
 		}
@@ -1084,17 +1095,68 @@ func nostrSend(protoMessage ProtoMessage) error {
 	return nil
 }
 
-func publishDeleteEvent(eventID string, senderPubKey string) error {
-	for i, item := range nostrSentEventsList {
-		if item.EventID == eventID && item.SenderPubKey == senderPubKey {
-			nostrSentEventsList = append(nostrSentEventsList[:i], nostrSentEventsList[i+1:]...)
-		}
+func publishDeleteEvent() error {
+	Logf("Publishing delete event")
+	deleteEvent := &nostr.Event{
+		Kind:      5, // NIP-09 delete event kind
+		CreatedAt: nostr.Now(),
+		Content:   "Event deleted", // Optional content explaining why it was deleted
+		Tags:      nostr.Tags{
+			//{"e", eventID}, // Tag the event ID to be deleted
+		},
 	}
+
+	for _, item := range nostrSentEventsList {
+		deleteEvent.Tags = append(deleteEvent.Tags, nostr.Tag{"e", item.EventID})
+		//deleteEvent.PubKey = item.SenderPubKey
+	}
+
+	Logf("deleteEvent: %v", deleteEvent)
+	// Sign the event with the private key
+	_, senderPrivkey, err := nip19.Decode(globalLocalNostrKeys.LocalNostrPrivKey)
+	if err != nil {
+		return fmt.Errorf("invalid sender nsec: %w", err)
+	}
+	if err := deleteEvent.Sign(senderPrivkey.(string)); err != nil {
+		Logf("Signing failed with error: %v", err)
+		return fmt.Errorf("failed to sign delete event: %w", err)
+	}
+
+	// Publish the delete event using the existing retry mechanism
+	if err := publishWithRetry(deleteEvent); err != nil {
+		return fmt.Errorf("failed to publish delete event: %w", err)
+	}
+	Logf("Published deletion request for all events")
+	return nil
+}
+
+// PublishNIP09DeleteEvent publishes a NIP-09 delete event to mark an event as deleted
+func PublishNIP09DeleteEvent(eventID string, privateKey string) error {
+	// Create a delete event (kind:5) according to NIP-09
+	deleteEvent := &nostr.Event{
+		Kind:      5, // NIP-09 delete event kind
+		CreatedAt: nostr.Now(),
+		Content:   "Event deleted", // Optional content explaining why it was deleted
+		Tags: nostr.Tags{
+			{"e", eventID}, // Tag the event ID to be deleted
+		},
+	}
+
+	// Sign the event with the private key
+	if err := deleteEvent.Sign(privateKey); err != nil {
+		return fmt.Errorf("failed to sign delete event: %w", err)
+	}
+
+	// Publish the delete event using the existing retry mechanism
+	if err := publishWithRetry(deleteEvent); err != nil {
+		return fmt.Errorf("failed to publish delete event: %w", err)
+	}
+
 	return nil
 }
 
 // publishWithRetry publishes an event with timeout and retry logic
-func publishWithRetry(event *nostr.Event, eventType string) error {
+func publishWithRetry(event *nostr.Event) error {
 	maxRetries := 3
 	backoff := 1 * time.Second
 
@@ -1109,7 +1171,7 @@ func publishWithRetry(event *nostr.Event, eventType string) error {
 			return nil // Success
 		}
 
-		log.Printf("Publish attempt %d failed for %s: %v", attempt+1, eventType, err)
+		log.Printf("Publish attempt %d failed for %s: %v", attempt+1, event.Kind, err)
 
 		if attempt < maxRetries-1 {
 			time.Sleep(backoff)
@@ -1117,7 +1179,7 @@ func publishWithRetry(event *nostr.Event, eventType string) error {
 		}
 	}
 
-	return fmt.Errorf("failed to publish %s after %d attempts", eventType, maxRetries)
+	return fmt.Errorf("failed to publish %s after %d attempts", event.Kind, maxRetries)
 }
 
 func nostrGetData(key string) (interface{}, bool) {
@@ -1302,7 +1364,7 @@ func SendNostrPing(localParty, pingID, recipientNpub string) (bool, error) { //U
 		RawMessage:      []byte(pingID),
 	}
 
-	err := nostrSend(protoMessage)
+	err := nostrSend(protoMessage, true)
 	if err != nil {
 		return false, fmt.Errorf("error sending ping: %w", err)
 	}
@@ -1331,7 +1393,7 @@ func returnNostrPong(localParty string, protoMessage ProtoMessage) {
 	protoMessage.FunctionType = "pong"
 	protoMessage.Recipients = []string{protoMessage.FromNostrPubKey}
 	protoMessage.From = localParty
-	nostrSend(protoMessage)
+	nostrSend(protoMessage, true)
 
 	Logf("pong sent to %s", from)
 }
