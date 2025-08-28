@@ -1096,39 +1096,87 @@ func nostrSend(protoMessage ProtoMessage, deleteEvent bool) error {
 }
 
 func publishDeleteEvent() error {
-	Logf("Publishing delete event")
-	deleteEvent := &nostr.Event{
-		Kind:      5, // NIP-09 delete event kind
-		CreatedAt: nostr.Now(),
-		Content:   "Event deleted", // Optional content explaining why it was deleted
-		Tags:      nostr.Tags{
-			//{"e", eventID}, // Tag the event ID to be deleted
-		},
-	}
-
-	for _, item := range nostrSentEventsList {
-		deleteEvent.Tags = append(deleteEvent.Tags, nostr.Tag{"e", item.EventID})
-		//deleteEvent.PubKey = item.SenderPubKey
-	}
-
-	Logf("deleteEvent: %v", deleteEvent)
-	// Sign the event with the private key
-	_, senderPrivkey, err := nip19.Decode(globalLocalNostrKeys.LocalNostrPrivKey)
-	if err != nil {
-		return fmt.Errorf("invalid sender nsec: %w", err)
-	}
-	if err := deleteEvent.Sign(senderPrivkey.(string)); err != nil {
-		Logf("Signing failed with error: %v", err)
-		return fmt.Errorf("failed to sign delete event: %w", err)
-	}
-
-	// Publish the delete event using the existing retry mechanism
-	if err := publishWithRetry(deleteEvent); err != nil {
-		return fmt.Errorf("failed to publish delete event: %w", err)
-	}
-	Logf("Published deletion request for all events")
 	return nil
 }
+
+// 	Logf("Publishing delete event")
+// 	protoMessageJSON, err := json.Marshal(protoMessage)
+// 	if err != nil {
+// 		log.Printf("Error marshalling protoMessage: %v", err)
+// 		return err
+// 	}
+
+// 	protoMessageSize := int64(len(protoMessageJSON))
+// 	var event *nostr.Event
+
+// 	_, senderPrivkey, err := nip19.Decode(globalLocalNostrKeys.LocalNostrPrivKey)
+// 	if err != nil {
+// 		return fmt.Errorf("invalid sender nsec: %w", err)
+// 	}
+// 	senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
+// 	Logf("Sender Pubkey: %s", senderPubkey)
+
+// 	if err != nil {
+// 		return fmt.Errorf("failed to derive sender pubkey: %w", err)
+// 	}
+// 	_, recipientPubkey, err := nip19.Decode(recipient)
+// 	if err != nil {
+// 		return fmt.Errorf("invalid recipient npub: %w", err)
+// 	}
+
+// 	// Create rumor
+// 	rumor := createRumor(string(protoMessageJSON), senderPubkey, recipientPubkey.(string))
+
+// 	// Create seal for recipient
+// 	seal, err := createSeal(rumor, senderPrivkey.(string), recipientPubkey.(string))
+// 	if err != nil {
+// 		return fmt.Errorf("failed to create seal: %w", err)
+// 	}
+
+// 	// Create gift wrap for recipient
+// 	event, err = createWrap(seal, recipientPubkey.(string))
+// 	if err != nil {
+// 		return fmt.Errorf("failed to create wrap: %w", err)
+// 	}
+// // Publish event with timeout and retry logic
+// if err := publishWithRetry(event); err != nil {
+// 	log.Printf("Error publishing event: %v", err)
+// 	return err
+// }
+
+// 	deleteEvent := &nostr.Event{
+// 		Kind:      5, // NIP-09 delete event kind
+// 		CreatedAt: nostr.Now(),
+// 		Content:   "Event deleted", // Optional content explaining why it was deleted
+// 		Tags:      nostr.Tags{
+// 			//{"e", eventID}, // Tag the event ID to be deleted
+// 		},
+// 	}
+
+// 	for _, item := range nostrSentEventsList {
+// 		deleteEvent.Tags = append(deleteEvent.Tags, nostr.Tag{"e", item.EventID})
+// 		//deleteEvent.PubKey = item.SenderPubKey
+// 	}
+
+// 	Logf("deleteEvent: %v", deleteEvent)
+// 	// Sign the event with the private key
+// 	_, senderPrivkey, err := nip19.Decode(globalLocalNostrKeys.LocalNostrPrivKey)
+// 	if err != nil {
+// 		return fmt.Errorf("invalid sender nsec: %w", err)
+// 	}
+// 	if err := deleteEvent.Sign(senderPrivkey.(string)); err != nil {
+// 		Logf("Signing failed with error: %v", err)
+// 		return fmt.Errorf("failed to sign delete event: %w", err)
+// 	}
+
+// 	// Publish the delete event using the existing retry mechanism
+// 	if err := publishWithRetry(deleteEvent); err != nil {
+// 		return fmt.Errorf("failed to publish delete event: %w", err)
+// 	}
+// 	Logf("Published deletion request for all events")
+// 	return nil
+
+// }
 
 // PublishNIP09DeleteEvent publishes a NIP-09 delete event to mark an event as deleted
 func PublishNIP09DeleteEvent(eventID string, privateKey string) error {
