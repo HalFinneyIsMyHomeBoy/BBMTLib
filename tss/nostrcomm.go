@@ -542,6 +542,13 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 	return "", nil
 }
 
+func GenerateNostrSession() (string, string, string, error) {
+	sessionId := randomSeed(64)
+	sessionKey := randomSeed(64)
+	chainCode := randomSeed(64)
+	return sessionId, sessionKey, chainCode, nil
+}
+
 func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequest TxRequest, sessionID, sessionKey, verbose, newSession string) (string, error) {
 
 	// all parties should already be listening
@@ -609,7 +616,7 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 
 }
 
-func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (string, error) {
+func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey, sessionID, verbose string) (string, error) {
 
 	globalVerbose, _ = strconv.ParseBool(verbose)
 
@@ -626,10 +633,7 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (strin
 	}
 
 	if masterNpub == localNpub { //If we are the master, we need to initiate the handshake
-		txRequest := TxRequest{}    //Empty TxRequest because it's a keygen, not a keysign
-		sessionID := randomSeed(64) //Master generates the sessionID, SessionKey and chaincode
-		sessionKey := randomSeed(64)
-		chainCode := randomSeed(64)
+		txRequest := TxRequest{} //Empty TxRequest because it's a keygen, not a keysign
 
 		//Set the globalLocalNostrKeys
 		globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
@@ -1096,87 +1100,116 @@ func nostrSend(protoMessage ProtoMessage, deleteEvent bool) error {
 }
 
 func publishDeleteEvent() error {
+
+	// Logf("Publishing delete event")
+	// protoMessageJSON, err := json.Marshal(protoMessage)
+	// if err != nil {
+	// 	log.Printf("Error marshalling protoMessage: %v", err)
+	// 	return err
+	// }
+
+	// protoMessageSize := int64(len(protoMessageJSON))
+	// var event *nostr.Event
+
+	// _, senderPrivkey, err := nip19.Decode(globalLocalNostrKeys.LocalNostrPrivKey)
+	// if err != nil {
+	// 	return fmt.Errorf("invalid sender nsec: %w", err)
+	// }
+	// senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
+	// Logf("Sender Pubkey: %s", senderPubkey)
+
+	// if err != nil {
+	// 	return fmt.Errorf("failed to derive sender pubkey: %w", err)
+	// }
+	// _, recipientPubkey, err := nip19.Decode(recipient)
+	// if err != nil {
+	// 	return fmt.Errorf("invalid recipient npub: %w", err)
+	// }
+
+	// // Create rumor
+	// rumor := createRumor(string(protoMessageJSON), senderPubkey, recipientPubkey.(string))
+
+	// // Create seal for recipient
+	// seal, err := createSeal(rumor, senderPrivkey.(string), recipientPubkey.(string))
+	// if err != nil {
+	// 	return fmt.Errorf("failed to create seal: %w", err)
+	// }
+
+	// // Create gift wrap for recipient
+	// event, err = createWrap(seal, recipientPubkey.(string))
+	// if err != nil {
+	// 	return fmt.Errorf("failed to create wrap: %w", err)
+	// }
+
+	// // Publish event with timeout and retry logic
+	// if err := publishWithRetry(event); err != nil {
+	// 	log.Printf("Error publishing event: %v", err)
+	// 	return err
+	// }
+
+	// Create a new event
+	// 	event := nostr.Event{
+	// 		Kind:      4, // NIP-04 encrypted DM
+	// 		CreatedAt: nostr.Now(),
+	// 		Tags:      nostr.Tags{{"p", "npub1qpv7dy8p9l9q2dmu3gem6td58z8hx0maxhjf2tpajpakepcslszsxuj4kz"}},
+	// 	}
+
+	// 	// Encrypt the message
+	// 	encrypted, err := nip04.Encrypt("things", []byte(globalLocalNostrKeys.LocalNostrPrivKey))
+	// 	if err != nil {
+	// 		fmt.Printf("Encryption failed: %v\n", err)
+	// 		return err
+	// 	}
+	// 	event.Content = encrypted
+
+	// 	// Sign the event
+	// 	err = event.Sign(globalLocalNostrKeys.LocalNostrPrivKey)
+	// 	if err != nil {
+	// 		fmt.Printf("Signing failed: %v\n", err)
+	// 		return err
+	// 	}
+
+	// 	deleteEvent := &nostr.Event{
+	// 		Kind:      5, // NIP-09 delete event kind
+	// 		CreatedAt: nostr.Now(),
+	// 		Content:   "Event deleted", // Optional content explaining why it was deleted
+	// 		Tags:      nostr.Tags{
+	// 			//{"e", eventID}, // Tag the event ID to be deleted
+	// 		},
+	// 	}
+
+	// 	err = relay.Publish(context.Background(), event)
+	// 	if err != nil {
+	// 		fmt.Printf("Failed to publish: %v\n", err)
+	// 		return err
+	// 	}
+
+	// 	for _, item := range nostrSentEventsList {
+	// 		deleteEvent.Tags = append(deleteEvent.Tags, nostr.Tag{"e", item.EventID})
+	// 		//deleteEvent.PubKey = item.SenderPubKey
+	// 	}
+
+	// 	Logf("deleteEvent: %v", deleteEvent)
+	// 	// Sign the event with the private key
+	// 	_, senderPrivkey, err := nip19.Decode(globalLocalNostrKeys.LocalNostrPrivKey)
+	// 	if err != nil {
+	// 		return fmt.Errorf("invalid sender nsec: %w", err)
+	// 	}
+	// 	if err := deleteEvent.Sign(senderPrivkey.(string)); err != nil {
+	// 		Logf("Signing failed with error: %v", err)
+	// 		return fmt.Errorf("failed to sign delete event: %w", err)
+	// 	}
+
+	// 	// Publish the delete event using the existing retry mechanism
+	// 	if err := publishWithRetry(deleteEvent); err != nil {
+	// 		return fmt.Errorf("failed to publish delete event: %w", err)
+	// 	}
+	// 	Logf("Published deletion request for all events")
+	// 	return nil
+
+	// }
 	return nil
 }
-
-// 	Logf("Publishing delete event")
-// 	protoMessageJSON, err := json.Marshal(protoMessage)
-// 	if err != nil {
-// 		log.Printf("Error marshalling protoMessage: %v", err)
-// 		return err
-// 	}
-
-// 	protoMessageSize := int64(len(protoMessageJSON))
-// 	var event *nostr.Event
-
-// 	_, senderPrivkey, err := nip19.Decode(globalLocalNostrKeys.LocalNostrPrivKey)
-// 	if err != nil {
-// 		return fmt.Errorf("invalid sender nsec: %w", err)
-// 	}
-// 	senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
-// 	Logf("Sender Pubkey: %s", senderPubkey)
-
-// 	if err != nil {
-// 		return fmt.Errorf("failed to derive sender pubkey: %w", err)
-// 	}
-// 	_, recipientPubkey, err := nip19.Decode(recipient)
-// 	if err != nil {
-// 		return fmt.Errorf("invalid recipient npub: %w", err)
-// 	}
-
-// 	// Create rumor
-// 	rumor := createRumor(string(protoMessageJSON), senderPubkey, recipientPubkey.(string))
-
-// 	// Create seal for recipient
-// 	seal, err := createSeal(rumor, senderPrivkey.(string), recipientPubkey.(string))
-// 	if err != nil {
-// 		return fmt.Errorf("failed to create seal: %w", err)
-// 	}
-
-// 	// Create gift wrap for recipient
-// 	event, err = createWrap(seal, recipientPubkey.(string))
-// 	if err != nil {
-// 		return fmt.Errorf("failed to create wrap: %w", err)
-// 	}
-// // Publish event with timeout and retry logic
-// if err := publishWithRetry(event); err != nil {
-// 	log.Printf("Error publishing event: %v", err)
-// 	return err
-// }
-
-// 	deleteEvent := &nostr.Event{
-// 		Kind:      5, // NIP-09 delete event kind
-// 		CreatedAt: nostr.Now(),
-// 		Content:   "Event deleted", // Optional content explaining why it was deleted
-// 		Tags:      nostr.Tags{
-// 			//{"e", eventID}, // Tag the event ID to be deleted
-// 		},
-// 	}
-
-// 	for _, item := range nostrSentEventsList {
-// 		deleteEvent.Tags = append(deleteEvent.Tags, nostr.Tag{"e", item.EventID})
-// 		//deleteEvent.PubKey = item.SenderPubKey
-// 	}
-
-// 	Logf("deleteEvent: %v", deleteEvent)
-// 	// Sign the event with the private key
-// 	_, senderPrivkey, err := nip19.Decode(globalLocalNostrKeys.LocalNostrPrivKey)
-// 	if err != nil {
-// 		return fmt.Errorf("invalid sender nsec: %w", err)
-// 	}
-// 	if err := deleteEvent.Sign(senderPrivkey.(string)); err != nil {
-// 		Logf("Signing failed with error: %v", err)
-// 		return fmt.Errorf("failed to sign delete event: %w", err)
-// 	}
-
-// 	// Publish the delete event using the existing retry mechanism
-// 	if err := publishWithRetry(deleteEvent); err != nil {
-// 		return fmt.Errorf("failed to publish delete event: %w", err)
-// 	}
-// 	Logf("Published deletion request for all events")
-// 	return nil
-
-// }
 
 // PublishNIP09DeleteEvent publishes a NIP-09 delete event to mark an event as deleted
 func PublishNIP09DeleteEvent(eventID string, privateKey string) error {

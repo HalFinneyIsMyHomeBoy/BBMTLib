@@ -307,9 +307,26 @@ func main() {
 		localNsec := os.Args[3]
 		localNpub := os.Args[4]
 		partyNpubs := os.Args[5] //all party npubs
-		verbose := os.Args[6]
+		verbose := os.Args[9]
 
-		result, err := tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, verbose)
+		var err error
+		var sessionID string
+		var sessionKey string
+		var chainCode string
+
+		if len(os.Args[6]) == 0 && len(os.Args[7]) == 0 {
+			sessionID, sessionKey, chainCode, err = tss.GenerateNostrSession()
+			if err != nil {
+				fmt.Printf("Go Error: %v\n", err)
+				return
+			}
+		} else {
+			sessionID = os.Args[6]
+			sessionKey = os.Args[7]
+			chainCode = os.Args[8]
+		}
+
+		result, err := tss.NostrKeygen(nostrRelay, localNsec, localNpub, partyNpubs, chainCode, sessionKey, sessionID, verbose)
 		if err != nil {
 			fmt.Printf("Go Error: %v\n", err)
 		} else {
