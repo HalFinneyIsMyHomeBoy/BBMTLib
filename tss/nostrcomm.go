@@ -487,8 +487,13 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		AddOrAppendNostrSession(protoMessage)
 	}
-	if protoMessage.FunctionType == "keygen_status" && protoMessage.MessageType != "message" {
-		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+	if protoMessage.FunctionType == "keygen_successful" && protoMessage.MessageType != "message" {
+		Logf("keygen_successful received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
+		AddOrAppendNostrSession(protoMessage)
+	}
+
+	if protoMessage.FunctionType == "keygen_failed" && protoMessage.MessageType != "message" {
+		Logf("keygen_failed received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		AddOrAppendNostrSession(protoMessage)
 	}
 
@@ -616,6 +621,36 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 
 }
 
+func GetAddressFromKeyShare(keyShare string) (string, error) {
+
+	decodedKeyshare, err := base64.StdEncoding.DecodeString(string(keyShare))
+	if err != nil {
+		fmt.Printf("Failed to decode base64 keyshare: %v\n", err)
+		return "", err
+	}
+
+	var localState LocalState
+	if err := json.Unmarshal(decodedKeyshare, &localState); err != nil {
+		fmt.Printf("Failed to parse keyshare: %v\n", err)
+		return "", err
+	}
+
+	btcPub, err := GetDerivedPubKey(localState.PubKey, localState.ChainCodeHex, "m/44'/0'/0'/0/0", false)
+	if err != nil {
+		fmt.Printf("Failed to get derived public key: %v\n", err)
+		return "", err
+	}
+
+	// Get the sender address
+	senderAddress, err := ConvertPubKeyToBTCAddress(btcPub, "testnet3")
+	if err != nil {
+		fmt.Printf("Failed to get sender address: %v\n", err)
+		return "", err
+	}
+
+	return senderAddress, nil
+}
+
 func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey, sessionID, verbose string) (string, error) {
 
 	globalVerbose, _ = strconv.ParseBool(verbose)
@@ -648,9 +683,17 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 		result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr")
 		if err != nil {
 			Logf("Go Error: %v", err)
+			publishNostrKeygenStatus(sessionID, localNpub, "", "keygen_failed") //Tell all parties keygen failed
+			nostrListenCancel()
+
 			return "", err
 		} else {
 			Logf("\n [%s] Keygen Result %s\n", localNpub, result)
+			//TODO run test by generating bitcoin address from keyshare
+			//TODO publish FunctionType="keygen_successful"
+			publishNostrKeygenStatus(sessionID, localNpub, "", "keygen_successful") //Tell all parties keygen successful
+			nostrListenCancel()
+
 			return result, nil
 		}
 
@@ -687,38 +730,100 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 			result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessions[0].SessionID, "", sessions[0].ChainCode, sessions[0].SessionKey, "nostr")
 			if err != nil {
 				Logf("Go Error: %v", err)
+				publishNostrKeygenStatus(sessions[0].SessionID, localNpub, "", "keygen_failed") //Tell all parties keygen failed
 				nostrListenCancel()
 				return "", err
 			} else {
 				Logf("\n [%s] Keygen Result %s\n", localNpub, result)
+
+				//Test by getting address from keyshare
+				address, err := GetAddressFromKeyShare(result)
+				if err != nil {
+					fmt.Printf("Failed to get address from keyshare: %v\n", err)
+					return "", err
+				}
+
+				//Tell all parties keygen successful by sending btc address
+				publishNostrKeygenStatus(sessions[0].SessionID, localNpub, address, "keygen_successful")
+
+				test, err := TestKeyGen(sessions[0].SessionID, result)
+				if err != nil {
+					fmt.Printf("Failed to test keygen: %v\n", err)
+					return "", err
+				}
+
+				if test {
+					return address, nil
+				} else {
+					return "", fmt.Errorf("keygen test failed")
+				}
+
+				//TODO run test by generating bitcoin address from keyshare
+				//TODO publish FunctionType="keygen_successful"
 				nostrListenCancel()
 				return result, nil
 			}
 		}
 	}
+}
+
+func publishNostrKeygenStatus(sessionID, localNpub, BTCAddress, status string) {
+
+	session, err := GetSession(sessionID)
+	if err != nil {
+		Logf("Error getting session: %v", err)
+		return
+	}
+
+	TxRequest := TxRequest{
+		SenderAddress:   BTCAddress,
+		ReceiverAddress: "",
+		AmountSatoshi:   0,
+		FeeSatoshi:      0,
+		DerivePath:      "",
+	}
+
+	protoMessage := ProtoMessage{
+		SessionID:       sessionID,
+		FunctionType:    status,
+		From:            localNpub,
+		FromNostrPubKey: localNpub,
+		Recipients:      session.Participants,
+		Participants:    session.Participants,
+		TxRequest:       TxRequest,
+	}
+
+	nostrSend(protoMessage, true)
 
 }
 
-// func publishNostrKeygenStatus(sessionID string, localNpub string) {
+func TestKeyGen(sessionID, keyShare string) (bool, error) {
 
-// 	session, err := GetSession(sessionID)
-// 	if err != nil {
-// 		Logf("Error getting session: %v", err)
-// 		return
-// 	}
+	Logf("Waiting for parties test keygen and respond if success or failed")
 
-// 	protoMessage := ProtoMessage{
-// 		SessionID:       sessionID,
-// 		FunctionType:    "keygen_status",
-// 		From:            localNpub,
-// 		FromNostrPubKey: localNpub,
-// 		Recipients:      []string{sessions[0].Master.MasterPubKey},
-// 		Participants:    []string{localNpub},
-// 	}
+	address, err := GetAddressFromKeyShare(keyShare)
+	if err != nil {
+		fmt.Printf("Failed to get address from keyshare: %v\n", err)
+		return false, err
+	}
 
-// 	nostrSend(protoMessage, true)
+	for i := 0; i < 60; i++ {
 
-// }
+		session, err := GetSession(sessionID)
+		if err != nil {
+			fmt.Printf("Failed to get session: %v\n", err)
+			return false, err
+		}
+
+		if session.Status == "keygen_failed" || session.Status == "keygen_successful" {
+			return false, fmt.Errorf("session already completed")
+		}
+
+	}
+
+	fmt.Printf("Address from keyshare: %s\n", address)
+	return true, nil
+}
 
 // WaitForSessions polls GetSessions() every second for up to 5 minutes until it returns a non-empty result
 func WaitForSessions() ([]NostrSession, error) {
@@ -803,7 +908,7 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 						} else {
 							return false, fmt.Errorf("session not ready")
 						}
-						return sessionReady, nil
+
 					} else {
 						if retryCount >= maxRetries {
 
@@ -854,7 +959,6 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 	// send handshake to master
 
 	Logf("(init_handshake) message received from %s\n", protoMessage.Master.MasterPeer)
-	Logf("Collected ack handshake from %s for session: %s", protoMessage.Master.MasterPeer, protoMessage.SessionID)
 	Logf("sending (ack_handshake) message to %s\n", protoMessage.Master.MasterPeer)
 
 	nostrSession := NostrSession{
