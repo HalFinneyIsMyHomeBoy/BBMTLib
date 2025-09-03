@@ -506,6 +506,8 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		AddOrAppendNostrSession(protoMessage)
 	}
 
+
+
 	if protoMessage.MessageType == "message" {
 		//Logf("message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		key := protoMessage.MessageType + "-" + protoMessage.SessionID
@@ -755,7 +757,7 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 				//Tell all parties keygen successful by sending btc address
 				publishNostrKeygenStatus(sessions[0].SessionID, localNpub, address, "keygen_successful")
 
-				test, err := TestKeyGen(sessions[0].SessionID, result)
+				test, err := TestKeyGen(sessions[0].SessionID, result, address)
 				if err != nil {
 					fmt.Printf("Failed to test keygen: %v\n", err)
 					return "", err
@@ -806,15 +808,13 @@ func publishNostrKeygenStatus(sessionID, localNpub, BTCAddress, status string) {
 
 }
 
-func TestKeyGen(sessionID, keyShare string) (bool, error) {
+func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 
 	Logf("Waiting %d seconds for parties test keygen and respond if success or failed", int(KeygenTimeout.Seconds()))
 
-	address, err := GetAddressFromKeyShare(keyShare)
-	if err != nil {
-		fmt.Printf("Failed to get address from keyshare: %v\n", err)
-		return false, err
-	}
+	var numOfParticipants bool = false
+	var allAddressesMatch bool = false
+	var allStatusesSuccessful bool = false
 
 	for i := 0; i < int(KeygenTimeout.Seconds()); i++ {
 
@@ -824,7 +824,52 @@ func TestKeyGen(sessionID, keyShare string) (bool, error) {
 			return false, err
 		}
 
-		if session.Status == "keygen_failed" || session.Status == "keygen_successful" {
+		if len(session.Participants) != len(session.ParticipantStatuses) {
+			continue
+		} else {
+			numOfParticipants = true
+		}
+
+		for _, participantStatus := range session.ParticipantStatuses {
+			if participantStatus.Data != address {
+				allAddressesMatch = false
+				break
+			} else {
+				allAddressesMatch = true
+			}
+		}
+		
+		for _, participantStatus := range session.ParticipantStatuses {
+			if participantStatus.Status == "keygen_failed" {
+				allStatusesSuccessful = false
+				continue
+			} else {
+				allStatusesSuccessful = true
+			}
+		}
+
+
+			// if participantStatus.Status == "keygen_successful" {
+			// 	allStatusesSuccessful = true
+			// }
+		
+
+		// Check if all participants have the same address and all have "keygen_successful" status
+		// if len(session.Participants) == len(session.ParticipantStatuses) {
+		// 	allSuccessful := true
+		// 	for _, participantStatus := range session.ParticipantStatuses {
+		// 		if participantStatus.Data != address || participantStatus.Status != "keygen_successful" {
+		// 			allSuccessful = false
+		// 			break
+		// 		}
+		// 	}
+		// 	if allSuccessful {
+		// 		return true, nil
+		// 	}
+	}
+		
+
+		if session == "keygen_failed" || session.Status == "keygen_successful" {
 			return false, fmt.Errorf("session already completed")
 		}
 
