@@ -46,37 +46,46 @@ var (
 	NostrRetryInterval    = 3 * time.Second   // Extended base retry interval
 	NostrMaxBackoff       = 5 * time.Minute   // Extended maximum backoff for retries
 	// Additional timeout configurations
-	NostrHandshakeTimeout      = 60 * time.Second // Extended timeout for handshake operations
-	NostrMessageTimeout        = 90 * time.Second // Extended timeout for message processing
+	NostrHandshakeTimeout      = 60 * time.Second  // Extended timeout for handshake operations
+	NostrMessageTimeout        = 90 * time.Second  // Extended timeout for message processing
+	KeygenTimeout              = 120 * time.Second // Extended timeout for keygen operations
 	globalVerbose         bool = false
 )
 
 type ProtoMessage struct {
-	FunctionType    string    `json:"function_type"`
-	MessageType     string    `json:"message_type"`
-	Participants    []string  `json:"participants"`
-	Recipients      []string  `json:"recipients"`
-	FromNostrPubKey string    `json:"from_nostr_pubkey"`
-	PartyNpubs      []string  `json:"party_npubs"`
-	SessionID       string    `json:"sessionID"`
-	ChainCode       string    `json:"chain_code"`
-	RawMessage      []byte    `json:"raw_message"`
-	SeqNo           string    `json:"seq_no"`
-	From            string    `json:"from"`
-	To              string    `json:"to"`
-	TxRequest       TxRequest `json:"tx_request"`
-	Master          Master    `json:"master"`
-	SessionKey      string    `json:"session_key"`
+	FunctionType        string              `json:"function_type"`
+	MessageType         string              `json:"message_type"`
+	Participants        []string            `json:"participants"`
+	Recipients          []string            `json:"recipients"`
+	FromNostrPubKey     string              `json:"from_nostr_pubkey"`
+	PartyNpubs          []string            `json:"party_npubs"`
+	SessionID           string              `json:"sessionID"`
+	ChainCode           string              `json:"chain_code"`
+	RawMessage          []byte              `json:"raw_message"`
+	SeqNo               string              `json:"seq_no"`
+	From                string              `json:"from"`
+	To                  string              `json:"to"`
+	TxRequest           TxRequest           `json:"tx_request"`
+	Master              Master              `json:"master"`
+	SessionKey          string              `json:"session_key"`
+	ParticipantStatuses []ParticipantStatus `json:"participant_statuses"`
+}
+
+type ParticipantStatus struct {
+	Participant string `json:"participant"`
+	Status      string `json:"status"`
+	Data        string `json:"data"`
 }
 
 type NostrSession struct {
-	Status       string    `json:"status"`
-	SessionID    string    `json:"session_id"`
-	ChainCode    string    `json:"chain_code"`
-	SessionKey   string    `json:"session_key"`
-	Participants []string  `json:"participants"`
-	Master       Master    `json:"master"`
-	TxRequest    TxRequest `json:"tx_request"`
+	Status              string              `json:"status"`
+	SessionID           string              `json:"session_id"`
+	ChainCode           string              `json:"chain_code"`
+	SessionKey          string              `json:"session_key"`
+	Participants        []string            `json:"participants"`
+	Master              Master              `json:"master"`
+	TxRequest           TxRequest           `json:"tx_request"`
+	ParticipantStatuses []ParticipantStatus `json:"participant_statuses"`
 }
 
 type NostrKeys struct {
@@ -799,7 +808,7 @@ func publishNostrKeygenStatus(sessionID, localNpub, BTCAddress, status string) {
 
 func TestKeyGen(sessionID, keyShare string) (bool, error) {
 
-	Logf("Waiting for parties test keygen and respond if success or failed")
+	Logf("Waiting %d seconds for parties test keygen and respond if success or failed", int(KeygenTimeout.Seconds()))
 
 	address, err := GetAddressFromKeyShare(keyShare)
 	if err != nil {
@@ -807,7 +816,7 @@ func TestKeyGen(sessionID, keyShare string) (bool, error) {
 		return false, err
 	}
 
-	for i := 0; i < 60; i++ {
+	for i := 0; i < int(KeygenTimeout.Seconds()); i++ {
 
 		session, err := GetSession(sessionID)
 		if err != nil {
@@ -1645,6 +1654,7 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 			existingSession.Master = protoMessage.Master
 			existingSession.SessionKey = protoMessage.SessionKey
 			existingSession.ChainCode = protoMessage.ChainCode
+			existingSession.ParticipantStatuses = protoMessage.ParticipantStatuses
 			nostrSessionList[i] = existingSession
 			newSession = false
 			break
@@ -1654,13 +1664,14 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 	if newSession {
 		//Session doesn't exist, add it
 		newSession := NostrSession{
-			SessionID:    protoMessage.SessionID,
-			Participants: protoMessage.Recipients,
-			TxRequest:    protoMessage.TxRequest,
-			Master:       protoMessage.Master,
-			SessionKey:   protoMessage.SessionKey,
-			ChainCode:    protoMessage.ChainCode,
-			Status:       protoMessage.FunctionType,
+			SessionID:           protoMessage.SessionID,
+			Participants:        protoMessage.Recipients,
+			TxRequest:           protoMessage.TxRequest,
+			Master:              protoMessage.Master,
+			SessionKey:          protoMessage.SessionKey,
+			ChainCode:           protoMessage.ChainCode,
+			Status:              protoMessage.FunctionType,
+			ParticipantStatuses: protoMessage.ParticipantStatuses,
 		}
 		nostrSessionList = append(nostrSessionList, newSession)
 	}
