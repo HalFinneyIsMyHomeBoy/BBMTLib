@@ -632,14 +632,8 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 
 func GetAddressFromKeyShare(keyShare string) (string, error) {
 
-	decodedKeyshare, err := base64.StdEncoding.DecodeString(string(keyShare))
-	if err != nil {
-		fmt.Printf("Failed to decode base64 keyshare: %v\n", err)
-		return "", err
-	}
-
 	var localState LocalState
-	if err := json.Unmarshal(decodedKeyshare, &localState); err != nil {
+	if err := json.Unmarshal([]byte(keyShare), &localState); err != nil {
 		fmt.Printf("Failed to parse keyshare: %v\n", err)
 		return "", err
 	}
@@ -703,14 +697,17 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 			if err != nil {
 				Logf("Failed to test keygen: %v", err)
 				nostrListenCancel()
+				nostrDeleteSession(sessionID)
 				return "", err
 			}
 
 			if test {
 				nostrListenCancel()
+				nostrDeleteSession(sessionID)
 				return result, nil
 			} else {
 				nostrListenCancel()
+				nostrDeleteSession(sessionID)
 				return "", fmt.Errorf("keygen test failed, either one of the participants didn't respond with success or the bitcoin address generated from keyshare didn't match")
 			}
 
@@ -750,6 +747,7 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 			if err != nil {
 				Logf("Go Error: %v", err)
 				publishNostrKeygenStatus(sessions[0].SessionID, localNpub, "", "keygen_failed") //Tell all parties keygen failed
+				nostrDeleteSession(sessions[0].SessionID)
 				nostrListenCancel()
 				return "", err
 			} else {
@@ -764,9 +762,11 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 
 				if test {
 					nostrListenCancel()
+					nostrDeleteSession(sessions[0].SessionID)
 					return result, nil
 				} else {
 					nostrListenCancel()
+					nostrDeleteSession(sessions[0].SessionID)
 					return "", fmt.Errorf("keygen test failed, either one of the participants didn't respond with success or the bitcoin address generated from keyshare didn't match")
 				}
 
@@ -778,6 +778,8 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 func VerifyKeygenSuccess(sessionID, keyShare, localNpub string) (bool, error) {
 
 	//Test by getting address from keyshare
+	Logf("Verifying keygen success for %s", localNpub)
+	time.Sleep(5 * time.Second)
 	address, err := GetAddressFromKeyShare(keyShare)
 	if err != nil {
 		fmt.Printf("Failed to get address from keyshare: %v\n", err)
@@ -786,6 +788,7 @@ func VerifyKeygenSuccess(sessionID, keyShare, localNpub string) (bool, error) {
 
 	//Tell all parties keygen successful by sending btc address
 	publishNostrKeygenStatus(sessionID, localNpub, address, "keygen_successful")
+	Logf("Published keygen_successful status for %s", localNpub)
 
 	//Run test
 	test, err := TestKeyGen(sessionID, keyShare, address)
@@ -848,6 +851,15 @@ func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 			fmt.Printf("Failed to get session: %v\n", err)
 			return false, err
 		}
+		sessionJSON, _ := json.MarshalIndent(session, "", "    ")
+		Logf("session: %s", string(sessionJSON))
+		Logf("--------------------------------")
+		Logf("Checking keygen status... (attempt %d/%d)", i+1, int(KeygenTimeout.Seconds()))
+		Logf("Number of participants: %d", len(session.Participants))
+		Logf("Number of participant statuses: %d", len(session.ParticipantStatuses))
+		Logf("AllAddressesMatch: %t", allAddressesMatch)
+		Logf("NumOfParticipants: %t", numOfParticipants)
+		Logf("AllStatusesSuccessful: %t", allStatusesSuccessful)
 
 		if len(session.Participants) == len(session.ParticipantStatuses) {
 			numOfParticipants = true
@@ -884,7 +896,7 @@ func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 		} else {
 			allStatusesSuccessful = false
 		}
-
+		time.Sleep(3 * time.Second)
 	}
 
 	if allStatusesSuccessful && allAddressesMatch && numOfParticipants {
@@ -1160,7 +1172,6 @@ func nostrSend(protoMessage ProtoMessage, deleteEvent bool) error {
 				return fmt.Errorf("invalid sender nsec: %w", err)
 			}
 			senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
-			Logf("Sender Pubkey: %s", senderPubkey)
 			if err != nil {
 				return fmt.Errorf("failed to derive sender pubkey: %w", err)
 			}
@@ -1229,7 +1240,6 @@ func nostrSend(protoMessage ProtoMessage, deleteEvent bool) error {
 				return fmt.Errorf("invalid sender nsec: %w", err)
 			}
 			senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
-			Logf("Sender Pubkey: %s", senderPubkey)
 
 			if err != nil {
 				return fmt.Errorf("failed to derive sender pubkey: %w", err)
