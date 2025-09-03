@@ -506,8 +506,6 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		AddOrAppendNostrSession(protoMessage)
 	}
 
-
-
 	if protoMessage.MessageType == "message" {
 		//Logf("message received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
 		key := protoMessage.MessageType + "-" + protoMessage.SessionID
@@ -696,16 +694,26 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 			Logf("Go Error: %v", err)
 			publishNostrKeygenStatus(sessionID, localNpub, "", "keygen_failed") //Tell all parties keygen failed
 			nostrListenCancel()
-
 			return "", err
+
 		} else {
 			Logf("\n [%s] Keygen Result %s\n", localNpub, result)
-			//TODO run test by generating bitcoin address from keyshare
-			//TODO publish FunctionType="keygen_successful"
-			publishNostrKeygenStatus(sessionID, localNpub, "", "keygen_successful") //Tell all parties keygen successful
-			nostrListenCancel()
 
-			return result, nil
+			test, err := VerifyKeygenSuccess(sessionID, result, localNpub)
+			if err != nil {
+				Logf("Failed to test keygen: %v", err)
+				nostrListenCancel()
+				return "", err
+			}
+
+			if test {
+				nostrListenCancel()
+				return result, nil
+			} else {
+				nostrListenCancel()
+				return "", fmt.Errorf("keygen test failed, either one of the participants didn't respond with success or the bitcoin address generated from keyshare didn't match")
+			}
+
 		}
 
 	} else {
@@ -747,35 +755,51 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 			} else {
 				Logf("\n [%s] Keygen Result %s\n", localNpub, result)
 
-				//Test by getting address from keyshare
-				address, err := GetAddressFromKeyShare(result)
+				test, err := VerifyKeygenSuccess(sessions[0].SessionID, result, localNpub)
 				if err != nil {
-					fmt.Printf("Failed to get address from keyshare: %v\n", err)
-					return "", err
-				}
-
-				//Tell all parties keygen successful by sending btc address
-				publishNostrKeygenStatus(sessions[0].SessionID, localNpub, address, "keygen_successful")
-
-				test, err := TestKeyGen(sessions[0].SessionID, result, address)
-				if err != nil {
-					fmt.Printf("Failed to test keygen: %v\n", err)
+					Logf("Failed to test keygen: %v", err)
+					nostrListenCancel()
 					return "", err
 				}
 
 				if test {
-					return address, nil
+					nostrListenCancel()
+					return result, nil
 				} else {
-					return "", fmt.Errorf("keygen test failed")
+					nostrListenCancel()
+					return "", fmt.Errorf("keygen test failed, either one of the participants didn't respond with success or the bitcoin address generated from keyshare didn't match")
 				}
 
-				//TODO run test by generating bitcoin address from keyshare
-				//TODO publish FunctionType="keygen_successful"
-				nostrListenCancel()
-				return result, nil
 			}
 		}
 	}
+}
+
+func VerifyKeygenSuccess(sessionID, keyShare, localNpub string) (bool, error) {
+
+	//Test by getting address from keyshare
+	address, err := GetAddressFromKeyShare(keyShare)
+	if err != nil {
+		fmt.Printf("Failed to get address from keyshare: %v\n", err)
+		return false, err
+	}
+
+	//Tell all parties keygen successful by sending btc address
+	publishNostrKeygenStatus(sessionID, localNpub, address, "keygen_successful")
+
+	//Run test
+	test, err := TestKeyGen(sessionID, keyShare, address)
+	if err != nil {
+		fmt.Printf("Failed to test keygen: %v\n", err)
+		return false, err
+	}
+
+	if test {
+		return true, nil
+	} else {
+		return false, nil
+	}
+
 }
 
 func publishNostrKeygenStatus(sessionID, localNpub, BTCAddress, status string) {
@@ -812,6 +836,7 @@ func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 
 	Logf("Waiting %d seconds for parties test keygen and respond if success or failed", int(KeygenTimeout.Seconds()))
 
+	//if all participants respond with success and bitcoin address matches, return true
 	var numOfParticipants bool = false
 	var allAddressesMatch bool = false
 	var allStatusesSuccessful bool = false
@@ -824,59 +849,50 @@ func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 			return false, err
 		}
 
-		if len(session.Participants) != len(session.ParticipantStatuses) {
-			continue
-		} else {
+		if len(session.Participants) == len(session.ParticipantStatuses) {
 			numOfParticipants = true
+		} else {
+			numOfParticipants = false
 		}
 
+		var match bool = false
 		for _, participantStatus := range session.ParticipantStatuses {
-			if participantStatus.Data != address {
-				allAddressesMatch = false
-				break
+			if participantStatus.Data == address {
+				match = true
 			} else {
-				allAddressesMatch = true
-			}
-		}
-		
-		for _, participantStatus := range session.ParticipantStatuses {
-			if participantStatus.Status == "keygen_failed" {
-				allStatusesSuccessful = false
-				continue
-			} else {
-				allStatusesSuccessful = true
+				match = false
 			}
 		}
 
+		if match {
+			allAddressesMatch = true
+		} else {
+			allAddressesMatch = false
+		}
 
-			// if participantStatus.Status == "keygen_successful" {
-			// 	allStatusesSuccessful = true
-			// }
-		
+		var success bool = false
+		for _, participantStatus := range session.ParticipantStatuses {
+			if participantStatus.Status == "keygen_successful" {
+				success = true
+			} else if participantStatus.Status == "keygen_failed" {
+				success = false
+			}
+		}
 
-		// Check if all participants have the same address and all have "keygen_successful" status
-		// if len(session.Participants) == len(session.ParticipantStatuses) {
-		// 	allSuccessful := true
-		// 	for _, participantStatus := range session.ParticipantStatuses {
-		// 		if participantStatus.Data != address || participantStatus.Status != "keygen_successful" {
-		// 			allSuccessful = false
-		// 			break
-		// 		}
-		// 	}
-		// 	if allSuccessful {
-		// 		return true, nil
-		// 	}
-	}
-		
-
-		if session == "keygen_failed" || session.Status == "keygen_successful" {
-			return false, fmt.Errorf("session already completed")
+		if success {
+			allStatusesSuccessful = true
+		} else {
+			allStatusesSuccessful = false
 		}
 
 	}
 
-	fmt.Printf("Address from keyshare: %s\n", address)
-	return true, nil
+	if allStatusesSuccessful && allAddressesMatch && numOfParticipants {
+		return true, nil
+	} else {
+		return false, nil
+	}
+
 }
 
 // WaitForSessions polls GetSessions() every second for up to 5 minutes until it returns a non-empty result
