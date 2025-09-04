@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss"
@@ -298,6 +299,125 @@ func main() {
 		}
 	}
 
+	if mode == "debugNostrKeygen" {
+		// Read all .nostr files in current directory
+		files, err := os.ReadDir(".")
+		if err != nil {
+			fmt.Printf("Error reading directory: %v\n", err)
+			return
+		}
+
+		var allPartyNpubs []string
+		var masterNpub string
+
+		// Process each .nostr file
+		for _, file := range files {
+			if !strings.HasSuffix(file.Name(), ".nostr") {
+				continue
+			}
+
+			data, err := os.ReadFile(file.Name())
+			if err != nil {
+				fmt.Printf("Error reading file %s: %v\n", file.Name(), err)
+				continue
+			}
+
+			var nostrData struct {
+				NostrPartyPubKeys []string `json:"nostr_party_pub_keys"`
+			}
+
+			if err := json.Unmarshal(data, &nostrData); err != nil {
+				fmt.Printf("Error parsing JSON from %s: %v\n", file.Name(), err)
+				continue
+			}
+
+			// Add unique npubs to allPartyNpubs
+			for _, npub := range nostrData.NostrPartyPubKeys {
+				if !contains(allPartyNpubs, npub) {
+					allPartyNpubs = append(allPartyNpubs, npub)
+				}
+			}
+		}
+
+		// Find master npub (highest lexicographically)
+		if len(allPartyNpubs) > 0 {
+			masterNpub = allPartyNpubs[0]
+			for _, npub := range allPartyNpubs[1:] {
+				if npub > masterNpub {
+					masterNpub = npub
+				}
+			}
+		}
+
+		fmt.Printf("Master npub: %s\n", masterNpub)
+
+		// Find the master nsec by looking up the corresponding .nostr file
+		var masterNsec string
+		for _, file := range files {
+			if !strings.HasSuffix(file.Name(), ".nostr") {
+				continue
+			}
+
+			data, err := os.ReadFile(file.Name())
+			if err != nil {
+				fmt.Printf("Error reading file %s: %v\n", file.Name(), err)
+				continue
+			}
+
+			var nostrData struct {
+				LocalNostrPubKey  string   `json:"local_nostr_pub_key"`
+				LocalNostrPrivKey string   `json:"local_nostr_priv_key"`
+				NostrPartyPubKeys []string `json:"nostr_party_pub_keys"`
+			}
+
+			if err := json.Unmarshal(data, &nostrData); err != nil {
+				fmt.Printf("Error parsing JSON from %s: %v\n", file.Name(), err)
+				continue
+			}
+
+			// Check if this file contains the master npub
+			if nostrData.LocalNostrPubKey == masterNpub {
+				masterNsec = nostrData.LocalNostrPrivKey
+				fmt.Printf("Found master nsec: %s\n", masterNsec)
+				break
+			}
+		}
+
+		if masterNsec == "" {
+			fmt.Printf("Error: Could not find master nsec for npub: %s\n", masterNpub)
+			return
+		}
+
+		// Join all party npubs with commas
+		partyNpubs := strings.Join(allPartyNpubs, ",")
+
+		// Generate session parameters
+		sessionID, sessionKey, chainCode, err := tss.GenerateNostrSession()
+		if err != nil {
+			fmt.Printf("Error generating session: %v\n", err)
+			return
+		}
+
+		// Call NostrKeygen with parameters
+		result, err := tss.NostrKeygen(
+			"ws://bbw-nostr.xyz", // Default relay
+			masterNsec,           // Local nsec - now populated with master nsec
+			masterNpub,           // Local npub (master)
+			partyNpubs,
+			chainCode,
+			sessionKey,
+			sessionID,
+			"true", // verbose
+		)
+
+		if err != nil {
+			fmt.Printf("Keygen error: %v\n", err)
+		} else {
+			fmt.Printf("Keygen result: %s\n", result)
+		}
+
+	}
+
 	if mode == "nostrKeygen" {
 		if len(os.Args) != 10 {
 			fmt.Println("Usage: go run main.go nostrKeygen <relay> <localNsec> <localNpub> <partyNpubs> <sessionID> <sessionKey> <chainCode> <verbose>")
@@ -448,6 +568,15 @@ func main() {
 		// Send ping
 		nostrPing(localParty, recipientNpub)
 	}
+}
+
+func contains(allPartyNpubs []string, npub string) bool {
+	for _, existingNpub := range allPartyNpubs {
+		if existingNpub == npub {
+			return true
+		}
+	}
+	return false
 }
 
 func nostrPing(localParty, recipientNpub string) {

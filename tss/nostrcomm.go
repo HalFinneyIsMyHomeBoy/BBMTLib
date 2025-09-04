@@ -693,6 +693,23 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 		} else {
 			Logf("\n [%s] Keygen Result %s\n", localNpub, result)
 
+			// nostrSession, err := GetSession(sessionID)
+			// if err != nil {
+			// 	Logf("Error getting session: %v", err)
+			// 	return "", err
+			// }
+			//jsonBytes, _ := json.MarshalIndent(nostrSession, "", "    ")
+			//Logf("MASTER Nostr Session: %s", string(jsonBytes))
+			//time.Sleep(10 * time.Second)
+			//nostrSession.Status = "keygen_complete"
+
+			// if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
+			// 	nostrSessionList = append(nostrSessionList, nostrSession)
+			// }
+
+			//jsonBytes, _ = json.MarshalIndent(nostrSessionList, "", "    ")
+			//Logf("MASTER Nostr Session: %s", string(jsonBytes))
+			//time.Sleep(10 * time.Second)
 			test, err := VerifyKeygenSuccess(sessionID, result, localNpub)
 			if err != nil {
 				Logf("Failed to test keygen: %v", err)
@@ -820,13 +837,13 @@ func publishNostrKeygenStatus(sessionID, localNpub, BTCAddress, status string) {
 
 	session.ParticipantStatuses = append(session.ParticipantStatuses, participantStatus)
 
-	sessionJSON, _ := json.MarshalIndent(session.ParticipantStatuses, "", "    ")
-	Logf("session: %s", string(sessionJSON))
-	Logf("--------------------------------")
-	Logf("session.participants: %v", session.Participants)
-	Logf("session.ParticipantStatuses: %v", session.ParticipantStatuses)
-	Logf("--------------------------------")
-	time.Sleep(10 * time.Second)
+	// sessionJSON, _ := json.MarshalIndent(session.ParticipantStatuses, "", "    ")
+	// Logf("session: %s", string(sessionJSON))
+	// Logf("--------------------------------")
+	// Logf("session.participants: %v", session.Participants)
+	// Logf("session.ParticipantStatuses: %v", session.ParticipantStatuses)
+	// Logf("--------------------------------")
+
 	protoMessage := ProtoMessage{
 		SessionID:           sessionID,
 		FunctionType:        status,
@@ -836,8 +853,9 @@ func publishNostrKeygenStatus(sessionID, localNpub, BTCAddress, status string) {
 		Participants:        session.Participants,
 		ParticipantStatuses: session.ParticipantStatuses,
 	}
-	protoMessageJSON, _ := json.MarshalIndent(protoMessage, "", "    ")
-	Logf("protoMessage: %s", string(protoMessageJSON))
+
+	Logf("thisnpub: %s sending the following %s", localNpub, protoMessage.Participants)
+	time.Sleep(10 * time.Second)
 	nostrSend(protoMessage, true)
 
 }
@@ -875,34 +893,20 @@ func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 			numOfParticipants = false
 		}
 
-		var match bool = false
+		allAddressesMatch = true
 		for _, participantStatus := range session.ParticipantStatuses {
-			if participantStatus.Data == address {
-				match = true
-			} else {
-				match = false
+			if participantStatus.Data != address {
+				allAddressesMatch = false
+				break
 			}
 		}
 
-		if match {
-			allAddressesMatch = true
-		} else {
-			allAddressesMatch = false
-		}
-
-		var success bool = false
+		allStatusesSuccessful = true
 		for _, participantStatus := range session.ParticipantStatuses {
-			if participantStatus.Status == "keygen_successful" {
-				success = true
-			} else if participantStatus.Status == "keygen_failed" {
-				success = false
+			if participantStatus.Status != "keygen_successful" {
+				allStatusesSuccessful = false
+				break
 			}
-		}
-
-		if success {
-			allStatusesSuccessful = true
-		} else {
-			allStatusesSuccessful = false
 		}
 		time.Sleep(1 * time.Second)
 		if allStatusesSuccessful && allAddressesMatch && numOfParticipants {
@@ -1735,18 +1739,7 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 			existingSession.ChainCode = protoMessage.ChainCode
 			// Append only non-duplicate participant statuses
 			existingSession.ParticipantStatuses = append(existingSession.ParticipantStatuses, protoMessage.ParticipantStatuses...)
-			// for _, newStatus := range protoMessage.ParticipantStatuses {
-			// 	found := false
-			// 	for _, existingStatus := range existingSession.ParticipantStatuses {
-			// 		if existingStatus.Participant == newStatus.Participant {
-			// 			found = true
-			// 			break
-			// 		}
-			// 	}
-			// 	if !found {
-			// 		existingSession.ParticipantStatuses = append(existingSession.ParticipantStatuses, newStatus)
-			// 	}
-			// }
+
 			nostrSessionList[i] = existingSession
 			newSession = false
 			break
