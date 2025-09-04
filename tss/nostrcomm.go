@@ -692,12 +692,7 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 
 		} else {
 			Logf("\n [%s] Keygen Result %s\n", localNpub, result)
-			session, err := GetSession(sessionID)
-			if err != nil {
 
-				return "", err
-			}
-			Logf("session.ParticipantStatuses: %v", session.ParticipantStatuses)
 			test, err := VerifyKeygenSuccess(sessionID, result, localNpub)
 			if err != nil {
 				Logf("Failed to test keygen: %v", err)
