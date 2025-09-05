@@ -507,7 +507,7 @@ func NostrKeysign(relay, localNpub, localNsec, partyNpubs, keyShare, sessionID, 
 	since = nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
 
 	go NostrListen(localNpub, localNsec, relay)
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	//Set the globalLocalNostrKeys
 	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")

@@ -44,9 +44,9 @@ sessionKey=$("$BUILD_DIR/$BIN_NAME" random-seed)
 # Get other required arguments
 derivePath="m/44'/0'/0'/0/0"
 senderAddress="mgjS6BVzLgigLZCZBAAGd7bQQ2qDteaHY7"
-receiverAddress="mrATkhfzzHL3aLUxCk6xDws9ZaMGrxrFqt"
-amountSatoshi="3421"
-estimatedFee="600"
+receiverAddress="mjewk9dwH5qeGkVj5NDLXRFQWGnkt4r47b"
+amountSatoshi="10000"
+estimatedFee="700"
 
 V1="verbose"
 "$BUILD_DIR/$BIN_NAME" nostr-spend "$NOSTR_RELAY" "$NSEC1" "$NPUB1" "$ALL_NPUBS" "$sessionID" "$sessionKey" "$senderAddress" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$KS1" $V1 &

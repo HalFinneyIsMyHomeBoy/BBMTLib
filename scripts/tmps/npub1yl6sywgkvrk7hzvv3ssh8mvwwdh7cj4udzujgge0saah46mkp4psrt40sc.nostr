@@ -1,9 +1,0 @@
-{
-  "local_nostr_pub_key": "npub1yl6sywgkvrk7hzvv3ssh8mvwwdh7cj4udzujgge0saah46mkp4psrt40sc",
-  "local_nostr_priv_key": "nsec1qhxp8dhz0ju8l99h6lfk3ujnfg3w73fu6dr7kqgaw56g0hv9aaaq8x775y",
-  "nostr_party_pub_keys": [
-    "npub1yl6sywgkvrk7hzvv3ssh8mvwwdh7cj4udzujgge0saah46mkp4psrt40sc",
-    "npub1emf77cn86htmyerq5umvc7sx8qz9a3h94rv22mnxe345znvq20rs7m2tmj",
-    "npub1pqxtrp3sj5mcdv98j9vjt52h50z4tjrqmvxclrlfa9338ljtds7s807vw4"
-  ]
-}
