@@ -3,7 +3,7 @@
 set -e  # Exit on error
 set -o pipefail  # Catch errors in pipes
 
-BIN_NAME="bbmt"
+BIN_NAME="boldfuze"
 BUILD_DIR="./bin"
 
 # Ensure build directory exists
