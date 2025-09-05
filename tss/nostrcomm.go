@@ -25,19 +25,14 @@ import (
 var (
 	nostrSessionList          []NostrSession
 	nostrSentEventsList       []SentEvent
-	nostrPingList             []ProtoMessage
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
-	globalCtx, _              = context.WithTimeout(context.Background(), 5*time.Minute) // 5 minute timeout for global operations
-	KeysignApprovalTimeout    = 5 * time.Second                                          // Increased from 2 seconds for better handling of slow connections
+	KeysignApprovalTimeout    = 5 * time.Second // Increased from 2 seconds for better handling of slow connections
 	KeysignApprovalMaxRetries = 30
 	nostrMutex                sync.Mutex
 	chunkCache                = cache.New(5*time.Minute, 10*time.Minute)
 	chunkMutex                sync.Mutex
-	localState                LocalState
-	localNostrKeys            NostrKeys
 	globalLocalNostrKeys      NostrKeys
-	globalLocalTesting        bool
 	nostrListenCancel         context.CancelFunc
 	// Timeout configurations for better handling of bad internet connections
 	NostrConnectTimeout   = 60 * time.Second  // Extended timeout for relay connection
@@ -46,9 +41,8 @@ var (
 	NostrRetryInterval    = 3 * time.Second   // Extended base retry interval
 	NostrMaxBackoff       = 5 * time.Minute   // Extended maximum backoff for retries
 	// Additional timeout configurations
-	NostrHandshakeTimeout      = 60 * time.Second // Extended timeout for handshake operations
-	NostrMessageTimeout        = 90 * time.Second // Extended timeout for message processing
-	globalVerbose         bool = false
+	NostrHandshakeTimeout = 60 * time.Second // Extended timeout for handshake operations
+	NostrMessageTimeout   = 90 * time.Second // Extended timeout for message processing
 )
 
 type ProtoMessage struct {
@@ -510,7 +504,6 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 
 func NostrKeysign(relay, localNpub, localNsec, partyNpubs, keyShare, sessionID, sessionKey, message, derivePath, verbose string) (string, error) {
 
-	globalVerbose, _ = strconv.ParseBool(verbose)
 	since = nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
 
 	go NostrListen(localNpub, localNsec, relay)
@@ -534,8 +527,6 @@ func NostrKeysign(relay, localNpub, localNsec, partyNpubs, keyShare, sessionID, 
 }
 
 func NostrKeygen(relay, localNsec, localNpub, partyNpubs, ppm, sessionID, sessionKey, chainCode, verbose string) (string, error) {
-
-	globalVerbose, _ = strconv.ParseBool(verbose)
 
 	since = nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
 	go NostrListen(localNpub, localNsec, relay)
@@ -574,53 +565,6 @@ func WaitForSessions() ([]NostrSession, error) {
 	return nil, fmt.Errorf("timeout waiting for sessions after 5 minutes")
 }
 
-func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
-	// send handshake to master
-
-	Logf("(init_handshake) message received from %s\n", protoMessage.Master.MasterPeer)
-	Logf("Collected ack handshake from %s for session: %s", protoMessage.Master.MasterPeer, protoMessage.SessionID)
-	Logf("sending (ack_handshake) message to %s\n", protoMessage.Master.MasterPeer)
-
-	nostrSession := NostrSession{
-		SessionID:    protoMessage.SessionID,
-		Participants: protoMessage.Participants,
-		TxRequest:    protoMessage.TxRequest,
-		Master:       protoMessage.Master,
-		Status:       protoMessage.FunctionType,
-		SessionKey:   protoMessage.SessionKey,
-		ChainCode:    protoMessage.ChainCode,
-	}
-
-	if !contains(nostrSession.Participants, nostrSession.Master.MasterPeer) {
-		nostrSession.Participants = append(nostrSession.Participants, nostrSession.Master.MasterPeer)
-		for i, item := range nostrSessionList {
-			if item.SessionID == nostrSession.SessionID {
-				nostrSessionList[i] = nostrSession
-			}
-		}
-	}
-
-	if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
-		nostrSessionList = append(nostrSessionList, nostrSession)
-	}
-
-	ackProtoMessage := ProtoMessage{
-		SessionID:       nostrSession.SessionID,
-		ChainCode:       nostrSession.ChainCode,
-		SessionKey:      nostrSession.SessionKey,
-		FunctionType:    "ack_handshake",
-		From:            localParty,
-		FromNostrPubKey: localParty,
-		Recipients:      []string{nostrSession.Master.MasterPeer},
-		Participants:    nostrSession.Participants,
-		TxRequest:       nostrSession.TxRequest,
-		Master:          nostrSession.Master,
-	}
-
-	nostrSend(ackProtoMessage, true)
-
-}
-
 func nostrFlagPartyKeysignComplete(sessionID string) error {
 	for i := len(nostrSessionList) - 1; i >= 0; i-- {
 		if nostrSessionList[i].SessionID == sessionID {
@@ -649,16 +593,6 @@ func nostrDeleteSession(sessionID string) {
 	}
 	publishDeleteEvent()
 	Logf("Nostr Session Deleted: %s", sessionID)
-}
-
-func nostrSessionAlreadyExists(list []NostrSession, nostrSession NostrSession) bool {
-
-	for _, element := range list {
-		if element.SessionID == nostrSession.SessionID {
-			return true
-		}
-	}
-	return false
 }
 
 func nostrSend(protoMessage ProtoMessage, deleteEvent bool) error {
@@ -853,7 +787,7 @@ func publishWithRetry(event *nostr.Event) error {
 		}
 	}
 
-	return fmt.Errorf("failed to publish %s after %d attempts", event.Kind, maxRetries)
+	return fmt.Errorf("failed to publish %d after %d attempts", event.Kind, maxRetries)
 }
 
 func nostrGetData(key string) (interface{}, bool) {
