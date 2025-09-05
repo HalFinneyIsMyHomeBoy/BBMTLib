@@ -1,8 +1,12 @@
 # BBMTLib
 
-**Bold Bitcoin MPC TSS Library**
+**Bold Bitcoin MPC TSS Library & CLI**
 
-A secure Multi-Party Computation (MPC) Threshold Signature Scheme (TSS) library for Bitcoin, built for mobile integration on both iOS and Android.
+A secure Multi-Party Computation (MPC) Threshold Signature Scheme (TSS) library, 
+Built for Bitcoin Wallets:
+- Mobile: iOS and Android
+- Web / WASM
+- CLI (boldfuze-cli fusing TSS over NOSTR) 
 
 ## How to Build
 
