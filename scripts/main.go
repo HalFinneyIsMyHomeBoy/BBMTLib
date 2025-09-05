@@ -407,7 +407,7 @@ func main() {
 			chainCode,
 			sessionKey,
 			sessionID,
-			"true", // verbose
+			"false", // verbose
 		)
 
 		if err != nil {

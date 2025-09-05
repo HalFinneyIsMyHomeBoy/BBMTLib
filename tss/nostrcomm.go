@@ -48,7 +48,7 @@ var (
 	// Additional timeout configurations
 	NostrHandshakeTimeout      = 60 * time.Second  // Extended timeout for handshake operations
 	NostrMessageTimeout        = 90 * time.Second  // Extended timeout for message processing
-	KeygenTimeout              = 120 * time.Second // Extended timeout for keygen operations
+	KeygenTimeout              = 320 * time.Second // Extended timeout for keygen operations
 	globalVerbose         bool = false
 )
 
@@ -693,24 +693,7 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 		} else {
 			Logf("\n [%s] Keygen Result %s\n", localNpub, result)
 
-			// nostrSession, err := GetSession(sessionID)
-			// if err != nil {
-			// 	Logf("Error getting session: %v", err)
-			// 	return "", err
-			// }
-			//jsonBytes, _ := json.MarshalIndent(nostrSession, "", "    ")
-			//Logf("MASTER Nostr Session: %s", string(jsonBytes))
-			//time.Sleep(10 * time.Second)
-			//nostrSession.Status = "keygen_complete"
-
-			// if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
-			// 	nostrSessionList = append(nostrSessionList, nostrSession)
-			// }
-
-			//jsonBytes, _ = json.MarshalIndent(nostrSessionList, "", "    ")
-			//Logf("MASTER Nostr Session: %s", string(jsonBytes))
-			//time.Sleep(10 * time.Second)
-			test, err := VerifyKeygenSuccess(sessionID, result, localNpub)
+			IsKeygenSuccess, err := VerifyKeygenSuccess(sessionID, result, localNpub)
 			if err != nil {
 				Logf("Failed to test keygen: %v", err)
 				nostrListenCancel()
@@ -718,13 +701,13 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 				return "", err
 			}
 
-			if test {
-				nostrListenCancel()
+			if IsKeygenSuccess {
 				nostrDeleteSession(sessionID)
+				nostrListenCancel()
 				return result, nil
 			} else {
-				nostrListenCancel()
 				nostrDeleteSession(sessionID)
+				nostrListenCancel()
 				return "", fmt.Errorf("keygen test failed, either one of the participants didn't respond with success or the bitcoin address generated from keyshare didn't match")
 			}
 
@@ -814,50 +797,34 @@ func VerifyKeygenSuccess(sessionID, keyShare, localNpub string) (bool, error) {
 		return false, err
 	}
 
-	if test {
-		return true, nil
-	} else {
-		return false, nil
-	}
+	return test, nil
 }
 
 func publishNostrKeygenStatus(sessionID, localNpub, BTCAddress, status string) {
 
-	session, err := GetSession(sessionID)
-	if err != nil {
-		Logf("Error getting session: %v", err)
-		return
+	for i := 0; i < len(nostrSessionList); i++ {
+		if nostrSessionList[i].SessionID == sessionID {
+			participantStatus := ParticipantStatus{
+				Participant: localNpub,
+				Status:      status,
+				Data:        BTCAddress,
+			}
+
+			nostrSessionList[i].ParticipantStatuses = append(nostrSessionList[i].ParticipantStatuses, participantStatus)
+
+			protoMessage := ProtoMessage{
+				SessionID:           sessionID,
+				FunctionType:        status,
+				From:                localNpub,
+				FromNostrPubKey:     localNpub,
+				Recipients:          nostrSessionList[i].Participants,
+				Participants:        nostrSessionList[i].Participants,
+				ParticipantStatuses: nostrSessionList[i].ParticipantStatuses,
+			}
+
+			nostrSend(protoMessage, true)
+		}
 	}
-
-	participantStatus := ParticipantStatus{
-		Participant: localNpub,
-		Status:      status,
-		Data:        BTCAddress,
-	}
-
-	session.ParticipantStatuses = append(session.ParticipantStatuses, participantStatus)
-
-	// sessionJSON, _ := json.MarshalIndent(session.ParticipantStatuses, "", "    ")
-	// Logf("session: %s", string(sessionJSON))
-	// Logf("--------------------------------")
-	// Logf("session.participants: %v", session.Participants)
-	// Logf("session.ParticipantStatuses: %v", session.ParticipantStatuses)
-	// Logf("--------------------------------")
-
-	protoMessage := ProtoMessage{
-		SessionID:           sessionID,
-		FunctionType:        status,
-		From:                localNpub,
-		FromNostrPubKey:     localNpub,
-		Recipients:          session.Participants,
-		Participants:        session.Participants,
-		ParticipantStatuses: session.ParticipantStatuses,
-	}
-
-	Logf("thisnpub: %s sending the following %s", localNpub, protoMessage.Participants)
-	time.Sleep(10 * time.Second)
-	nostrSend(protoMessage, true)
-
 }
 
 func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
@@ -877,27 +844,21 @@ func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 			return false, err
 		}
 
-		sessionJSON, _ := json.MarshalIndent(session, "", "    ")
-		Logf("session: %s", string(sessionJSON))
-		Logf("--------------------------------")
-		Logf("Checking keygen status... (attempt %d/%d)", i+1, int(KeygenTimeout.Seconds()))
-		Logf("Number of participants: %d", len(session.Participants))
-		Logf("Number of participant statuses: %d", len(session.ParticipantStatuses))
-		Logf("AllAddressesMatch: %t", allAddressesMatch)
-		Logf("NumOfParticipants: %t", numOfParticipants)
-		Logf("AllStatusesSuccessful: %t", allStatusesSuccessful)
-
 		if len(session.Participants) == len(session.ParticipantStatuses) {
 			numOfParticipants = true
 		} else {
 			numOfParticipants = false
+			Logf("failed to get num of participants")
+			Logf("Number of participants: %d", len(session.Participants))
+			Logf("Number of participant statuses: %d", len(session.ParticipantStatuses))
 		}
 
 		allAddressesMatch = true
 		for _, participantStatus := range session.ParticipantStatuses {
 			if participantStatus.Data != address {
 				allAddressesMatch = false
-				break
+				Logf("failed to get all addresses match")
+				continue
 			}
 		}
 
@@ -905,13 +866,16 @@ func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 		for _, participantStatus := range session.ParticipantStatuses {
 			if participantStatus.Status != "keygen_successful" {
 				allStatusesSuccessful = false
-				break
+				Logf("failed to get all statuses successful")
+				continue
 			}
 		}
-		time.Sleep(1 * time.Second)
+
 		if allStatusesSuccessful && allAddressesMatch && numOfParticipants {
+			Logf("All NOSTR Keygen Tests Passed!")
 			return true, nil
 		}
+		time.Sleep(1 * time.Second)
 	}
 
 	return false, nil
@@ -977,7 +941,6 @@ func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyN
 	for retryCount <= maxRetries {
 		for _, item := range nostrSessionList {
 			if item.SessionID == SessionID {
-				Logf("functionType: %s", functionType)
 				time.Sleep(3 * time.Second)
 
 				if functionType == "keygen" {
@@ -1145,13 +1108,13 @@ func nostrFlagPartyKeygenComplete(sessionID string) error {
 }
 
 func nostrDeleteSession(sessionID string) {
-	for i := len(nostrSessionList) - 1; i >= 0; i-- {
-		if nostrSessionList[i].SessionID == sessionID {
-			nostrSessionList = append(nostrSessionList[:i], nostrSessionList[i+1:]...)
-		}
-	}
-	publishDeleteEvent()
-	Logf("Nostr Session Deleted: %s", sessionID)
+	// for i := len(nostrSessionList) - 1; i >= 0; i-- {
+	// 	if nostrSessionList[i].SessionID == sessionID {
+	// 		nostrSessionList = append(nostrSessionList[:i], nostrSessionList[i+1:]...)
+	// 	}
+	// }
+	// publishDeleteEvent()
+	// Logf("Nostr Session Deleted: %s", sessionID)
 }
 
 func nostrSessionAlreadyExists(list []NostrSession, nostrSession NostrSession) bool {
@@ -1738,7 +1701,18 @@ func AddOrAppendNostrSession(protoMessage ProtoMessage) {
 			existingSession.SessionKey = protoMessage.SessionKey
 			existingSession.ChainCode = protoMessage.ChainCode
 			// Append only non-duplicate participant statuses
-			existingSession.ParticipantStatuses = append(existingSession.ParticipantStatuses, protoMessage.ParticipantStatuses...)
+			for _, newStatus := range protoMessage.ParticipantStatuses {
+				exists := false
+				for _, existingStatus := range existingSession.ParticipantStatuses {
+					if existingStatus.Participant == newStatus.Participant {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					existingSession.ParticipantStatuses = append(existingSession.ParticipantStatuses, newStatus)
+				}
+			}
 
 			nostrSessionList[i] = existingSession
 			newSession = false
