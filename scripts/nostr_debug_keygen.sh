@@ -139,4 +139,4 @@ echo "Press Ctrl+C to stop all processes."
 echo "Waiting for all TSS keygen processes to complete..."
 wait
 
-echo "All TSS keygen processes completed!"
+echo "Script finished!"

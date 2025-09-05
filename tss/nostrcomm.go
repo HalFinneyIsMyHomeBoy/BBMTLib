@@ -864,16 +864,16 @@ func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 			numOfParticipants = true
 		} else {
 			numOfParticipants = false
-			Logf("failed to get num of participants")
-			Logf("Number of participants: %d", len(session.Participants))
-			Logf("Number of participant statuses: %d", len(session.ParticipantStatuses))
+			Logf("Failed to get num of participants. Only have %d out of %d participants", len(session.ParticipantStatuses), len(session.Participants))
+			Logf("Trying %d more times", int(KeygenTimeout.Seconds())-i)
 		}
 
 		allAddressesMatch = true
 		for _, participantStatus := range session.ParticipantStatuses {
 			if participantStatus.Data != address {
 				allAddressesMatch = false
-				Logf("failed to get all addresses match")
+				Logf("Failed to get all addresses match")
+				Logf("Trying %d more times", int(KeygenTimeout.Seconds())-i)
 				continue
 			}
 		}
@@ -882,7 +882,8 @@ func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 		for _, participantStatus := range session.ParticipantStatuses {
 			if participantStatus.Status != "keygen_successful" {
 				allStatusesSuccessful = false
-				Logf("failed to get all statuses successful")
+				Logf("Failed to get all statuses successful")
+				Logf("Trying %d more times", int(KeygenTimeout.Seconds())-i)
 				continue
 			}
 		}
