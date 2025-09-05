@@ -26,7 +26,7 @@ NPUB2=npub1pqxtrp3sj5mcdv98j9vjt52h50z4tjrqmvxclrlfa9338ljtds7s807vw4
 
 NSEC3=nsec1qhxp8dhz0ju8l99h6lfk3ujnfg3w73fu6dr7kqgaw56g0hv9aaaq8x775y
 NPUB3=npub1yl6sywgkvrk7hzvv3ssh8mvwwdh7cj4udzujgge0saah46mkp4psrt40sc
-ALL_NPUBS="$NPUB1,$NPUB2"
+ALL_NPUBS="$NPUB1,$NPUB2,$NPUB3"
 
 sessionID=$("$BUILD_DIR/$BIN_NAME" random-seed)
 sessionKey=$("$BUILD_DIR/$BIN_NAME" random-seed)
@@ -38,27 +38,21 @@ KS1=$(cat "$NPUB1.ks")
 KS2=$(cat "$NPUB2.ks")
 KS3=$(cat "$NPUB3.ks") 
 
-sessionID=$("$BUILD_DIR/$BIN_NAME" random-seed)
-sessionKey=$("$BUILD_DIR/$BIN_NAME" random-seed)
-
-# Get other required arguments
-derivePath="m/44'/0'/0'/0/0"
-senderAddress="mgjS6BVzLgigLZCZBAAGd7bQQ2qDteaHY7"
-receiverAddress="mrATkhfzzHL3aLUxCk6xDws9ZaMGrxrFqt"
-amountSatoshi="3421"
-estimatedFee="600"
-
+# Start the process directly - output will be visible in terminal
+# verbose for more logs
 V1="verbose"
-"$BUILD_DIR/$BIN_NAME" nostr-spend "$NOSTR_RELAY" "$NSEC1" "$NPUB1" "$ALL_NPUBS" "$sessionID" "$sessionKey" "$senderAddress" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$KS1" $V1 &
+"$BUILD_DIR/$BIN_NAME" nostr-keysign "$NOSTR_RELAY" "$NSEC1" "$NPUB1" "$ALL_NPUBS" "$KS1" "$sessionID" "$sessionKey" "$message" "$derivePath" "" "$V1" &
 PIDS+=($!)
 
 V2="verbose"
-"$BUILD_DIR/$BIN_NAME" nostr-spend "$NOSTR_RELAY" "$NSEC2" "$NPUB2" "$ALL_NPUBS" "$sessionID" "$sessionKey" "$senderAddress" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$KS2" $V2 &
+ 
+"$BUILD_DIR/$BIN_NAME" nostr-keysign "$NOSTR_RELAY" "$NSEC2" "$NPUB2" "$ALL_NPUBS" "$KS2" "$sessionID" "$sessionKey" "$message" "$derivePath" "" "$V2" &
 PIDS+=($!)
 
-#V3="verbose"
-#"$BUILD_DIR/$BIN_NAME" nostr-spend "$NOSTR_RELAY" "$NSEC3" "$NPUB3" "$ALL_NPUBS" "$sessionID" "$sessionKey" "$senderAddress" "$receiverAddress" "$derivePath" "$amountSatoshi" "$estimatedFee" "$KS3" $V3 &
-#PIDS+=($!)
+V3="verbose"
+
+"$BUILD_DIR/$BIN_NAME" nostr-keysign "$NOSTR_RELAY" "$NSEC3" "$NPUB3" "$ALL_NPUBS" "$KS3" "$sessionID" "$sessionKey" "$message" "$derivePath" "" "$V3" &
+PIDS+=($!)
 
 # Build the kill command for all PIDs
 KILL_CMD=""

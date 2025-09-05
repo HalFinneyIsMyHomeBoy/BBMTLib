@@ -49,9 +49,9 @@ var (
 	encryptionKey    = ""
 	decryptionKey    = ""
 	localStateMemory = ""
-	keyGenTimeout    = 360
+	keyGenTimeout    = 800
 	keySignTimeout   = 120
-	msgFetchTimeout  = 70
+	msgFetchTimeout  = 1000
 )
 
 var nostrMsgMutex sync.Mutex
@@ -172,8 +172,13 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
 	}
+
 	if len(sessionKey) == 0 && (len(encKey) == 0 || len(decKey) == 0) {
 		return "", fmt.Errorf("either a session key, either both enc/dec keys")
+	}
+
+	if len(sessionKey) == 0 && len(parties) > 2 {
+		return "", fmt.Errorf("session key is required for more than 2 parties")
 	}
 
 	encryptionKey = encKey
@@ -236,11 +241,12 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	endCh := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	Logln("BBMTLog", "downloadMessage active for :", key)
 
 	if net_type == "nostr" {
+		Logln("BBMTLog", "nostrDownloadMessage active for :", key)
 		go nostrDownloadMessage(session, sessionKey, key, *tssServerImp, endCh, wg)
 	} else {
+		Logln("BBMTLog", "downloadMessage active for :", key)
 		go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
 	}
 
@@ -306,6 +312,12 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 }
 
 func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message, net_type string) (string, error) {
+
+	// keyShare substring in logs
+	keyShareShort := keyshare[:10] + "..." + keyshare[len(keyshare)-10:]
+
+	Logln("BBMTLog", "JoinKeysign", "<>", key, partiesCSV, session, sessionKey, "<>", "<>", keyShareShort, derivePath, message, "nostr")
+
 	parties := strings.Split(partiesCSV, ",")
 	functionType := "keysign"
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
@@ -344,6 +356,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 			Logln("BBMTLog", "fail to wait all parties", "error", err)
 			return "", fmt.Errorf("fail to wait all parties: %w", err)
 		}
+		Logln("BBMTLog", "all parties joined...")
 	}
 
 	status.SeqNo++
@@ -588,7 +601,8 @@ func (m *MessengerImp) Send(from, to, body, parties, functionType string) error 
 	}
 
 	url := m.Server + "/message/" + m.SessionID
-	Logln("BBMTLog", "sending message...")
+	bodyShort := body[:min(50, len(body))] + "..."
+	Logln("BBMTLog", "sending message...", m.Net_Type, m.Server, m.SessionID, from, to, bodyShort, status.SeqNo, hash)
 
 	if m.Net_Type == "nostr" {
 
@@ -609,7 +623,7 @@ func (m *MessengerImp) Send(from, to, body, parties, functionType string) error 
 			}
 		}
 
-		err = nostrSend(protoMessage)
+		err = nostrSend(protoMessage, true)
 
 		if err != nil {
 			return fmt.Errorf("failed to send nostr message: %w", err)
@@ -683,7 +697,7 @@ func joinSession(server, session, key string) error {
 			if err != nil {
 				Logln("BBMTLog", "fail to get session", "error", err)
 				time.Sleep(2 * time.Second)
-			} else if resp.StatusCode != http.StatusCreated {
+			} else if !(resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK) {
 				Logln("BBMTLog", "fail to check session", "status", resp.Status)
 				time.Sleep(2 * time.Second)
 			} else {
@@ -703,6 +717,8 @@ func awaitJoiners(parties []string, server, session string) error {
 		case <-timeout.C:
 			return fmt.Errorf("timeout waiting for all parties after 30 seconds")
 		default:
+			Logln("BBMTLog", "checking parties")
+
 			resp, err := http.Get(sessionUrl)
 			if err != nil {
 				Logln("BBMTLog", "fail to get session", "error", err)
@@ -719,6 +735,8 @@ func awaitJoiners(parties []string, server, session string) error {
 			if err != nil {
 				return fmt.Errorf("fail to read session body: %w", err)
 			}
+
+			Logln("BBMTLog", fmt.Sprintf("Parties: %s", buff))
 
 			if err := json.Unmarshal(buff, &keys); err != nil {
 				return fmt.Errorf("fail to unmarshal session body: %w", err)
@@ -907,12 +925,13 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				continue
 			}
 			resp.Body.Close()
-
 			if err := json.Unmarshal(bodyBytes, &messages); err != nil {
 				Logln("BBMTLog", "Failed to decode messages:", err)
 				isApplyingMessages = false
 				continue
 			}
+
+			Logln("BBMTLog", fmt.Sprintf("Got Messages: \n%d", len(messages)))
 
 			// Sort messages by sequence number
 			sort.SliceStable(messages, func(i, j int) bool {
@@ -925,6 +944,8 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				}
 				return seqNoI < seqNoJ
 			})
+
+			Logln("BBMTLog", "============ Got Messages:", len(messages))
 
 			// Process messages sequentially
 			for _, message := range messages {
@@ -998,13 +1019,22 @@ func deleteMessage(server, session, key, messageHash string) {
 	req, err := http.NewRequest("DELETE", delURL, nil)
 	if err != nil {
 		Logln("BBMTLog", "HTTP_DELETE Request Error", err)
+		return
 	}
 
 	resp, rspErr := http.DefaultClient.Do(req)
 	if rspErr != nil {
 		Logln("BBMTLog", "HTTP_DELETE Error", rspErr)
+		return
 	}
-	Logln("BBMTLog", "deleted message", messageHash)
-
 	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		Logln("BBMTLog", "HTTP_DELETE failed with status:", resp.StatusCode, "body:", string(bodyBytes))
+		return
+	}
+
+	Logln("BBMTLog", "deleted message", messageHash, "successfully from server")
 }

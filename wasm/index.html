@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BBMTLib Dashboard</title>
+    <style>
+      /* --- Global Styles & Fonts --- */
+      :root {
+        --primary-color: #007bff;
+        --primary-hover: #0056b3;
+        --light-gray: #f8f9fa;
+        --medium-gray: #e9ecef;
+        --dark-gray: #343a40;
+        --text-color: #212529;
+        --border-color: #ced4da;
+        --danger-color: #dc3545;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+        background-color: var(--light-gray);
+        color: var(--text-color);
+        padding: 2rem;
+      }
+      
+      /* --- Main Container & Typography --- */
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        background: #ffffff;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
+      h1 {
+        font-size: 1.75rem;
+        color: var(--dark-gray);
+        text-align: center;
+        margin-bottom: 0.5rem;
+      }
+      h1 + p {
+        text-align: center;
+        color: #6c757d;
+        margin-bottom: 2rem;
+      }
+      h2 {
+        font-size: 1.25rem;
+        color: var(--primary-color);
+        border-bottom: 2px solid var(--medium-gray);
+        padding-bottom: 0.5rem;
+        margin-top: 2rem;
+        margin-bottom: 1.5rem;
+      }
+      hr {
+        display: none; /* Replaced with styled h2 and spacing */
+      }
+      
+      /* --- Layout --- */
+      .panels-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2rem;
+      }
+      .panel {
+        flex: 1;
+        min-width: 300px;
+        padding: 1.5rem;
+        border: 1px solid var(--medium-gray);
+        border-radius: 8px;
+        background-color: #fff;
+      }
+      .panel h3 {
+        font-size: 1.1rem;
+        margin-bottom: 1rem;
+        color: var(--dark-gray);
+      }
+      
+      /* --- Form Elements --- */
+      .form-group {
+        margin-bottom: 1rem;
+      }
+      .form-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
+        color: #495057;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-family: "SF Mono", "Consolas", "Courier New", monospace;
+        font-size: 0.9rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+      input[type="text"]:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+      }
+      
+      /* --- Buttons --- */
+      button {
+        width: 100%;
+        padding: 0.75rem;
+        font-weight: bold;
+        font-size: 1rem;
+        color: #fff;
+        background-color: var(--primary-color);
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background-color 0.2s, transform 0.1s;
+      }
+      button:hover:not(:disabled) {
+        background-color: var(--primary-hover);
+        transform: translateY(-1px);
+      }
+      button:disabled {
+        background-color: #adb5bd;
+        cursor: not-allowed;
+      }
+      
+      /* --- Output Area --- */
+      pre {
+        background-color: var(--light-gray);
+        border: 1px solid var(--medium-gray);
+        border-radius: 6px;
+        padding: 1rem;
+        margin-top: 1rem;
+        min-height: 100px;
+        white-space: pre-wrap;
+        word-break: break-all;
+        font-family: "SF Mono", "Consolas", "Courier New", monospace;
+        font-size: 0.85rem;
+        color: var(--dark-gray);
+      }
+      
+      /* --- Specific Section Styling --- */
+      .pre-params-section {
+        display: flex;
+        gap: 2rem;
+        align-items: flex-start;
+      }
+      .pre-params-section .panel {
+        padding: 0;
+        border: none;
+        background: none;
+      }
+    </style>
+
+    <body>
+      <div class="container">
+        <h1>BBMTLib Dashboard</h1>
+        <p>WASM - 2 Devices MPC TSS</p>
+
+        <h2>Local Keygen</h2>
+        <div class="pre-params-section">
+          <div class="panel">
+            <button id="_localKeygen" disabled>LocalKeygen</button>
+            <pre id="_outputLocalKeygen"></pre>
+          </div>
+        </div>
+
+        <h2>PreParams Generation</h2>
+        <div class="pre-params-section">
+          <div class="panel">
+            <button id="_pregen" disabled>P1 Prepare</button>
+            <pre id="_outputPregen"></pre>
+          </div>
+          <div class="panel">
+            <button id="_pregen2" disabled>P2 Prepare</button>
+            <pre id="_outputPregen2"></pre>
+          </div>
+          <div class="panel">
+            <button id="_pregen3" disabled>P3 Prepare</button>
+            <pre id="_outputPregen3"></pre>
+          </div>
+        </div>
+
+        <h2>NOSTR Key Generation</h2>
+        <div class="panels-container">
+          <div class="panel">
+            <h3>Party 1 (P1) Input</h3>
+            <div class="form-group">
+              <label for="relay">Relay</label>
+              <input id="relay" type="text" value="wss://ws.cedarbits.com" />
+            </div>
+            <div class="form-group">
+              <label for="localNsec">Local nsec</label>
+              <input
+                id="localNsec"
+                type="text"
+                value="nsec18jnh37qs39mtpgzc4w6rckdtndt7jd36rhapqwalhfqke3dh8u3qgyyz8z"
+              />
+            </div>
+            <div class="form-group">
+              <label for="localNpub">Local npub</label>
+              <input
+                id="localNpub"
+                type="text"
+                value="npub1ry0n9qvavgveanjr25meq46hf57axt4qhnvgfl68sn5haddyf6wqpr79uv"
+              />
+            </div>
+            <div class="form-group">
+              <label for="partyNpubs">Party npubs</label>
+              <input
+                id="partyNpubs"
+                type="text"
+                value="npub1vj4gakv4epy2yzxd4ck0hnejwyuefzedlylrqswmnfktc4gsl3zsplxuth,npub1ry0n9qvavgveanjr25meq46hf57axt4qhnvgfl68sn5haddyf6wqpr79uv,npub1pqxtrp3sj5mcdv98j9vjt52h50z4tjrqmvxclrlfa9338ljtds7s807vw4"
+              />
+            </div>
+            <div class="form-group">
+              <label for="ppm">PPM</label>
+              <input id="ppm" type="text" />
+            </div>
+            <div class="form-group">
+              <label for="ssid">Session ID</label>
+              <input id="ssid" type="text" value="f37ef33ae5620e93b6495b0f2b7ece781a8478abd978df1ceab4a999e0d9a6c8" />
+            </div>
+            <div class="form-group">
+              <label for="sskey">Session Key</label>
+              <input id="sskey" type="text" value="f37ef33ae5620e93b6495b0f2b7ece781a8478abd978df1ceab4a999e0d9a6c8" />
+            </div>
+            <div class="form-group">
+              <label for="chaincode">Chaincode</label>
+              <input id="chaincode" type="text" value="f37ef33ae5620e93b6495b0f2b7ece781a8478abd978df1ceab4a999e0d9a6c8" />
+            </div>
+            <div class="form-group">
+              <label for="verbose">Verbose</label>
+              <input id="verbose" type="text" value="true" />
+            </div>
+            <button id="_keygen">P1 Join</button>
+            <pre id="_outputKeygen"></pre>
+          </div>
+
+          <div class="panel">
+            <h3>Party 2 (P2) Input</h3>
+            <div class="form-group">
+              <label for="relay2">Relay</label>
+              <input id="relay2" type="text" value="wss://ws.cedarbits.com" />
+            </div>
+            <div class="form-group">
+              <label for="localNsec2">Local nsec</label>
+              <input
+                id="localNsec2"
+                type="text"
+                value="nsec1qucmxuagznf33744e6xfy6yxt3g7rfcv4pecr42aswmzynfvdl9quu7v2m"
+              />
+            </div>
+            <div class="form-group">
+              <label for="localNpub2">Local npub</label>
+              <input
+                id="localNpub2"
+                type="text"
+                value="npub1vj4gakv4epy2yzxd4ck0hnejwyuefzedlylrqswmnfktc4gsl3zsplxuth"
+              />
+            </div>
+            <div class="form-group">
+              <label for="partyNpubs2">Party npubs</label>
+              <input
+                id="partyNpubs2"
+                type="text"
+                value="npub1vj4gakv4epy2yzxd4ck0hnejwyuefzedlylrqswmnfktc4gsl3zsplxuth,npub1ry0n9qvavgveanjr25meq46hf57axt4qhnvgfl68sn5haddyf6wqpr79uv,npub1pqxtrp3sj5mcdv98j9vjt52h50z4tjrqmvxclrlfa9338ljtds7s807vw4"
+              />
+            </div>
+            <div class="form-group">
+              <label for="ppm2">PPM</label>
+              <input id="ppm2" type="text" />
+            </div>
+            <div class="form-group">
+              <label for="ssid2">Session ID</label>
+              <input id="ssid2" type="text" value="f37ef33ae5620e93b6495b0f2b7ece781a8478abd978df1ceab4a999e0d9a6c8" />
+            </div>
+            <div class="form-group">
+              <label for="sskey2">Session Key</label>
+              <input id="sskey2" type="text" value="f37ef33ae5620e93b6495b0f2b7ece781a8478abd978df1ceab4a999e0d9a6c8" />
+            </div>
+            <div class="form-group">
+              <label for="chaincode2">Chaincode</label>
+              <input id="chaincode2" type="text" value="f37ef33ae5620e93b6495b0f2b7ece781a8478abd978df1ceab4a999e0d9a6c8" />
+            </div>
+            <div class="form-group">
+              <label for="verbose2">Verbose</label>
+              <input id="verbose2" type="text" value="true" />
+            </div>
+            <button id="_keygen2">P2 Join</button>
+            <pre id="_outputKeygen2"></pre>
+          </div>
+
+          <div class="panel">
+            <h3>Party 3 (P3) Input</h3>
+            <div class="form-group">
+              <label for="relay3">Relay</label>
+              <input id="relay3" type="text" value="wss://ws.cedarbits.com" />
+            </div>
+            <div class="form-group">
+              <label for="localNsec3">Local nsec</label>
+              <input
+                id="localNsec3"
+                type="text"
+                value="nsec1lz3rkp7cg450aghanh9fm5c7q0n5wnf44v96rk9yxxacmhctl4yss5trua"
+              />
+            </div>
+            <div class="form-group">
+              <label for="localNpub3">Local npub</label>
+              <input
+                id="localNpub3"
+                type="text"
+                value="npub1pqxtrp3sj5mcdv98j9vjt52h50z4tjrqmvxclrlfa9338ljtds7s807vw4"
+              />
+            </div>
+            <div class="form-group">
+              <label for="partyNpubs3">Party npubs</label>
+              <input
+                id="partyNpubs3"
+                type="text"
+                value="npub1vj4gakv4epy2yzxd4ck0hnejwyuefzedlylrqswmnfktc4gsl3zsplxuth,npub1ry0n9qvavgveanjr25meq46hf57axt4qhnvgfl68sn5haddyf6wqpr79uv,npub1pqxtrp3sj5mcdv98j9vjt52h50z4tjrqmvxclrlfa9338ljtds7s807vw4"
+              />
+            </div>
+            <div class="form-group">
+              <label for="ppm3">PPM</label>
+              <input id="ppm3" type="text" />
+            </div>
+            <div class="form-group">
+              <label for="ssid3">Session ID</label>
+              <input id="ssid3" type="text" value="f37ef33ae5620e93b6495b0f2b7ece781a8478abd978df1ceab4a999e0d9a6c8" />
+            </div>
+            <div class="form-group">
+              <label for="sskey3">Session Key</label>
+              <input id="sskey3" type="text" value="f37ef33ae5620e93b6495b0f2b7ece781a8478abd978df1ceab4a999e0d9a6c8" />
+            </div>
+            <div class="form-group">
+              <label for="chaincode3">Chaincode</label>
+              <input id="chaincode3" type="text" value="f37ef33ae5620e93b6495b0f2b7ece781a8478abd978df1ceab4a999e0d9a6c8" />
+            </div>
+            <div class="form-group">
+              <label for="verbose3">Verbose</label>
+              <input id="verbose3" type="text" value="true" />
+            </div>
+            <button id="_keygen3">P3 Join</button>
+            <pre id="_outputKeygen3"></pre>
+          </div>
+        </div>
+      </div>
+
+      <script src="wasm_exec.js"></script>
+      <script src="ecies.min.js"></script>
+      <script src="index.js"></script>
+    </body>
+</html>

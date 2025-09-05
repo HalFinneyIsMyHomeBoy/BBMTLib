@@ -24,6 +24,7 @@ import (
 // Global variables
 var (
 	nostrSessionList          []NostrSession
+	nostrSentEventsList       []SentEvent
 	nostrPingList             []ProtoMessage
 	nostrMessageCache         = cache.New(5*time.Minute, 10*time.Minute)
 	relay                     *nostr.Relay
@@ -87,6 +88,11 @@ type NostrKeys struct {
 type Master struct {
 	MasterPeer   string `json:"master_peer"`
 	MasterPubKey string `json:"master_pubkey"`
+}
+
+type SentEvent struct {
+	EventID      string `json:"event_id"`
+	SenderPubKey string `json:"sender_pubkey"`
 }
 
 type NostrStatus struct {
@@ -263,7 +269,12 @@ func GetNostrKeys(party string) (NostrKeys, error) {
 	return nostrKeys, nil
 }
 
+var since nostr.Timestamp = nostr.Timestamp(time.Now().Add(-60 * time.Second).Unix())
+
 func NostrListen(localNpub, localNsec, nostrRelay string) {
+
+	Logln("BBMTLog", "========================================= Nostr Listen", localNpub, localNsec, nostrRelay)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	nostrListenCancel = cancel
 	defer func() { nostrListenCancel = nil }()
@@ -314,8 +325,6 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 		// Reset backoff on successful connection
 		backoff = NostrRetryInterval
 
-		since := nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
-
 		filters := []nostr.Filter{{
 			Kinds: []int{1059}, // Subscribe to NIP-44 messages
 			Tags:  map[string][]string{"p": {recipientPubkey}},
@@ -348,6 +357,8 @@ func NostrListen(localNpub, localNsec, nostrRelay string) {
 						close(reconnect)
 						return
 					}
+
+					Logln("BBMTLog", "========== Nostr received event...", event.Kind, event.PubKey, event.Content[:min(50, len(event.Content))])
 
 					if err := processNostrEvent(event, recipientPrivkey.(string), globalLocalNostrKeys.LocalNostrPubKey); err != nil {
 						log.Printf("Error processing event: %v", err)
@@ -442,44 +453,9 @@ func processNostrEvent(event *nostr.Event, recipientPrivkey string, localParty s
 		return fmt.Errorf("parse message: %w", err)
 	}
 
+	// Ignore messages from self
 	if protoMessage.From == localParty {
-		return nil // Ignore messages from self
-	}
-
-	if protoMessage.FunctionType == "ping" {
-		go returnNostrPong(localParty, protoMessage)
 		return nil
-	}
-
-	if protoMessage.FunctionType == "pong" {
-		// Check if this pong corresponds to a ping we sent
-		for i, ping := range nostrPingList {
-			if string(ping.RawMessage) == string(protoMessage.RawMessage) {
-				// Remove the ping from the list once we get a response
-				nostrPingList[i].FunctionType = "pong"
-			}
-		}
-		return nil
-	}
-
-	if protoMessage.FunctionType == "init_handshake" {
-		AddOrAppendNostrSession(protoMessage)
-	}
-
-	if protoMessage.FunctionType == "ack_handshake" {
-		if protoMessage.Master.MasterPeer == localParty {
-			collectAckHandshake(protoMessage.SessionID, protoMessage)
-		}
-	}
-
-	if protoMessage.FunctionType == "keysign" && protoMessage.MessageType != "message" {
-		Logf("start_keysign received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-		AddOrAppendNostrSession(protoMessage)
-	}
-
-	if protoMessage.FunctionType == "keygen" && protoMessage.MessageType != "message" {
-		Logf("start_keygen received from %s to %s for SessionID:%v", protoMessage.From, localParty, protoMessage.SessionID)
-		AddOrAppendNostrSession(protoMessage)
 	}
 
 	if protoMessage.MessageType == "message" {
@@ -532,156 +508,54 @@ func handleChunkedMessage(chunk ChunkedMessage) (string, error) {
 	return "", nil
 }
 
-func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequest TxRequest, sessionID, sessionKey, verbose, newSession string) (string, error) {
-
-	// all parties should already be listening
-
-	//master is whoever first initiates the spend request
-	globalVerbose, _ = strconv.ParseBool(verbose)
-	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
-	globalLocalNostrKeys.LocalNostrPrivKey = localNsec
-	globalLocalNostrKeys.LocalNostrPubKey = localNpub
-
-	if newSession == "true" {
-		txRequest.Master = Master{MasterPeer: localNpub, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey}
-		initiateNostrHandshake(sessionID, "", sessionKey, localNpub, partyNpubs, "keysign", txRequest)
-		time.Sleep(1 * time.Second)
-
-		result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
-		if err != nil {
-			Logf("Go Error: %v", err)
-			return "", err
-		} else {
-			Logf("\n [%s] Keysign Result %s\n", localNpub, result)
-			return result, nil
-		}
-
-	} else {
-
-		protoMessage := ProtoMessage{
-			SessionID:       sessionID,
-			ChainCode:       "",
-			SessionKey:      sessionKey,
-			FunctionType:    "ack_handshake",
-			From:            localNpub,
-			FromNostrPubKey: localNpub,
-			Recipients:      []string{txRequest.Master.MasterPubKey},
-			Participants:    []string{localNpub},
-			TxRequest:       txRequest,
-			Master:          txRequest.Master,
-		}
-
-		AckNostrHandshake(protoMessage, localNpub)
-
-		for i := 0; i < 60; i++ {
-			for _, item := range nostrSessionList {
-				if item.SessionID == sessionID {
-					if item.Status == "keysign" {
-						result, err := MpcSendBTC("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, txRequest.DerivePath, txRequest.BtcPub, txRequest.SenderAddress, txRequest.ReceiverAddress, int64(txRequest.AmountSatoshi), int64(txRequest.FeeSatoshi), "nostr")
-						if err != nil {
-							Logf("Go Error: %v", err)
-							return "", err
-						} else {
-							Logf("\n [%s] Keysign Result %s\n", localNpub, result)
-							return result, nil
-						}
-					} else {
-						Logf("%s is waiting for master to start session", localNpub)
-					}
-				}
-				time.Sleep(1 * time.Second)
-			}
-		}
-	}
-
-	return "", nil
-
-}
-
-func NostrKeygen(relay, localNsec, localNpub, partyNpubs, verbose string) (string, error) {
+func NostrKeysign(relay, localNpub, localNsec, partyNpubs, keyShare, sessionID, sessionKey, message, derivePath, verbose string) (string, error) {
 
 	globalVerbose, _ = strconv.ParseBool(verbose)
+	since = nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
 
 	go NostrListen(localNpub, localNsec, relay)
 	time.Sleep(2 * time.Second)
 
-	// Find the master npub (peer with largest npub value)
-	peers := strings.Split(partyNpubs, ",")
-	masterNpub := peers[0]
-	for _, npub := range peers[1:] {
-		if npub > masterNpub {
-			masterNpub = npub
-		}
-	}
+	//Set the globalLocalNostrKeys
+	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
+	globalLocalNostrKeys.LocalNostrPrivKey = localNsec
+	globalLocalNostrKeys.LocalNostrPubKey = localNpub
 
-	if masterNpub == localNpub { //If we are the master, we need to initiate the handshake
-		txRequest := TxRequest{}    //Empty TxRequest because it's a keygen, not a keysign
-		sessionID := randomSeed(64) //Master generates the sessionID, SessionKey and chaincode
-		sessionKey := randomSeed(64)
-		chainCode := randomSeed(64)
+	Logf("Starting Join Keysign for session: %s", sessionID)
 
-		//Set the globalLocalNostrKeys
-		globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
-		globalLocalNostrKeys.LocalNostrPrivKey = localNsec
-		globalLocalNostrKeys.LocalNostrPubKey = localNpub
-
-		initiateNostrHandshake(sessionID, chainCode, sessionKey, localNpub, partyNpubs, "keygen", txRequest)
-		Logf("Starting Master Keygen for session: %s", sessionID)
-
-		ppmFile := localNpub + ".json"
-
-		result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr")
-		if err != nil {
-			Logf("Go Error: %v", err)
-			return "", err
-		} else {
-			Logf("\n [%s] Keygen Result %s\n", localNpub, result)
-			return result, nil
-		}
-
+	result, err := JoinKeysign("", localNpub, partyNpubs, sessionID, sessionKey, "", "", keyShare, derivePath, message, "nostr")
+	if err != nil {
+		Logf("Go Error: %v", err)
+		return "", err
 	} else {
-		//If we are not the master, we need to join the keygen
-
-		//Set the globalLocalNostrKeys
-		globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
-		globalLocalNostrKeys.LocalNostrPrivKey = localNsec
-		globalLocalNostrKeys.LocalNostrPubKey = localNpub
-
-		sessions, err := WaitForSessions()
-		if err != nil {
-			return "", fmt.Errorf("error getting sessions: %v", err)
-		} else {
-
-			protoMessage := ProtoMessage{
-				SessionID:       sessions[0].SessionID,
-				ChainCode:       sessions[0].ChainCode,
-				SessionKey:      sessions[0].SessionKey,
-				TxRequest:       sessions[0].TxRequest,
-				Master:          sessions[0].Master,
-				FunctionType:    "ack_handshake",
-				From:            localNpub,
-				FromNostrPubKey: localNpub,
-				Recipients:      []string{sessions[0].Master.MasterPubKey},
-				Participants:    []string{localNpub},
-			}
-			AckNostrHandshake(protoMessage, localNpub)
-
-			Logf("Joining Keygen for session: %s", sessions[0].SessionID)
-			ppmFile := localNpub + ".json"
-
-			result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessions[0].SessionID, "", sessions[0].ChainCode, sessions[0].SessionKey, "nostr")
-			if err != nil {
-				Logf("Go Error: %v", err)
-				nostrListenCancel()
-				return "", err
-			} else {
-				Logf("\n [%s] Keygen Result %s\n", localNpub, result)
-				nostrListenCancel()
-				return result, nil
-			}
-		}
+		Logf("\n [%s] Keysign Result %s\n", localNpub, result)
+		return result, nil
 	}
+}
 
+func NostrKeygen(relay, localNsec, localNpub, partyNpubs, ppm, sessionID, sessionKey, chainCode, verbose string) (string, error) {
+
+	globalVerbose, _ = strconv.ParseBool(verbose)
+
+	since = nostr.Timestamp(time.Now().Add(-10 * time.Second).Unix())
+	go NostrListen(localNpub, localNsec, relay)
+	time.Sleep(2 * time.Second)
+
+	//Set the globalLocalNostrKeys
+	globalLocalNostrKeys.NostrPartyPubKeys = strings.Split(partyNpubs, ",")
+	globalLocalNostrKeys.LocalNostrPrivKey = localNsec
+	globalLocalNostrKeys.LocalNostrPubKey = localNpub
+
+	Logf("Starting Join Keygen for session: %s", sessionID)
+
+	result, err := JoinKeygen(ppm, localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr")
+	if err != nil {
+		Logf("Go Error: %v", err)
+		return "", err
+	} else {
+		Logf("\n [%s] Keygen Result %s\n", localNpub, result)
+		return result, nil
+	}
 }
 
 // WaitForSessions polls GetSessions() every second for up to 5 minutes until it returns a non-empty result
@@ -698,120 +572,6 @@ func WaitForSessions() ([]NostrSession, error) {
 		Logf("Waiting for sessions... (attempt %d/300)", i+1)
 	}
 	return nil, fmt.Errorf("timeout waiting for sessions after 5 minutes")
-}
-
-func initiateNostrHandshake(SessionID, chainCode, sessionKey, localParty, partyNpubs, functionType string, txRequest TxRequest) (bool, error) {
-
-	peers := strings.Split(partyNpubs, ",")
-	globalLocalNostrKeys.NostrPartyPubKeys = peers
-
-	protoMessage := ProtoMessage{
-		SessionID:       SessionID,
-		ChainCode:       chainCode,
-		SessionKey:      sessionKey,
-		FunctionType:    "init_handshake",
-		From:            localParty,
-		FromNostrPubKey: globalLocalNostrKeys.LocalNostrPubKey,
-		Recipients:      peers,
-		PartyNpubs:      peers,
-		TxRequest:       txRequest,
-		Master:          Master{MasterPeer: localParty, MasterPubKey: globalLocalNostrKeys.LocalNostrPubKey},
-	}
-
-	nostrSession := NostrSession{
-		SessionID:    SessionID,
-		Participants: []string{localParty},
-		TxRequest:    protoMessage.TxRequest,
-		Master:       protoMessage.Master,
-		Status:       "pending",
-		SessionKey:   sessionKey,
-		ChainCode:    chainCode,
-	}
-
-	if !nostrSessionAlreadyExists(nostrSessionList, nostrSession) {
-		nostrSessionList = append(nostrSessionList, nostrSession)
-	}
-
-	//==============================SEND (INIT_HANDSHAKE) TO ALL PARTIES========================
-	Logf("Sending (init_handshake) message for SessionID: %s", SessionID)
-	nostrSend(protoMessage)
-	//==============================COLLECT ACK_HANDSHAKES==============================
-	//time.Sleep(5 * time.Second)
-	partyCount := len(globalLocalNostrKeys.NostrPartyPubKeys)
-	retryCount := 0
-	maxRetries := KeysignApprovalMaxRetries
-	sessionReady := false
-	for retryCount <= maxRetries {
-		for _, item := range nostrSessionList {
-			if item.SessionID == SessionID {
-
-				if functionType == "keygen" {
-					participantCount := len(item.Participants)
-
-					if participantCount == partyCount {
-						Logf("All participants have approved, sending %s for session: %s", functionType, SessionID)
-						sessionReady = true
-						startSessionMaster(SessionID, item.Participants, localParty, functionType)
-						break
-					}
-				} else {
-					participantCount := len(item.Participants)
-					participationRatio := float64(participantCount) / float64(partyCount)
-					//time.Sleep(3 * time.Second)
-					if participationRatio >= 0.66 && item.Status == "pending" {
-						Logf("Enough participants have approved, sending %s for session: %s", functionType, SessionID)
-						if item.Status == "pending" {
-							sessionReady = true
-							startSessionMaster(SessionID, item.Participants, localParty, functionType)
-							break
-						} else {
-							return false, fmt.Errorf("session not ready")
-						}
-						return sessionReady, nil
-					} else {
-						if retryCount >= maxRetries {
-
-							participationRatio := float64(participantCount) / float64(partyCount)
-							//time.Sleep(3 * time.Second)
-							if participationRatio >= 0.66 && item.Status == "pending" {
-
-								Logf("We have 2/3 of participants approved, sending %s for session: %s", functionType, SessionID)
-								sessionReady = true
-								startSessionMaster(SessionID, item.Participants, localParty, functionType)
-								break
-
-							} else {
-								Logf("Max retries reached, giving up on session: %s", SessionID)
-								return false, fmt.Errorf("max retries reached")
-							}
-						} else {
-							Logf("Waiting before retrying")
-							time.Sleep(KeysignApprovalTimeout)
-						}
-					}
-				}
-			}
-		}
-		if sessionReady {
-			break
-		}
-		retryCount++
-	}
-	return sessionReady, nil
-}
-
-func collectAckHandshake(sessionID string, protoMessage ProtoMessage) {
-
-	for i, item := range nostrSessionList {
-		if item.SessionID == sessionID && item.TxRequest == protoMessage.TxRequest && item.Status == "pending" { //This pending status check prevents a late party from interupting the current session if keysign is already in progress
-			if !contains(item.Participants, protoMessage.From) {
-				item.Participants = append(item.Participants, protoMessage.From)
-				nostrSessionList[i] = item
-				Logf("%s has approved session: %s", protoMessage.From, sessionID)
-				Logf("%v out of %v participants have approved", int(len(item.Participants)), int(len(globalLocalNostrKeys.NostrPartyPubKeys)))
-			}
-		}
-	}
 }
 
 func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
@@ -857,37 +617,8 @@ func AckNostrHandshake(protoMessage ProtoMessage, localParty string) {
 		Master:          nostrSession.Master,
 	}
 
-	nostrSend(ackProtoMessage)
+	nostrSend(ackProtoMessage, true)
 
-}
-
-func startSessionMaster(sessionID string, participants []string, localParty string, functionType string) {
-
-	for i, item := range nostrSessionList {
-		if item.SessionID == sessionID && item.Status == "pending" {
-			nostrSessionList[i].Status = functionType
-
-			recipients := make([]string, 0, len(participants))
-			for _, participant := range participants {
-				if participant != item.Master.MasterPeer { // Skip if participant is the master
-					recipients = append(recipients, participant)
-				}
-			}
-
-			startKeysignProtoMessage := ProtoMessage{
-				SessionID:    sessionID,
-				ChainCode:    item.ChainCode,
-				SessionKey:   item.SessionKey,
-				FunctionType: functionType,
-				From:         localParty,
-				Recipients:   recipients,
-				Participants: participants,
-				TxRequest:    item.TxRequest,
-				Master:       Master{MasterPeer: item.Master.MasterPeer, MasterPubKey: item.Master.MasterPubKey},
-			}
-			nostrSend(startKeysignProtoMessage)
-		}
-	}
 }
 
 func nostrFlagPartyKeysignComplete(sessionID string) error {
@@ -916,6 +647,7 @@ func nostrDeleteSession(sessionID string) {
 			nostrSessionList = append(nostrSessionList[:i], nostrSessionList[i+1:]...)
 		}
 	}
+	publishDeleteEvent()
 	Logf("Nostr Session Deleted: %s", sessionID)
 }
 
@@ -929,7 +661,10 @@ func nostrSessionAlreadyExists(list []NostrSession, nostrSession NostrSession) b
 	return false
 }
 
-func nostrSend(protoMessage ProtoMessage) error {
+func nostrSend(protoMessage ProtoMessage, deleteEvent bool) error {
+
+	rawMessageShort := string(protoMessage.RawMessage)[:min(50, len(protoMessage.RawMessage))] + "..."
+	Logln("BBMTLog", "========== Nostr sending message...", protoMessage.FunctionType, protoMessage.SessionID, protoMessage.From, protoMessage.Recipients, rawMessageShort, protoMessage.SeqNo)
 
 	for _, recipient := range protoMessage.Recipients {
 		protoMessageJSON, err := json.Marshal(protoMessage)
@@ -949,6 +684,7 @@ func nostrSend(protoMessage ProtoMessage) error {
 				return fmt.Errorf("invalid sender nsec: %w", err)
 			}
 			senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
+			Logf("Sender Pubkey: %s", senderPubkey)
 			if err != nil {
 				return fmt.Errorf("failed to derive sender pubkey: %w", err)
 			}
@@ -1000,9 +736,13 @@ func nostrSend(protoMessage ProtoMessage) error {
 				}
 
 				// Publish chunk with timeout and retry logic
-				if err := publishWithRetry(event, fmt.Sprintf("chunk %d", i)); err != nil {
+				if err := publishWithRetry(event); err != nil {
 					log.Printf("Error publishing chunk %d: %v", i, err)
 					return err
+				}
+
+				if deleteEvent {
+					nostrSentEventsList = append(nostrSentEventsList, SentEvent{EventID: event.ID, SenderPubKey: senderPubkey})
 				}
 			}
 			return nil // Return after sending all chunks
@@ -1013,6 +753,8 @@ func nostrSend(protoMessage ProtoMessage) error {
 				return fmt.Errorf("invalid sender nsec: %w", err)
 			}
 			senderPubkey, err := nostr.GetPublicKey(senderPrivkey.(string))
+			Logf("Sender Pubkey: %s", senderPubkey)
+
 			if err != nil {
 				return fmt.Errorf("failed to derive sender pubkey: %w", err)
 			}
@@ -1035,6 +777,10 @@ func nostrSend(protoMessage ProtoMessage) error {
 			if err != nil {
 				return fmt.Errorf("failed to create wrap: %w", err)
 			}
+
+			if deleteEvent {
+				nostrSentEventsList = append(nostrSentEventsList, SentEvent{EventID: event.ID, SenderPubKey: senderPubkey})
+			}
 		}
 
 		if event == nil {
@@ -1042,16 +788,49 @@ func nostrSend(protoMessage ProtoMessage) error {
 		}
 
 		// Publish event with timeout and retry logic
-		if err := publishWithRetry(event, "event"); err != nil {
+		if err := publishWithRetry(event); err != nil {
 			log.Printf("Error publishing event: %v", err)
 			return err
 		}
+
 	}
+
+	Logln("====================== SENDMESSAGE OK ================")
+
+	return nil
+}
+
+func publishDeleteEvent() error {
+	return nil
+}
+
+// PublishNIP09DeleteEvent publishes a NIP-09 delete event to mark an event as deleted
+func PublishNIP09DeleteEvent(eventID string, privateKey string) error {
+	// Create a delete event (kind:5) according to NIP-09
+	deleteEvent := &nostr.Event{
+		Kind:      5, // NIP-09 delete event kind
+		CreatedAt: nostr.Now(),
+		Content:   "Event deleted", // Optional content explaining why it was deleted
+		Tags: nostr.Tags{
+			{"e", eventID}, // Tag the event ID to be deleted
+		},
+	}
+
+	// Sign the event with the private key
+	if err := deleteEvent.Sign(privateKey); err != nil {
+		return fmt.Errorf("failed to sign delete event: %w", err)
+	}
+
+	// Publish the delete event using the existing retry mechanism
+	if err := publishWithRetry(deleteEvent); err != nil {
+		return fmt.Errorf("failed to publish delete event: %w", err)
+	}
+
 	return nil
 }
 
 // publishWithRetry publishes an event with timeout and retry logic
-func publishWithRetry(event *nostr.Event, eventType string) error {
+func publishWithRetry(event *nostr.Event) error {
 	maxRetries := 3
 	backoff := 1 * time.Second
 
@@ -1066,7 +845,7 @@ func publishWithRetry(event *nostr.Event, eventType string) error {
 			return nil // Success
 		}
 
-		log.Printf("Publish attempt %d failed for %s: %v", attempt+1, eventType, err)
+		log.Printf("Publish attempt %d failed for %s: %v", attempt+1, event.Kind, err)
 
 		if attempt < maxRetries-1 {
 			time.Sleep(backoff)
@@ -1074,7 +853,7 @@ func publishWithRetry(event *nostr.Event, eventType string) error {
 		}
 	}
 
-	return fmt.Errorf("failed to publish %s after %d attempts", eventType, maxRetries)
+	return fmt.Errorf("failed to publish %s after %d attempts", event.Kind, maxRetries)
 }
 
 func nostrGetData(key string) (interface{}, bool) {
@@ -1089,6 +868,7 @@ func nostrSetData(key string, newMsg *ProtoMessage) {
 
 	}
 
+	Logf("Adding message to cache: [%v][%v][%v]", newMsg.SessionID, newMsg.SeqNo, newMsg.FunctionType)
 	msgs = append(msgs, newMsg)
 	nostrMessageCache.Set(key, msgs, cache.DefaultExpiration)
 }
@@ -1115,49 +895,21 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 		case <-endCh:
 			return
 		default:
-			if isApplyingMessages {
-				continue
-			}
 
-			isApplyingMessages = true
+			time.Sleep(1 * time.Second)
+			Logln("BBMTLog", "Downloading nostr messages...", session)
 
-			var err error
+			go func() {
 
-			var messages []struct {
-				SessionID string   `json:"session_id,omitempty"`
-				From      string   `json:"from,omitempty"`
-				To        []string `json:"to,omitempty"`
-				Body      string   `json:"body,omitempty"`
-				SeqNo     string   `json:"sequence_no,omitempty"`
-				Hash      string   `json:"hash,omitempty"`
-			}
-			nostrMsgMutex.Lock()
-			msgs, found := nostrGetData("message-" + session)
-			nostrMsgMutex.Unlock()
+				if isApplyingMessages {
+					return
+				}
 
-			if !found {
-				isApplyingMessages = false
-				continue
-			}
+				isApplyingMessages = true
 
-			protoMessages, ok := msgs.([]*ProtoMessage)
-			if !ok {
-				Logln("BBMTLog", "Invalid message type for session:", session)
-				isApplyingMessages = false
-				continue
-			}
+				var err error
 
-			messages = make([]struct {
-				SessionID string   `json:"session_id,omitempty"`
-				From      string   `json:"from,omitempty"`
-				To        []string `json:"to,omitempty"`
-				Body      string   `json:"body,omitempty"`
-				SeqNo     string   `json:"sequence_no,omitempty"`
-				Hash      string   `json:"hash,omitempty"`
-			}, 0, len(protoMessages))
-
-			for _, protoMsg := range protoMessages {
-				var message struct {
+				var messages []struct {
 					SessionID string   `json:"session_id,omitempty"`
 					From      string   `json:"from,omitempty"`
 					To        []string `json:"to,omitempty"`
@@ -1165,132 +917,116 @@ func nostrDownloadMessage(session, sessionKey, key string, tssServerImp ServiceI
 					SeqNo     string   `json:"sequence_no,omitempty"`
 					Hash      string   `json:"hash,omitempty"`
 				}
+				nostrMsgMutex.Lock()
+				msgs, found := nostrGetData("message-" + session)
+				nostrMsgMutex.Unlock()
 
-				if err := json.Unmarshal(protoMsg.RawMessage, &message); err != nil {
-					Logln("BBMTLog", "failed to parse RawMessage:", err)
-					continue
+				if !found {
+					isApplyingMessages = false
+					return
 				}
 
-				messages = append(messages, message)
-			}
-
-			// Sort messages by sequence number
-			sort.SliceStable(messages, func(i, j int) bool {
-				seqNoI, errI := strconv.Atoi(messages[i].SeqNo)
-				seqNoJ, errJ := strconv.Atoi(messages[j].SeqNo)
-
-				if errI != nil || errJ != nil {
-					Logln("BBMTLog", "Error converting SeqNo to int:", errI, errJ)
-					return false
-				}
-				return seqNoI < seqNoJ
-			})
-
-			// Process messages sequentially
-			for _, message := range messages {
-				if message.From == key { //Skip messages from self
-					continue
+				protoMessages, ok := msgs.([]*ProtoMessage)
+				if !ok {
+					Logln("BBMTLog", "Invalid message type for session:", session)
+					isApplyingMessages = false
+					return
 				}
 
-				_, exists := msgMap[message.Hash]
-				if exists {
-					continue
-				} else {
-					msgMap[message.Hash] = true
+				messages = make([]struct {
+					SessionID string   `json:"session_id,omitempty"`
+					From      string   `json:"from,omitempty"`
+					To        []string `json:"to,omitempty"`
+					Body      string   `json:"body,omitempty"`
+					SeqNo     string   `json:"sequence_no,omitempty"`
+					Hash      string   `json:"hash,omitempty"`
+				}, 0, len(protoMessages))
+
+				for _, protoMsg := range protoMessages {
+					var message struct {
+						SessionID string   `json:"session_id,omitempty"`
+						From      string   `json:"from,omitempty"`
+						To        []string `json:"to,omitempty"`
+						Body      string   `json:"body,omitempty"`
+						SeqNo     string   `json:"sequence_no,omitempty"`
+						Hash      string   `json:"hash,omitempty"`
+					}
+
+					if err := json.Unmarshal(protoMsg.RawMessage, &message); err != nil {
+						Logln("BBMTLog", "failed to parse RawMessage:", err)
+						return
+					}
+
+					messages = append(messages, message)
 				}
 
-				status := getStatus(session)
+				// Sort messages by sequence number
+				sort.SliceStable(messages, func(i, j int) bool {
+					seqNoI, errI := strconv.Atoi(messages[i].SeqNo)
+					seqNoJ, errJ := strconv.Atoi(messages[j].SeqNo)
 
-				// Only process messages that match the expected seqNo
+					if errI != nil || errJ != nil {
+						Logln("BBMTLog", "Error converting SeqNo to int:", errI, errJ)
+						return false
+					}
+					return seqNoI < seqNoJ
+				})
 
-				status.Step++
-				status.Index++
-				status.Info = fmt.Sprintf("Received Message %s", message.SeqNo)
-				setIndex(session, status.Info, status.Step, status.Index)
-
-				// Decrypt message if necessary
-				body := message.Body
-				if len(sessionKey) > 0 {
-					body, err = AesDecrypt(message.Body, sessionKey)
-					if err != nil {
-						Logln("BBMTLog", "failed to decrypt message:", err)
+				// Process messages sequentially
+				for _, message := range messages {
+					if message.From == key { //Skip messages from self
 						continue
 					}
-				} else if len(decryptionKey) > 0 {
-					body, err = EciesDecrypt(message.Body, decryptionKey)
-					if err != nil {
-						Logln("BBMTLog", "failed to decrypt ECIES message:", err)
+
+					_, exists := msgMap[message.Hash]
+					if exists {
+						Logln("BBMTLog", "Already applied message:", message.SeqNo)
 						continue
+					} else {
+						msgMap[message.Hash] = true
 					}
+
+					status := getStatus(session)
+
+					// Only process messages that match the expected seqNo
+
+					status.Step++
+					status.Index++
+					status.Info = fmt.Sprintf("Received Message %s", message.SeqNo)
+					setIndex(session, status.Info, status.Step, status.Index)
+
+					// Decrypt message if necessary
+					body := message.Body
+					if len(sessionKey) > 0 {
+						body, err = AesDecrypt(message.Body, sessionKey)
+						if err != nil {
+							Logln("BBMTLog", "failed to decrypt message:", err)
+							return
+						}
+					} else if len(decryptionKey) > 0 {
+						body, err = EciesDecrypt(message.Body, decryptionKey)
+						if err != nil {
+							Logln("BBMTLog", "failed to decrypt ECIES message:", err)
+							return
+						}
+					}
+
+					Logln("BBMTLog", "Applying message body:", body[:min(50, len(body))])
+					if err := tssServerImp.ApplyData(body); err != nil {
+						Logln("BBMTLog", "failed to apply message data:", err)
+					}
+
+					// Mark message as applied
+					Logln("BBMTLog", "Message applied:", message.SeqNo)
+					status.Step++
+					status.Info = fmt.Sprintf("Applied Message %d", status.Index)
+					setStep(session, status.Info, status.Step)
+
 				}
-
-				Logln("BBMTLog", "Applying message body:", body[:min(50, len(body))])
-				if err := tssServerImp.ApplyData(body); err != nil {
-					Logln("BBMTLog", "failed to apply message data:", err)
-				}
-
-				// Mark message as applied
-				Logln("BBMTLog", "Message applied:", message.SeqNo)
-				status.Step++
-				status.Info = fmt.Sprintf("Applied Message %d", status.Index)
-				setStep(session, status.Info, status.Step)
-
-			}
-			isApplyingMessages = false
+				isApplyingMessages = false
+			}()
 		}
 	}
-}
-
-func SendNostrPing(localParty, pingID, recipientNpub string) (bool, error) { //Used to see if the peer is connected to nostr relay.   PingID should be a random 32 byte string
-
-	recipients := make([]string, 0, 1)
-	for _, p := range globalLocalNostrKeys.NostrPartyPubKeys {
-		if p == recipientNpub {
-			recipients = append(recipients, p)
-			break
-		}
-	}
-
-	protoMessage := ProtoMessage{
-		FunctionType:    "ping",
-		From:            localParty,
-		FromNostrPubKey: globalLocalNostrKeys.LocalNostrPubKey,
-		Recipients:      recipients,
-		RawMessage:      []byte(pingID),
-	}
-
-	err := nostrSend(protoMessage)
-	if err != nil {
-		return false, fmt.Errorf("error sending ping: %w", err)
-	}
-	nostrPingList = append(nostrPingList, protoMessage)
-	Logf("ping sent to %s", recipients)
-
-	for attempt := 0; attempt < 5; attempt++ {
-		for i, ping := range nostrPingList {
-			if string(ping.RawMessage) == pingID && ping.FunctionType == "pong" {
-				Logf("pong received from %s for ping:%v", ping.Recipients[0], string(ping.RawMessage))
-				Logf("%s is online", ping.Recipients[0])
-				nostrPingList = append(nostrPingList[:i], nostrPingList[i+1:]...)
-				return true, nil
-			}
-		}
-		if attempt < 4 {
-			time.Sleep(1 * time.Second)
-		}
-	}
-	return false, nil
-}
-
-func returnNostrPong(localParty string, protoMessage ProtoMessage) {
-	Logf("ping received from %s", protoMessage.From)
-	var from = protoMessage.From
-	protoMessage.FunctionType = "pong"
-	protoMessage.Recipients = []string{protoMessage.FromNostrPubKey}
-	protoMessage.From = localParty
-	nostrSend(protoMessage)
-
-	Logf("pong sent to %s", from)
 }
 
 func contains(slice []string, item string) bool {

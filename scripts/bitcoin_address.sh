@@ -51,8 +51,10 @@ chainCode=$(echo "$jsonContent" | jq -r '.chain_code_hex')
 # Set derivation path
 btcPath="m/44'/0'/0'/0/0"
 
+btcType="legacy"
+
 # Use the getAddress function from main.go
-address=$(go run main.go getAddress "$pubKey" "$chainCode" "$btcPath" "$network")
+address=$(go run main.go derive-address "$network" "$btcType" "$pubKey" "$chainCode" "$btcPath")
 
 # Display result
 echo "$address"

@@ -36,6 +36,11 @@ gomobile bind -v -target=android github.com/BoldBitcoinWallet/BBMTLib/tss
 gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
 ```
 
+## WASM
+```bash
+# compile WASM arch
+GOOS=js GOARCH=wasm go build -o bbmtlib.wasm github.com/BoldBitcoinWallet/BBMTLib/wasm
+```
 
 ## MPC TSS Transaction Over Nostr Diagram
 

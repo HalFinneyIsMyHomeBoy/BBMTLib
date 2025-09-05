@@ -2,9 +2,10 @@ package tss
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
-	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +35,29 @@ type Message struct {
 	Hash      string   `json:"hash,omitempty"`
 }
 
+// normalizeParticipant trims whitespace and can be extended later for case rules
+func normalizeParticipant(p string) string {
+	return strings.TrimSpace(p)
+}
+
+// uniqueNormalizedParticipants returns a de-duplicated, order-preserving list
+func uniqueNormalizedParticipants(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, p := range in {
+		n := normalizeParticipant(p)
+		if n == "" {
+			continue
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
+}
+
 // ---- Helper Functions ----
 func getSessionID(r *http.Request) string {
 	vars := mux.Vars(r)
@@ -50,10 +74,6 @@ func getHashParam(r *http.Request) string {
 	return vars["hash"]
 }
 
-func pf(format string, v ...interface{}) {
-	log.Printf(format, v...)
-}
-
 // ---- Session Handlers ----
 func postSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := getSessionID(r)
@@ -68,20 +88,32 @@ func postSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Normalize and de-duplicate incoming participants
+	participants = uniqueNormalizedParticipants(participants)
+	if len(participants) == 0 {
+		http.Error(w, "no participants provided", http.StatusBadRequest)
+		return
+	}
+
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	key := "session-" + sessionID
 	if session, found := getData(key); found {
 		existingSession := session.(Session)
-		existingSession.Participants = append(existingSession.Participants, participants...)
+		// Merge and de-duplicate
+		merged := uniqueNormalizedParticipants(append(existingSession.Participants, participants...))
+		existingSession.Participants = merged
 		setData(key, existingSession)
-	} else {
-		setData(key, Session{SessionID: sessionID, Participants: participants})
+		w.WriteHeader(http.StatusOK)
+		Logln("BBMTLog", "Session %s updated; participants=%v", sessionID, merged)
+		return
 	}
 
+	// New session
+	setData(key, Session{SessionID: sessionID, Participants: participants})
 	w.WriteHeader(http.StatusCreated)
-	pf("Session %s registered with participants: %v", sessionID, participants)
+	Logln("BBMTLog", "Session %s created; participants=%v", sessionID, participants)
 }
 
 func getSession(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +122,8 @@ func getSession(w http.ResponseWriter, r *http.Request) {
 
 	if session, found := getData(key); found {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(session.(Session).Participants)
+		p := uniqueNormalizedParticipants(session.(Session).Participants)
+		json.NewEncoder(w).Encode(p)
 		return
 	}
 
@@ -107,7 +140,7 @@ func deleteSession(w http.ResponseWriter, r *http.Request) {
 	dataCache.Delete(key)
 	dataCache.Delete(key + "-start")
 	w.WriteHeader(http.StatusOK)
-	pf("Session %s deleted", sessionID)
+	Logln("BBMTLog", fmt.Sprintf("Session %s deleted", sessionID))
 }
 
 func completedKeysign(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +171,7 @@ func completedKeysign(w http.ResponseWriter, r *http.Request) {
 
 	// Respond to client
 	w.WriteHeader(http.StatusOK)
-	log.Printf("BBMTLog: completedKeysign succeeded: Session %s, MessageID %s", sessionID, messageID)
+	Logln("BBMTLog", fmt.Sprintf("completedKeysign succeeded: Session %s, MessageID %s", sessionID, messageID))
 }
 
 func completedKeygen(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +190,7 @@ func completedKeygen(w http.ResponseWriter, r *http.Request) {
 
 	// Respond to client
 	w.WriteHeader(http.StatusCreated)
-	log.Printf("BBMTLog: completedKeygen succeeded: Session %s, LocalPartyID %s", sessionID, localPartyID[0])
+	Logln("BBMTLog", fmt.Sprintf("completedKeygen succeeded: Session %s, LocalPartyID %s", sessionID, localPartyID[0]))
 }
 
 // ---- Message Handlers ----
@@ -182,7 +215,7 @@ func postMessage(w http.ResponseWriter, r *http.Request) {
 	setData(key, messages)
 
 	w.WriteHeader(http.StatusOK)
-	pf("Message added to session %s: %+v", sessionID, msg)
+	Logln("BBMTLog", fmt.Sprintf("Message added to session %s: %+v", sessionID, msg.Hash))
 }
 
 func getMessage(w http.ResponseWriter, r *http.Request) {
@@ -214,23 +247,59 @@ func deleteTssMessage(w http.ResponseWriter, r *http.Request) {
 	hash := getHashParam(r)
 	key := "message-" + sessionID
 
+	Logln("BBMTLog", "deleteTssMessage called: session=%s, participant=%s, hash=%s", sessionID, participantKey, hash)
+
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	if data, found := getData(key); found {
 		messages := data.([]Message)
+		Logln("BBMTLog", fmt.Sprintf("Found %d messages in session %s", len(messages), sessionID))
+
+		// Debug: Show all messages to understand the data structure
+		Logln("BBMTLog", "All messages in session:")
+		for i, msg := range messages {
+			Logln("BBMTLog", fmt.Sprintf("  Message[%d]: Hash='%s', From='%s', To='%v', SeqNo='%s'", i, msg.Hash, msg.From, msg.To, msg.SeqNo))
+		}
+
 		filtered := []Message{}
+		deletedCount := 0
 		for _, msg := range messages {
-			if !(msg.Hash == hash && msg.From == participantKey) {
+			// Check if this message should be deleted:
+			// 1. Hash matches AND
+			// 2. Participant is either the sender OR the recipient
+			shouldDelete := false
+			if msg.Hash == hash {
+				if msg.From == participantKey {
+					shouldDelete = true
+					Logln("BBMTLog", fmt.Sprintf("Deleting message sent by %s with hash %s", participantKey, hash))
+				} else {
+					// Check if participant is in the recipients list
+					for _, recipient := range msg.To {
+						if recipient == participantKey {
+							shouldDelete = true
+							Logln("BBMTLog", fmt.Sprintf("Deleting message received by %s with hash %s", participantKey, hash))
+							break
+						}
+					}
+				}
+			}
+
+			if !shouldDelete {
 				filtered = append(filtered, msg)
+			} else {
+				deletedCount++
+				Logln("BBMTLog", fmt.Sprintf("Message deleted from session %s by %s with hash %s", sessionID, participantKey, hash))
 			}
 		}
+
+		Logln("BBMTLog", fmt.Sprintf("Deleted %d message(s), remaining: %d", deletedCount, len(filtered)))
 		setData(key, filtered)
 		w.WriteHeader(http.StatusOK)
-		pf("Message deleted from session %s by %s with hash %s", sessionID, participantKey, hash)
 		return
 	}
 
+	Logln("BBMTLog", fmt.Sprintf("No messages found for session %s", sessionID))
 	http.Error(w, "message not found", http.StatusNotFound)
 }
 
@@ -241,6 +310,22 @@ func setData(key string, value interface{}) {
 
 func getData(key string) (interface{}, bool) {
 	return dataCache.Get(key)
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*") // allow any origin
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ==============================
@@ -263,14 +348,16 @@ func listen(port string) *http.Server {
 	r.HandleFunc("/message/{sessionID}/{participantKey}", getMessage).Methods("GET")
 	r.HandleFunc("/message/{sessionID}/{participantKey}/{hash}", deleteTssMessage).Methods("DELETE")
 
+	handler := corsMiddleware(r)
+
 	server := &http.Server{
 		Addr:    "0.0.0.0:" + port,
-		Handler: r,
+		Handler: handler,
 	}
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+			Logln("BBMTLog", fmt.Sprintf("Server failed: %v", err))
 		}
 	}()
 
@@ -287,6 +374,7 @@ func RunRelay(port string) (string, error) {
 	go func() {
 		server = listen(port)
 	}()
+	Logln("BBMTLog", fmt.Sprintf("Relay started on port %s", port))
 	return "ok", nil
 }
 

@@ -4,7 +4,13 @@
 *.aar
 *.jar
 Tss.xcframework/
+scripts/tmps/
 scripts/bin/
 scripts/*.json
 scripts/*.ks
 scripts/*.nostr
+scripts/*.ppm
+
+
+wasm/node_modules
+wasm/*.wasm

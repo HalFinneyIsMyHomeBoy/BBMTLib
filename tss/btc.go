@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -386,25 +385,16 @@ func MpcSendBTC(
 			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
 
 			var sigJSON string
-
 			if net_type == "nostr" {
-
-				for _, nostrSession := range nostrSessionList {
-					if nostrSession.SessionID == session {
-						sigJSON, err = JoinKeysign(server, key, strings.Join(nostrSession.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-						if err != nil {
-							Logf("Current status1: %v", nostrSession.Status)
-							Logf("session: %v", session)
-							return "", fmt.Errorf("failed to sign transaction: signature is empty")
-						}
-						time.Sleep(1 * time.Second)
-					}
+				//	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath,
+				sigJSON, err = NostrKeysign(server, key, encKey, partiesCSV, keyshare, utxoSession, sessionKey, sighashBase64, derivePath, decKey)
+				if err != nil {
+					return "", fmt.Errorf("failed to sign transaction: %v", err)
 				}
-
 			} else {
 				sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 				if err != nil {
-					return "", fmt.Errorf("failed to sign transaction: signature is empty")
+					return "", fmt.Errorf("failed to sign transaction: %v", err)
 				}
 			}
 
@@ -443,24 +433,15 @@ func MpcSendBTC(
 			sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 			mpcHook("joining keysign", session, utxoSession, utxoIndex, utxoCount, false)
 			var sigJSON string
-
 			if net_type == "nostr" {
-
-				for _, item := range nostrSessionList {
-					if item.SessionID == session {
-						sigJSON, err = JoinKeysign(server, key, strings.Join(item.Participants, ","), utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
-						if err != nil {
-							Logf("Current status2: %v", item.Status)
-							return "", fmt.Errorf("failed to sign transaction: signature is empty")
-						}
-						time.Sleep(1 * time.Second)
-					}
+				sigJSON, err = NostrKeysign(server, key, encKey, partiesCSV, keyshare, utxoSession, sessionKey, sighashBase64, derivePath, "verbose")
+				if err != nil {
+					return "", fmt.Errorf("failed to sign transaction: %v", err)
 				}
-
 			} else {
 				sigJSON, err = JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, derivePath, sighashBase64, net_type)
 				if err != nil {
-					return "", fmt.Errorf("failed to sign transaction: signature is empty")
+					return "", fmt.Errorf("failed to sign transaction: %v", err)
 				}
 			}
 
@@ -978,15 +959,117 @@ func ConvertPubKeyToBTCAddress(pubKeyCompressed, mainnetORtestnet3 string) (stri
 	// Convert the public key to a P2WPKH address (Bech32)
 	pubKeyHash := btcutil.Hash160(pubKeyBytes)
 	var address *btcutil.AddressPubKeyHash
-	if mainnetORtestnet3 == "mainnet" {
+	switch mainnetORtestnet3 {
+	case "mainnet":
 		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &chaincfg.MainNetParams)
-	} else if mainnetORtestnet3 == "testnet3" {
+	case "testnet3":
 		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &chaincfg.TestNet3Params)
-	} else {
+	default:
 		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
 	}
 	if err != nil {
 		return "", fmt.Errorf("failed to create Bech32 address: %w", err)
 	}
 	return address.EncodeAddress(), nil
+}
+
+func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
+	// Decode the hex string to bytes
+	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode public key: %w", err)
+	}
+
+	// Ensure the public key is in the correct format
+	if len(pubKeyBytes) != 33 {
+		return "", fmt.Errorf("invalid compressed public key length: got %d, want 33", len(pubKeyBytes))
+	}
+
+	// Convert the public key to a P2PKH address
+	pubKeyHash := btcutil.Hash160(pubKeyBytes)
+	var address *btcutil.AddressPubKeyHash
+	switch mainnetORtestnet3 {
+	case "mainnet":
+		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &chaincfg.MainNetParams)
+	case "testnet3":
+		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &chaincfg.TestNet3Params)
+	default:
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to create Bech32 address: %w", err)
+	}
+	return address.EncodeAddress(), nil
+}
+
+func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
+	// Decode hex-encoded compressed public key
+	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode public key: %w", err)
+	}
+	if len(pubKeyBytes) != 33 {
+		return "", fmt.Errorf("invalid compressed public key length: got %d, want 33", len(pubKeyBytes))
+	}
+
+	// Determine network parameters
+	var params *chaincfg.Params
+	switch mainnetORtestnet3 {
+	case "mainnet":
+		params = &chaincfg.MainNetParams
+	case "testnet3":
+		params = &chaincfg.TestNet3Params
+	default:
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+	}
+
+	// Create native SegWit (P2WPKH) address
+	pubKeyHash := btcutil.Hash160(pubKeyBytes)
+	address, err := btcutil.NewAddressWitnessPubKeyHash(pubKeyHash, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to create P2WPKH address: %w", err)
+	}
+
+	return address.EncodeAddress(), nil
+}
+
+func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (string, error) {
+	// Decode hex-encoded compressed public key
+	pubKeyBytes, err := hex.DecodeString(pubKeyCompressed)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode public key: %w", err)
+	}
+	if len(pubKeyBytes) != 33 {
+		return "", fmt.Errorf("invalid compressed public key length: got %d, want 33", len(pubKeyBytes))
+	}
+
+	// Determine network parameters
+	var params *chaincfg.Params
+	switch mainnetORtestnet3 {
+	case "mainnet":
+		params = &chaincfg.MainNetParams
+	case "testnet3":
+		params = &chaincfg.TestNet3Params
+	default:
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+	}
+
+	// Create nested SegWit (P2SH-P2WPKH) address
+	pubKeyHash := btcutil.Hash160(pubKeyBytes)
+	witnessAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubKeyHash, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to create witness pubkey hash: %w", err)
+	}
+
+	redeemScript, err := txscript.PayToAddrScript(witnessAddr)
+	if err != nil {
+		return "", fmt.Errorf("failed to create redeem script: %w", err)
+	}
+
+	wrappedAddr, err := btcutil.NewAddressScriptHash(redeemScript, params)
+	if err != nil {
+		return "", fmt.Errorf("failed to create P2SH address: %w", err)
+	}
+
+	return wrappedAddr.EncodeAddress(), nil
 }

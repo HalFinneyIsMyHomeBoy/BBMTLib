@@ -65,7 +65,26 @@ func LocalPreParams(ppmFile string, timeoutMinutes int) (bool, error) {
 }
 
 func PreParams(ppmFile string) (*ecdsaKeygen.LocalPreParams, error) {
-	Logln("BBMTLog", "ppm generation...")
+
+	if len(ppmFile) == 0 {
+		Logln("BBMTLog", "ppm soft creation...")
+		Logln("BBMTLog", "ppm soft GeneratePreParams...")
+		preParams, err := ecdsaKeygen.GeneratePreParams(10 * time.Minute)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate soft pre-parameters: %w", err)
+		}
+		Logln("BBMTLog", "ppmFile blank skip saving...")
+		return preParams, nil
+	}
+
+	if len(ppmFile) > 1000 {
+		Logln("BBMTLog", "PreParams passed...")
+		var preParams ecdsaKeygen.LocalPreParams
+		if err := json.Unmarshal([]byte(ppmFile), &preParams); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal pre-parameters: %w", err)
+		}
+		return &preParams, nil
+	}
 
 	if _, err := os.Stat(ppmFile); err != nil {
 		if os.IsNotExist(err) {
@@ -79,17 +98,13 @@ func PreParams(ppmFile string) (*ecdsaKeygen.LocalPreParams, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate pre-parameters: %w", err)
 		}
-		if len(ppmFile) > 0 {
-			Logln("BBMTLog", "ppm saving...")
-			if err := savePreParamsToFile(preParams, ppmFile); err != nil {
-				return nil, fmt.Errorf("failed to save pre-parameters to file: %w", err)
-			}
-			Logln("BBMTLog", "ppm ok...")
-			return preParams, nil
-		} else {
-			Logln("BBMTLog", "ppm empty skip saving...")
-			return preParams, nil
+
+		Logln("BBMTLog", "ppm saving...")
+		if err := savePreParamsToFile(preParams, ppmFile); err != nil {
+			return nil, fmt.Errorf("failed to save pre-parameters to file: %w", err)
 		}
+		Logln("BBMTLog", "ppm ok...")
+		return preParams, nil
 	} else {
 		Logln("BBMTLog", "ppm file found...")
 		Logln("BBMTLog", "ppm loading...")
@@ -323,6 +338,13 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 				}
 				localState.PubKey = pubKey
 				localState.ECDSALocalData = *saveData
+
+				localState.Fingerprint, _ = Sha256(localState.PubKey)
+				localState.Fingerprint, _ = Sha256(localState.Fingerprint + localState.ChainCodeHex)
+				for p := range sortedPartyIds {
+					localState.Fingerprint, _ = Sha256(localState.Fingerprint + sortedPartyIds[p].Moniker)
+				}
+
 				if err := s.saveLocalStateData(localState); err != nil {
 					return "", fmt.Errorf("failed to save local state data, error: %w", err)
 				}
