@@ -686,7 +686,11 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 		result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessionID, "", chainCode, sessionKey, "nostr")
 		if err != nil {
 			Logf("Go Error: %v", err)
-			publishNostrKeygenStatus(sessionID, localNpub, "", "keygen_failed") //Tell all parties keygen failed
+			err = publishNostrKeygenStatus(sessionID, localNpub, "", "keygen_failed") //Tell all parties keygen failed
+			if err != nil {
+				fmt.Printf("Failed to publish keygen_failed status: %v\n", err)
+				return "", err
+			}
 			nostrListenCancel()
 			return "", err
 
@@ -710,7 +714,6 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 				nostrListenCancel()
 				return "", fmt.Errorf("keygen test failed, either one of the participants didn't respond with success or the bitcoin address generated from keyshare didn't match")
 			}
-
 		}
 
 	} else {
@@ -746,21 +749,25 @@ func NostrKeygen(relay, localNsec, localNpub, partyNpubs, chainCode, sessionKey,
 			result, err := JoinKeygen(ppmFile, localNpub, partyNpubs, "", "", sessions[0].SessionID, "", sessions[0].ChainCode, sessions[0].SessionKey, "nostr")
 			if err != nil {
 				Logf("Go Error: %v", err)
-				publishNostrKeygenStatus(sessions[0].SessionID, localNpub, "", "keygen_failed") //Tell all parties keygen failed
+				err = publishNostrKeygenStatus(sessions[0].SessionID, localNpub, "", "keygen_failed") //Tell all parties keygen failed
+				if err != nil {
+					fmt.Printf("Failed to publish keygen_failed status: %v\n", err)
+					return "", err
+				}
 				nostrDeleteSession(sessions[0].SessionID)
 				nostrListenCancel()
 				return "", err
 			} else {
 				Logf("\n [%s] Keygen Result %s\n", localNpub, result)
 
-				test, err := VerifyKeygenSuccess(sessions[0].SessionID, result, localNpub)
+				IsKeygenSuccess, err := VerifyKeygenSuccess(sessions[0].SessionID, result, localNpub)
 				if err != nil {
 					Logf("Failed to test keygen: %v", err)
 					nostrListenCancel()
 					return "", err
 				}
 
-				if test {
+				if IsKeygenSuccess {
 					nostrListenCancel()
 					nostrDeleteSession(sessions[0].SessionID)
 					return result, nil
@@ -787,7 +794,11 @@ func VerifyKeygenSuccess(sessionID, keyShare, localNpub string) (bool, error) {
 	}
 
 	//Tell all parties keygen successful by sending btc address
-	publishNostrKeygenStatus(sessionID, localNpub, address, "keygen_successful")
+	err = publishNostrKeygenStatus(sessionID, localNpub, address, "keygen_successful")
+	if err != nil {
+		fmt.Printf("Failed to publish keygen_successful status: %v\n", err)
+		return false, err
+	}
 	Logf("Published keygen_successful status for %s", localNpub)
 
 	//Run test
@@ -800,7 +811,7 @@ func VerifyKeygenSuccess(sessionID, keyShare, localNpub string) (bool, error) {
 	return test, nil
 }
 
-func publishNostrKeygenStatus(sessionID, localNpub, BTCAddress, status string) {
+func publishNostrKeygenStatus(sessionID, localNpub, BTCAddress, status string) error {
 
 	for i := 0; i < len(nostrSessionList); i++ {
 		if nostrSessionList[i].SessionID == sessionID {
@@ -822,16 +833,21 @@ func publishNostrKeygenStatus(sessionID, localNpub, BTCAddress, status string) {
 				ParticipantStatuses: nostrSessionList[i].ParticipantStatuses,
 			}
 
-			nostrSend(protoMessage, true)
+			err := nostrSend(protoMessage, true)
+			if err != nil {
+				return fmt.Errorf("failed to send nostr message: %w", err)
+			}
 		}
 	}
+
+	return nil
 }
 
 func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 
 	Logf("Waiting %d seconds for parties test keygen and respond if success or failed", int(KeygenTimeout.Seconds()))
 
-	//if all participants respond with success and bitcoin address matches, return true
+	//if all participants respond with keygen_success and bitcoin addresses matches, return true
 	var numOfParticipants bool = false
 	var allAddressesMatch bool = false
 	var allStatusesSuccessful bool = false
@@ -878,6 +894,15 @@ func TestKeyGen(sessionID, keyShare, address string) (bool, error) {
 		time.Sleep(1 * time.Second)
 	}
 
+	if !allAddressesMatch {
+		return false, fmt.Errorf("Participants reported different BTC addresses!")
+	}
+	if !numOfParticipants {
+		return false, fmt.Errorf("Not all participants reported their status!")
+	}
+	if !allStatusesSuccessful {
+		return false, fmt.Errorf("Not all participants reported keygen_successful!")
+	}
 	return false, nil
 }
 
