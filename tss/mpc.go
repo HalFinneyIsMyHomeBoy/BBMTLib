@@ -283,10 +283,10 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	}
 
 	if net_type == "nostr" {
-		// err = nostrFlagPartyKeygenComplete(session)
-		// if err != nil {
-		// 	Logln("BBMTLog", "Warning: nostrFlagPartyKeygenComplete", "error", err)
-		// }
+		err = nostrFlagPartyKeygenComplete(session)
+		if err != nil {
+			Logln("BBMTLog", "Warning: nostrFlagPartyKeygenComplete", "error", err)
+		}
 	}
 
 	status.Step++

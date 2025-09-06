@@ -1134,13 +1134,13 @@ func nostrFlagPartyKeygenComplete(sessionID string) error {
 }
 
 func nostrDeleteSession(sessionID string) {
-	// for i := len(nostrSessionList) - 1; i >= 0; i-- {
-	// 	if nostrSessionList[i].SessionID == sessionID {
-	// 		nostrSessionList = append(nostrSessionList[:i], nostrSessionList[i+1:]...)
-	// 	}
-	// }
-	// publishDeleteEvent()
-	// Logf("Nostr Session Deleted: %s", sessionID)
+	for i := len(nostrSessionList) - 1; i >= 0; i-- {
+		if nostrSessionList[i].SessionID == sessionID {
+			nostrSessionList = append(nostrSessionList[:i], nostrSessionList[i+1:]...)
+		}
+	}
+	publishDeleteEvent() //TODO: This needs to ask the relay to delete all events
+	Logf("Nostr Session Deleted: %s", sessionID)
 }
 
 func nostrSessionAlreadyExists(list []NostrSession, nostrSession NostrSession) bool {
@@ -1396,31 +1396,6 @@ func publishDeleteEvent() error {
 	return nil
 }
 
-// PublishNIP09DeleteEvent publishes a NIP-09 delete event to mark an event as deleted
-func PublishNIP09DeleteEvent(eventID string, privateKey string) error {
-	// Create a delete event (kind:5) according to NIP-09
-	deleteEvent := &nostr.Event{
-		Kind:      5, // NIP-09 delete event kind
-		CreatedAt: nostr.Now(),
-		Content:   "Event deleted", // Optional content explaining why it was deleted
-		Tags: nostr.Tags{
-			{"e", eventID}, // Tag the event ID to be deleted
-		},
-	}
-
-	// Sign the event with the private key
-	if err := deleteEvent.Sign(privateKey); err != nil {
-		return fmt.Errorf("failed to sign delete event: %w", err)
-	}
-
-	// Publish the delete event using the existing retry mechanism
-	if err := publishWithRetry(deleteEvent); err != nil {
-		return fmt.Errorf("failed to publish delete event: %w", err)
-	}
-
-	return nil
-}
-
 // publishWithRetry publishes an event with timeout and retry logic
 func publishWithRetry(event *nostr.Event) error {
 	maxRetries := 3
@@ -1437,7 +1412,7 @@ func publishWithRetry(event *nostr.Event) error {
 			return nil // Success
 		}
 
-		log.Printf("Publish attempt %d failed for %s: %v", attempt+1, event.Kind, err)
+		log.Printf("Publish attempt %d failed for %d: %v", attempt+1, event.Kind, err)
 
 		if attempt < maxRetries-1 {
 			time.Sleep(backoff)
@@ -1445,7 +1420,7 @@ func publishWithRetry(event *nostr.Event) error {
 		}
 	}
 
-	return fmt.Errorf("failed to publish %s after %d attempts", event.Kind, maxRetries)
+	return fmt.Errorf("failed to publish %d after %d attempts", event.Kind, maxRetries)
 }
 
 func nostrGetData(key string) (interface{}, bool) {
