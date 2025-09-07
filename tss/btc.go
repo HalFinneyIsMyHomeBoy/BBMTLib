@@ -531,7 +531,7 @@ func MpcSendBTC(
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
 	Logln("Raw Transaction:", rawTx)
-	select {}
+
 	txid, err := PostTx(rawTx)
 	if err != nil {
 		Logf("Error broadcasting transaction: %v", err)
