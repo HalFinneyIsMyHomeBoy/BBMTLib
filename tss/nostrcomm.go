@@ -614,7 +614,6 @@ func NostrSpend(relay, localNpub, localNsec, partyNpubs, keyShare string, txRequ
 							return "", err
 						} else {
 							Logf("\n [%s] Keysign Result %s\n", localNpub, result)
-							Logf("EVENTLIST: %v", nostrSentEventsList)
 							return result, nil
 						}
 					} else {
