@@ -7,3 +7,4 @@ Tss.xcframework/
 scripts/bin/
 scripts/*.json
 scripts/*.ks
+scripts/*.nostr

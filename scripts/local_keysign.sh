@@ -75,11 +75,16 @@ sleep 1
 
 # Start keysign for both parties
 echo "Starting keysign for PARTY1..."
-"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$MESSAGE" &
+
+# session key overrides the enc/dec keys if set - AES instead of ECIES
+# use SESSION_KEY for 2+ parties
+SESSION_KEY=$("$BUILD_DIR/$BIN_NAME" random)
+
+"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY1" "$PARTIES" "$PUBLIC_KEY2" "$PRIVATE_KEY1" "$KEYSHARE1" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "local" &
 PID1=$!
 
 echo "Starting keysign for PARTY2..."
-"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$MESSAGE" &
+"$BUILD_DIR/$BIN_NAME" keysign "$SERVER" "$SESSION_ID" "$PARTY2" "$PARTIES" "$PUBLIC_KEY1" "$PRIVATE_KEY2" "$KEYSHARE2" "$DERIVATION_PATH" "$MESSAGE" "$SESSION_KEY" "local" &
 PID2=$!
 
 # Handle cleanup on exit
