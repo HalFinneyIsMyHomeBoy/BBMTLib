@@ -13,7 +13,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 echo "Script directory: $SCRIPT_DIR"
 echo "Project root: $PROJECT_ROOT"
-
+#test
 
 # Check if binaries exist and are executable
 if [ ! -f "$PROJECT_ROOT/No-DNS/nodns-server/build/nodns-server" ]; then
