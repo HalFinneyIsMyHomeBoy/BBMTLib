@@ -12,7 +12,24 @@ NODNS_PID=$!
 sleep 2
 
 echo "Generating nodns-cli login..."
-nodns-cli login generate
+NSEC=$(nodns-cli login generate)
+echo "Generated nsec: $NSEC"
+
+echo "Logging in with generated nsec..."
+./nodns-cli login $NSEC
+
+# Prompt user for IP address
+echo ""
+read -p "Enter IP address for DNS record: " IP_ADDRESS
+
+# Validate IP address input
+if [ -z "$IP_ADDRESS" ]; then
+    echo "Error: IP address cannot be empty"
+    exit 1
+fi
+
+echo "Adding DNS record for IP address: $IP_ADDRESS"
+./nodns-cli records add a @ $IP_ADDRESS
 
 # Check if number of peers is provided
 if [ $# -eq 0 ]; then
