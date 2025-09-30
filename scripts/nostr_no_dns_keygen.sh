@@ -45,8 +45,7 @@ echo "Starting nodns-server service..."
 "$PROJECT_ROOT/No-DNS/nodns-server/build/nodns-server" &
 NODNS_PID=$!
 
-# Wait a moment for nodns-server to start
-sleep 2
+
 
 echo "Generating nodns-cli login..."
 NSEC=$("$PROJECT_ROOT/No-DNS/nodns-cli/build/nodns" login generate)
