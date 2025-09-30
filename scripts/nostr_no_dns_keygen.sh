@@ -3,20 +3,53 @@
 set -e  # Exit on error
 set -o pipefail  # Catch errors in pipes
 
-# Run nodns and generate login
-echo "Starting nodns service..."
-./nodns &
+# Add Go to PATH
+export PATH=$PATH:/usr/local/go/bin
+
+# Ensure binaries are executable
+echo "Ensuring binaries are executable..."
+chmod +x ./No-DNS/nodns-server/build/nodns-server 2>/dev/null || true
+chmod +x ./No-DNS/nodns-cli/build/nodns 2>/dev/null || true
+
+# Check if binaries exist and are executable
+if [ ! -f "./No-DNS/nodns-server/build/nodns-server" ]; then
+    echo "Error: nodns-server binary not found at ./No-DNS/nodns-server/build/nodns-server"
+    echo "Attempting to rebuild nodns-server..."
+    cd ./No-DNS/nodns-server
+    go build -o build/nodns-server . || {
+        echo "Failed to rebuild nodns-server. Please check Go installation and dependencies."
+        exit 1
+    }
+    chmod +x build/nodns-server
+    cd ../..
+fi
+
+if [ ! -f "./No-DNS/nodns-cli/build/nodns" ]; then
+    echo "Error: nodns binary not found at ./No-DNS/nodns-cli/build/nodns"
+    echo "Attempting to rebuild nodns-cli..."
+    cd ./No-DNS/nodns-cli
+    go build -o build/nodns . || {
+        echo "Failed to rebuild nodns-cli. Please check Go installation and dependencies."
+        exit 1
+    }
+    chmod +x build/nodns
+    cd ../..
+fi
+
+# Run nodns-server and generate login
+echo "Starting nodns-server service..."
+./No-DNS/nodns-server/build/nodns-server &
 NODNS_PID=$!
 
-# Wait a moment for nodns to start
+# Wait a moment for nodns-server to start
 sleep 2
 
 echo "Generating nodns-cli login..."
-NSEC=$(nodns-cli login generate)
+NSEC=$(./No-DNS/nodns-cli/build/nodns login generate)
 echo "Generated nsec: $NSEC"
 
 echo "Logging in with generated nsec..."
-./nodns-cli login $NSEC
+./No-DNS/nodns-cli/build/nodns login $NSEC
 
 # Prompt user for IP address
 echo ""
@@ -29,7 +62,7 @@ if [ -z "$IP_ADDRESS" ]; then
 fi
 
 echo "Adding DNS record for IP address: $IP_ADDRESS"
-./nodns-cli records add a @ $IP_ADDRESS
+./No-DNS/nodns-cli/build/nodns records add a @ $IP_ADDRESS
 
 # Check if number of peers is provided
 if [ $# -eq 0 ]; then
@@ -197,8 +230,8 @@ wait
 
 echo "All keygen processes completed!"
 
-# Clean up nodns process
-echo "Stopping nodns service..."
+# Clean up nodns-server process
+echo "Stopping nodns-server service..."
 kill $NODNS_PID 2>/dev/null || true
 
 
