@@ -40,7 +40,6 @@ if [ ! -f "$PROJECT_ROOT/No-DNS/nodns-cli/build/nodns" ]; then
     cd "$PROJECT_ROOT"
 fi
 
-sleep 1
 # Run nodns-server and generate login
 echo "Starting nodns-server service..."
 "$PROJECT_ROOT/No-DNS/nodns-server/build/nodns-server" &
