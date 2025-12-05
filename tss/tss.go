@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,7 +27,17 @@ func (s *ServiceImpl) ApplyData(msg string) error {
 	return nil
 }
 
-func LocalPreParams(ppmFile string, timeoutMinutes int) (bool, error) {
+func LocalPreParams(ppmFile string, timeoutMinutes int) (result bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in LocalPreParams: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = false
+		}
+	}()
+
 	Logln("BBMTLog", "ppm generation...")
 
 	if _, err := os.Stat(ppmFile); err != nil {
@@ -254,7 +265,7 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 	ecdsaEndCh <-chan *ecdsaKeygen.LocalPartySaveData,
 	localState *LocalState,
 	sortedPartyIds tss.SortedPartyIDs) (string, error) {
-	functionType := "keygen"
+
 	pubKey := ""
 	errChan := make(chan error, 1)
 
@@ -289,14 +300,14 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 						if item == localState.LocalPartyKey {
 							continue
 						}
-						if _err := s.messenger.Send(r.From.Moniker, item, outboundPayload, strings.Join(localState.KeygenCommitteeKeys, ","), functionType); _err != nil {
+						if _err := s.messenger.Send(r.From.Moniker, item, outboundPayload); _err != nil {
 							errChan <- fmt.Errorf("failed to broadcast message to peer, error: %v", _err)
 							return
 						}
 					}
 				} else {
 					for _, item := range r.To {
-						if _err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(localState.KeygenCommitteeKeys, ","), functionType); _err != nil {
+						if _err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); _err != nil {
 							errChan <- fmt.Errorf("failed to send message to peer, error: %v", _err)
 							return
 						}
@@ -323,6 +334,7 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 				}
 				localState.PubKey = pubKey
 				localState.ECDSALocalData = *saveData
+				localState.CreatedAt = time.Now().UnixMilli()
 				if err := s.saveLocalStateData(localState); err != nil {
 					return "", fmt.Errorf("failed to save local state data, error: %w", err)
 				}
@@ -462,7 +474,6 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 	endCh <-chan *common.SignatureData,
 	sortedPartyIds tss.SortedPartyIDs) (*common.SignatureData, error) {
 
-	functionType := "keysign"
 	var signature *common.SignatureData = nil
 	errChan := make(chan error, 1)
 
@@ -497,23 +508,13 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 						if item.Moniker == localParty.PartyID().Moniker {
 							continue
 						}
-						// Convert sortedPartyIds to []string
-						partyIDStrings := make([]string, len(sortedPartyIds))
-						for i, p := range sortedPartyIds {
-							partyIDStrings[i] = p.Moniker
-						}
-						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(partyIDStrings, ","), functionType); err != nil {
+						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); err != nil {
 							errChan <- fmt.Errorf("failed to broadcast message to peer, error: %w", err)
 						}
 					}
 				} else {
 					for _, item := range r.To {
-						// Convert sortedPartyIds to []string
-						partyIDStrings := make([]string, len(sortedPartyIds))
-						for i, p := range sortedPartyIds {
-							partyIDStrings[i] = p.Moniker
-						}
-						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload, strings.Join(partyIDStrings, ","), functionType); err != nil {
+						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); err != nil {
 							errChan <- fmt.Errorf("failed to send message to peer, error: %w", err)
 						}
 					}

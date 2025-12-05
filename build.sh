@@ -1,28 +1,27 @@
 #!/bin/bash
-
-set -e
-
-# Default to Android
-TARGET="android"
-
-# Check CLI args
-if [[ "$1" == "--iphone" ]]; then
-  TARGET="ios"
-elif [[ "$1" == "--android" ]]; then
-  TARGET="android"
-fi
-
-# Setup
-export GOFLAGS="-mod=mod"
+echo "building gomobile tss lib"
 go mod tidy
-go get golang.org/x/mobile/bind
-gomobile init
 
-# Build
-if [[ "$TARGET" == "android" ]]; then
-  echo "Building gomobile TSS Android lib..."
-  gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
-else
-  echo "Building gomobile TSS iOS + macOS lib..."
-  gomobile bind -v -target=ios,macos,iossimulator -tags=ios,macos,iossimulator github.com/BoldBitcoinWallet/BBMTLib/tss
+# Install gomobile if not already installed
+if ! command -v gomobile &> /dev/null; then
+    echo "gomobile not found, installing..."
+    go install golang.org/x/mobile/cmd/gomobile@latest
+    # Add Go bin directory to PATH if not already there
+    export PATH="$PATH:$(go env GOPATH)/bin"
 fi
+
+gomobile init
+export GOFLAGS="-mod=mod"
+gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
+
+# Create libs directory if it doesn't exist
+mkdir -p libs
+
+# Copy generated files to local libs directory
+cp tss.aar libs/tss.aar
+cp tss-sources.jar libs/tss-sources.jar
+
+# Run go mod tidy again at the end to ensure go.mod/go.sum are up to date
+# This ensures any dependencies added during the build are included
+echo "Updating go.mod/go.sum..."
+go mod tidy

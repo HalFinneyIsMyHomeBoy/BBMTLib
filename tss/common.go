@@ -3,6 +3,7 @@ package tss
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/asn1"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -94,7 +96,17 @@ func HashToInt(hash []byte, c elliptic.Curve) *big.Int {
 	return ret
 }
 
-func GetDerivedPubKey(hexPubKey, hexChainCode, path string, isEdDSA bool) (string, error) {
+func GetDerivedPubKey(hexPubKey, hexChainCode, path string, isEdDSA bool) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in GetDerivedPubKey: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	if isEdDSA {
 		return "", errors.New("don't support to derive pubkey for EdDSA now")
 	}
@@ -195,14 +207,35 @@ func GetDERSignature(r, s *big.Int) ([]byte, error) {
 func hexToBytes(s string) []byte {
 	b, err := hex.DecodeString(s)
 	if err != nil {
-		panic("invalid hex in source file: " + s)
+		Logf("ERROR: invalid hex: %s, error: %v", s, err)
+		// Return empty bytes instead of panicking to prevent app crashes
+		return []byte{}
 	}
 	return b
 }
 
-func Sha256(msg string) (string, error) {
+func Sha256(msg string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in Sha256: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	hash := sha256.New()
 	hash.Write([]byte(msg))
 	hashBytes := hash.Sum(nil)
 	return hex.EncodeToString(hashBytes), nil
+}
+
+func SecureRandom(length int) (string, error) {
+	bytes := make([]byte, (length+1)/2)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", bytes)[:length], nil
 }
