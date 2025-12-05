@@ -4,6 +4,24 @@
 
 A secure Multi-Party Computation (MPC) Threshold Signature Scheme (TSS) library for Bitcoin, built for mobile integration on both iOS and Android.
 
+**NOSTR Integration for Wallet Creation and Transactions**
+
+BBMTLib now leverages **NOSTR relays** to create wallets and send transactions, utilizing a robust multi-layer encryption pattern based on Nostr Improvement Proposals (NIPs):
+
+- **NIP-44:** Encrypted Direct Messages using shared secret derivation
+- **NIP-59:** Gift Wraps (Rumor → Seal → Wrap pattern for TSS message transport) to enhance privacy
+
+**Key Security Benefits:**
+
+- **End-to-end encryption** between parties
+- **Metadata privacy** (relays cannot see sender/recipient relationships)
+- **Forward secrecy** (one-time keys for wraps)
+- **Authentication** (signed seals verify sender identity)
+
+**CLI Usage Option**
+
+In addition to library integration for mobile apps, BBMTLib also provides a **command-line interface (CLI)** for testing and automation. This allows developers to generate wallets, sign transactions, and interact with NOSTR relays directly from the terminal. See the `cmd/` directory and included examples for CLI usage instructions.
+
 ## How to Build
 
 ```bash
