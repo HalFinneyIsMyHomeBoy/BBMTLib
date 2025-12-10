@@ -1,10 +1,44 @@
 # OSX
 #
 .DS_Store
+
 *.aar
+
 *.jar
+
 Tss.xcframework/
+
+# Build outputs
 scripts/bin/
+bin/
+
+# Generated files from scripts
+# Log files
+*.log
+
+# Keyshare files (base64 encoded)
+*.ks
+
+# JSON output files
+party*-keyshare.json
+party*-signature.json
+ppm-*.json
+peer*.json
 scripts/*.json
-scripts/*.ks
-scripts/*.nostr
+
+# Output directories
+nostr-keygen-output/
+nostr-keysign-output/
+test-keygen-output/
+test-keysign-output/
+test-nostr-keygen-output/
+test-nostr-keysign-output/
+test-nostr-keygen-3party-output/
+test-cmd-keygen-output/
+test-cmd-keysign-output/
+test-relay-data/
+
+# Database files (from local relay)
+*.db
+*.db-shm
+*.db-wal

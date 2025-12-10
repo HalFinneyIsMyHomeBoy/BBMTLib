@@ -4,11 +4,22 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 
 	eciesgo "github.com/ecies/go/v2"
 )
 
-func GenerateKeyPair() (string, error) {
+func GenerateKeyPair() (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("PANIC in GenerateKeyPair: %v", r)
+			Logf("BBMTLog: %s", errMsg)
+			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
+			err = fmt.Errorf("internal error (panic): %v", r)
+			result = ""
+		}
+	}()
+
 	privKey, err := eciesgo.GenerateKey()
 	if err != nil {
 		return "", err
@@ -26,6 +37,14 @@ func GenerateKeyPair() (string, error) {
 	}
 
 	return string(keyPairJSON), nil
+}
+
+func EciesPubkeyFromPrivateKey(privateKeyHex string) (string, error) {
+	privateKey, err := eciesgo.NewPrivateKeyFromHex(privateKeyHex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode private key: %w", err)
+	}
+	return privateKey.PublicKey.Hex(true), nil
 }
 
 func EciesEncrypt(data, publicKeyHex string) (string, error) {

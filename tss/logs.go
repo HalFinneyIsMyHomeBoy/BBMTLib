@@ -35,11 +35,9 @@ func logToReactNative(message string) {
 
 // Logf function: formats message and logs it
 func Logf(format string, v ...any) {
-	if globalVerbose {
-		msg := fmt.Sprintf(format, v...) // Format the message
-		logToReactNative(msg)            // Send to React Native
-		log.Println(msg)                 // Also log to Logcat
-	}
+	msg := fmt.Sprintf(format, v...) // Format the message
+	logToReactNative(msg)            // Send to React Native
+	log.Println(msg)                 // Also log to Logcat
 }
 
 // Logln: Logs a message like fmt.Println

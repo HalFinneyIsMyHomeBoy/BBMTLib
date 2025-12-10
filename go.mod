@@ -12,7 +12,7 @@ require (
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.3
 	github.com/gorilla/mux v1.8.1
 	github.com/ipfs/go-log/v2 v2.1.3
-	github.com/nbd-wtf/go-nostr v0.52.0
+	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 )
 
@@ -38,7 +38,7 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	golang.org/x/arch v0.15.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
 )
 
 require (
@@ -59,8 +59,8 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/crypto v0.37.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/crypto v0.44.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 	google.golang.org/protobuf v1.36.2 // indirect
 )
 
